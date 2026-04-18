@@ -564,12 +564,12 @@ function BulkAIModal({
             </div>
           </div>
 
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          <div className="rounded-xl border px-3 py-2 text-sm" style={{ background: "var(--bg-input-alt)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
             Produkty bez przypisanej kategorii dla wybranego marketplace wroca jako blad per produkt.
           </div>
 
           {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-400">
               {error}
             </div>
           )}
@@ -580,20 +580,20 @@ function BulkAIModal({
                   <span className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
                     {job.status === "queued" ? "W kolejce" : job.status === "processing" ? "Przetwarzanie" : job.status}
                   </span>
-                  <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                  <span className="px-2 py-1 rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)]">
                     {Math.max(0, Math.min(100, job.progressPercent ?? 0))}%
                   </span>
-                  <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                  <span className="px-2 py-1 rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)]">
                     {formatDurationLabel(job.elapsedSeconds)}
                   </span>
                   {job.etaSeconds != null && (
-                    <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                    <span className="px-2 py-1 rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)]">
                       ETA {formatDurationLabel(job.etaSeconds)}
                     </span>
                   )}
                 </div>
 
-                <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-2 rounded-full bg-[var(--bg-input)] overflow-hidden">
                   <div
                     className="h-full rounded-full bg-indigo-600 transition-all"
                     style={{ width: `${Math.max(0, Math.min(100, job.progressPercent ?? 0))}%` }}

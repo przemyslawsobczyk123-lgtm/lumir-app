@@ -1612,7 +1612,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
       {/* Grid */}
       <div className="p-6">
         {readOnly && (
-          <div className="mb-3 text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+          <div className="mb-3 text-xs rounded-xl px-4 py-2.5" style={{ color: "var(--text-secondary)", background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
             Wyświetlane są media globalne (tylko do odczytu). Zmień opcję aby edytować media dla tego kanału.
           </div>
         )}

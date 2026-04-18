@@ -102,9 +102,10 @@ function SearchInput({ value, onChange, placeholder }: {
         <SearchIcon />
       </div>
       <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm text-slate-800 bg-white
-          border-2 border-slate-300 placeholder-slate-400 outline-none
-          focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 transition" />
+        style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+        className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm
+          border-2 placeholder-[var(--text-tertiary)] outline-none
+          focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20 transition" />
       {value && (
         <button onClick={() => onChange("")}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -123,11 +124,13 @@ function AllegroIntegrationBanner({ status }: { status: any }) {
   const minLeft   = status?.minutesLeft ? status.minutesLeft % 60 : 0;
 
   return (
-    <div className={`rounded-2xl border p-4 mb-6 flex items-start gap-4 ${
-      isValid
-        ? "bg-indigo-50/60 border-indigo-100"
-        : "bg-red-50 border-red-200"
-    }`}>
+    <div
+      className="rounded-2xl border p-4 mb-6 flex items-start gap-4"
+      style={{
+        background: isValid ? "var(--bg-input-alt)" : "var(--color-red-bg, #fef2f2)",
+        borderColor: isValid ? "var(--border-default)" : "#fca5a5",
+      }}
+    >
       {/* Allegro badge — project gradient */}
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-white text-sm shadow-sm"
@@ -138,7 +141,7 @@ function AllegroIntegrationBanner({ status }: { status: any }) {
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-slate-800 text-sm">Integracja Allegro API</span>
+          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Integracja Allegro API</span>
           <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
             isValid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
           }`}>
@@ -150,7 +153,7 @@ function AllegroIntegrationBanner({ status }: { status: any }) {
             </span>
           )}
         </div>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
           Kategorie pobierane <strong>automatycznie z Allegro API</strong> — nie trzeba importować plików.
           Przeglądaj drzewo kategorii i wybierz odpowiednią dla swojego produktu.
         </p>
@@ -165,9 +168,9 @@ function AllegroIntegrationBanner({ status }: { status: any }) {
       </div>
 
       <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0 text-right">
-        <div className="text-[10px] text-slate-400 uppercase tracking-widest">Synchronizacja</div>
-        <div className="text-xs font-semibold text-slate-600">Automatyczna</div>
-        <div className="text-[10px] text-slate-400">Live z Allegro</div>
+        <div className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>Synchronizacja</div>
+        <div className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Automatyczna</div>
+        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>Live z Allegro</div>
       </div>
     </div>
   );
@@ -239,9 +242,9 @@ function AllegroTreeBrowser({
     [...breadcrumb.map(b => b.name), cat.name].filter(n => n !== "Allegro").join(" / ");
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="rounded-2xl shadow-sm overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
       {/* Breadcrumb */}
-      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-1 flex-wrap">
+      <div className="px-4 py-3 border-b flex items-center gap-1 flex-wrap" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)" }}>
         {breadcrumb.map((b, i) => (
           <span key={i} className="flex items-center gap-1">
             {i > 0 && <ChevronRight />}
@@ -260,12 +263,12 @@ function AllegroTreeBrowser({
       </div>
 
       {/* Search */}
-      <div className="p-3 border-b border-slate-100">
+      <div className="p-3 border-b" style={{ borderColor: "var(--border-light)" }}>
         <SearchInput value={search} onChange={setSearch} placeholder="Szukaj w tej kategorii..." />
       </div>
 
       {/* List */}
-      <div className="divide-y divide-slate-100 max-h-[520px] overflow-y-auto">
+      <div className="divide-y max-h-[520px] overflow-y-auto" style={{ borderColor: "var(--border-light)" }}>
         {loading ? (
           <div className="p-10 text-center">
             <div className="inline-block w-5 h-5 border-2 border-indigo-300 border-t-indigo-600
@@ -288,13 +291,16 @@ function AllegroTreeBrowser({
 
           return (
             <div key={cat.id}
-              className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 group transition">
+              className="flex items-center justify-between px-4 py-3 group transition"
+              style={{ cursor: "default" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "")}>
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <span className={cat.leaf ? "text-slate-400" : "text-indigo-400"}>
                   {cat.leaf ? <TagIcon /> : <FolderIcon />}
                 </span>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-800">{cat.name}</div>
+                  <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
                   {!cat.leaf && (
                     <div className="text-[11px] text-slate-400">Kliknij aby rozwinąć</div>
                   )}
@@ -340,7 +346,7 @@ function AllegroTreeBrowser({
         })}
       </div>
 
-      <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50 text-xs text-slate-400 flex justify-between">
+      <div className="px-4 py-2.5 border-t text-xs flex justify-between" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)", color: "var(--text-tertiary)" }}>
         <span>{filtered.length} pozycji</span>
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
@@ -357,13 +363,16 @@ function FavRow({ fav, onUse, onRemove, onPin }: {
   onRemove: (id: number) => void; onPin: (id: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 hover:bg-slate-50
-      group border-b border-slate-100 last:border-0 transition">
+    <div className="flex items-center justify-between px-4 py-3
+      group border-b last:border-0 transition"
+      style={{ borderColor: "var(--border-light)" }}
+      onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+      onMouseLeave={e => (e.currentTarget.style.background = "")}>
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-slate-800">{fav.category_name}</div>
-        <div className="text-[11px] text-slate-400 truncate mt-0.5">{fav.category_path}</div>
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{fav.category_name}</div>
+        <div className="text-[11px] truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>{fav.category_path}</div>
         {fav.use_count > 0 && (
-          <div className="text-[10px] text-slate-300 mt-0.5">używana {fav.use_count}×</div>
+          <div className="text-[10px] mt-0.5" style={{ color: "var(--text-muted, var(--text-tertiary))" }}>używana {fav.use_count}×</div>
         )}
       </div>
       <div className="flex items-center gap-1 ml-3 opacity-0 group-hover:opacity-100 transition">
@@ -425,16 +434,16 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
 
   return (
     <div className="max-w-2xl">
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 mb-6 flex gap-4">
+      <div className="border rounded-2xl p-5 mb-6 flex gap-4" style={{ background: "var(--bg-input-alt)", borderColor: "var(--border-default)" }}>
         <div className="text-2xl">ℹ️</div>
         <div>
-          <div className="text-sm font-semibold text-blue-800 mb-1">
+          <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
             Import szablonu kategorii — {label}
           </div>
-          <div className="text-sm text-blue-700 space-y-1">
+          <div className="text-sm space-y-1" style={{ color: "var(--text-secondary)" }}>
             <p>Wgraj plik <strong>.xlsx</strong> pobrany z panelu Mirakl ({label}).</p>
             <p>System automatycznie wykryje kategorie i pola wymagane dla tego marketplace.</p>
-            <p className="text-blue-600 text-xs mt-2">
+            <p className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
               ⚠️ Nowy import <strong>dezaktywuje poprzedni</strong> szablon dla tego marketplace.
             </p>
           </div>
@@ -449,8 +458,8 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
         className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer
           transition-all duration-200 ${
           dragging ? "border-indigo-400 bg-indigo-50 scale-[1.01]"
-          : file ? "border-green-400 bg-green-50"
-          : "border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50"
+          : file ? "border-green-400 bg-green-500/10"
+          : "border-[var(--border-default)] hover:border-indigo-300"
         }`}
       >
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
@@ -516,9 +525,9 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
               { label: "Pola",        value: result.fieldCount ?? "—" },
               { label: "Marketplace", value: label },
             ].map(({ label: l, value }) => (
-              <div key={l} className="bg-white rounded-xl border border-green-100 p-3 text-center">
-                <div className="text-xl font-bold text-slate-800">{value}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{l}</div>
+              <div key={l} className="rounded-xl border border-green-100 p-3 text-center" style={{ background: "var(--bg-card)" }}>
+                <div className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{value}</div>
+                <div className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>{l}</div>
               </div>
             ))}
           </div>
@@ -708,7 +717,7 @@ export default function MarketplaceCategoriesPage() {
           {" / "}{label}
         </div>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-800">{label}</h1>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{label}</h1>
           {isAllegro && (
             <span className="text-xs px-2.5 py-1 rounded-full font-semibold
               bg-indigo-100 text-indigo-700 border border-indigo-200">
@@ -722,7 +731,7 @@ export default function MarketplaceCategoriesPage() {
       {isAllegro && <AllegroIntegrationBanner status={allegroStatus} />}
 
       {/* Tabs */}
-      <div className="flex gap-0 mb-6 border-b-2 border-slate-200">
+      <div className="flex gap-0 mb-6 border-b-2" style={{ borderColor: "var(--border-default)" }}>
         <button onClick={() => setTab("categories")}
           className={`px-5 py-2.5 text-sm font-semibold border-b-2 -mb-0.5 transition ${
             tab === "categories"
@@ -776,14 +785,14 @@ export default function MarketplaceCategoriesPage() {
             )}
           />
         ) : (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50">
+          <div className="rounded-2xl shadow-sm overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+            <div className="p-4 border-b" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)" }}>
               <SearchInput value={search} onChange={setSearch} placeholder="Szukaj kategorii..." />
             </div>
             {loading ? (
               <div className="p-10 text-center text-slate-400">Ładowanie kategorii...</div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+              <div className="divide-y max-h-[600px] overflow-y-auto" style={{ borderColor: "var(--border-light)" }}>
                 {filteredDbCats.length === 0 ? (
                   <div className="p-10 text-center text-slate-400">
                     {search ? `Brak wyników dla „${search}"` : "Brak kategorii — zaimportuj szablon Mirakl."}
@@ -792,10 +801,12 @@ export default function MarketplaceCategoriesPage() {
                   const isFav = favSet.has(cat.id);
                   return (
                     <div key={cat.id}
-                      className="flex items-center justify-between px-5 py-3 hover:bg-slate-50 group transition">
+                      className="flex items-center justify-between px-5 py-3 group transition"
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "")}>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-slate-800">{cat.name}</div>
-                        <div className="text-xs text-slate-400 truncate mt-0.5">{cat.path}</div>
+                        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+                        <div className="text-xs truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>{cat.path}</div>
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <button onClick={() => toggleDbFavorite(cat)}
@@ -821,7 +832,7 @@ export default function MarketplaceCategoriesPage() {
                 })}
               </div>
             )}
-            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-400">
+            <div className="px-5 py-3 border-t text-xs" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)", color: "var(--text-tertiary)" }}>
               {filteredDbCats.length} kategorii{search && ` • filtr: "${search}"`}
             </div>
           </div>
@@ -832,9 +843,9 @@ export default function MarketplaceCategoriesPage() {
       {tab === "favorites" && (
         <div className="grid grid-cols-[1fr_1.4fr] gap-6">
           {/* Lewa — przeglądanie */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
-              <div className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">
+          <div className="rounded-2xl shadow-sm overflow-hidden flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+            <div className="px-4 py-3 border-b" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)" }}>
+              <div className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "var(--text-secondary)" }}>
                 Dodaj do ulubionych
               </div>
               {!isAllegro && (
@@ -846,7 +857,7 @@ export default function MarketplaceCategoriesPage() {
                 Przejdź do zakładki <strong>Kategorie</strong> i kliknij ⭐ przy dowolnej kategorii-liść.
               </div>
             ) : (
-              <div className="overflow-y-auto flex-1 max-h-[520px] divide-y divide-slate-100">
+              <div className="overflow-y-auto flex-1 max-h-[520px] divide-y" style={{ borderColor: "var(--border-light)" }}>
                 {loading ? (
                   <div className="p-8 text-center text-slate-400">Ładowanie...</div>
                 ) : filteredDbCats.length === 0 ? (
@@ -855,12 +866,14 @@ export default function MarketplaceCategoriesPage() {
                   const isFav = favSet.has(cat.id);
                   return (
                     <div key={cat.id}
-                      className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50
+                      className="flex items-center justify-between px-4 py-2.5
                         group transition cursor-pointer"
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "")}
                       onClick={() => toggleDbFavorite(cat)}>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm text-slate-700">{cat.name}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{cat.path}</div>
+                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{cat.name}</div>
+                        <div className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>{cat.path}</div>
                       </div>
                       <div className={`ml-3 flex-shrink-0 transition ${
                         isFav ? "text-amber-400" : "text-slate-200 group-hover:text-slate-300"
@@ -875,10 +888,10 @@ export default function MarketplaceCategoriesPage() {
           </div>
 
           {/* Prawa — lista ulubionych */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+          <div className="rounded-2xl shadow-sm overflow-hidden flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+            <div className="px-4 py-3 border-b" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)" }}>
               <div className="flex items-center justify-between mb-2">
-                <div className="text-xs font-bold uppercase tracking-widest text-slate-500">Twoje ulubione</div>
+                <div className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-secondary)" }}>Twoje ulubione</div>
                 {favorites.length > 0 && (
                   <span className="bg-amber-100 text-amber-600 text-xs px-2 py-0.5 rounded-full font-bold">
                     {favorites.length}
@@ -902,9 +915,9 @@ export default function MarketplaceCategoriesPage() {
                 <div>
                   {pinnedFavs.length > 0 && (
                     <>
-                      <div className="px-4 py-2 text-[10px] font-bold tracking-widest
-                        text-slate-400 uppercase bg-slate-50 border-b border-slate-100
-                        flex items-center gap-1.5">
+                      <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase border-b
+                        flex items-center gap-1.5"
+                        style={{ color: "var(--text-tertiary)", background: "var(--bg-body)", borderColor: "var(--border-light)" }}>
                         <PinIcon active={true} /> Przypięte
                       </div>
                       {pinnedFavs.map(fav => (
@@ -916,8 +929,8 @@ export default function MarketplaceCategoriesPage() {
                   {unpinnedFavs.length > 0 && (
                     <>
                       {pinnedFavs.length > 0 && (
-                        <div className="px-4 py-2 text-[10px] font-bold tracking-widest
-                          text-slate-400 uppercase bg-slate-50 border-b border-slate-100">
+                        <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase border-b"
+                          style={{ color: "var(--text-tertiary)", background: "var(--bg-body)", borderColor: "var(--border-light)" }}>
                           Pozostałe
                         </div>
                       )}

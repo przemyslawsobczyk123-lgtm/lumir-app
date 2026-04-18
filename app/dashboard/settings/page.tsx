@@ -33,7 +33,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-500">
+      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-secondary)" }}>
         {label}
       </label>
       <input
@@ -42,7 +42,8 @@ function Field({
         placeholder={placeholder}
         onChange={(e) => onChange?.(e.target.value)}
         readOnly={!onChange}
-        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+        className="w-full rounded-xl border-2 px-3 py-2.5 text-sm outline-none transition placeholder-[var(--text-tertiary)] focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20"
+        style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
       />
     </div>
   );
@@ -125,21 +126,21 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-[860px] space-y-6 pb-16">
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <div className="mb-4">
-          <h2 className="text-base font-bold text-slate-800">Dane konta</h2>
-          <p className="mt-1 text-sm text-slate-500">Billing moved out. Settings stays on account and password only.</p>
+          <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>Dane konta</h2>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>Billing moved out. Settings stays on account and password only.</p>
         </div>
         <div className="mb-4 grid gap-4 md:grid-cols-2">
           <Field label="Imie / nazwa" value={name} />
           <Field label="Firma" value={company} />
         </div>
         <Field label="Email" value={email} />
-        <p className="mt-3 text-xs text-slate-400">Zmiana danych konta jest obecnie poza MVP panelu.</p>
+        <p className="mt-3 text-xs" style={{ color: "var(--text-tertiary)" }}>Zmiana danych konta jest obecnie poza MVP panelu.</p>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-bold text-slate-800">Zmien haslo</h2>
+      <div className="rounded-2xl p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+        <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>Zmien haslo</h2>
         <div className="mt-4 max-w-md space-y-3">
           <Field label="Obecne haslo" type="password" value={curPwd} onChange={setCurPwd} placeholder="********" />
           <Field label="Nowe haslo (min. 8 znakow)" type="password" value={newPwd} onChange={setNewPwd} placeholder="********" />

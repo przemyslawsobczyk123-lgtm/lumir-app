@@ -134,24 +134,28 @@ const TABS = [
 // ── Small UI ─────────────────────────────────────────────────────
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">
+    <label className="block text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--text-secondary)" }}>
       {children}{required && <span className="text-red-400 ml-1">*</span>}
     </label>
   );
 }
 function Inp(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <input {...props} className={`w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 bg-white
-      text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-4
-      focus:ring-indigo-100 transition text-sm ${props.className ?? ""}`} />
+    <input {...props}
+      style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+      className={`w-full px-3 py-2.5 rounded-xl border-2
+        placeholder-[var(--text-tertiary)] outline-none focus:border-indigo-400 focus:ring-4
+        focus:ring-indigo-500/20 transition text-sm ${props.className ?? ""}`} />
   );
 }
 function Sel({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
   return (
     <div className="relative">
-      <select {...props} className={`w-full appearance-none px-3 py-2.5 rounded-xl border-2 border-slate-200
-        bg-white text-slate-800 outline-none focus:border-indigo-400 pr-8 cursor-pointer text-sm
-        transition ${props.className ?? ""}`}>
+      <select {...props}
+        style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+        className={`w-full appearance-none px-3 py-2.5 rounded-xl border-2
+          outline-none focus:border-indigo-400 pr-8 cursor-pointer text-sm
+          transition ${props.className ?? ""}`}>
         {children}
       </select>
       <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -550,7 +554,7 @@ export default function EditProductPage() {
 
       {/* Back */}
       <button onClick={() => router.push("/dashboard/products")}
-        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition mb-5">
+        className="flex items-center gap-1.5 text-sm transition mb-5" style={{ color: "var(--text-secondary)" }}>
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}><path d="m15 18-6-6 6-6"/></svg>
         Wróć do listy produktów
       </button>
@@ -558,7 +562,7 @@ export default function EditProductPage() {
       {/* Header */}
       <div className="flex items-start gap-4 mb-6">
         {/* Thumbnail */}
-        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 flex-shrink-0 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: "var(--img-placeholder-bg, var(--bg-input))", border: "1px solid var(--img-placeholder-border, var(--border-default))" }}>
           {globalSlots[0] ? (
             <img src={globalSlots[0]} alt={title || ""} className="w-full h-full object-cover"
               onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -572,8 +576,8 @@ export default function EditProductPage() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-slate-800 truncate">{title || "Edycja produktu"}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Zaktualizuj dane i przypisz do marketplace</p>
+          <h1 className="text-2xl font-bold truncate" style={{ color: "var(--text-primary)" }}>{title || "Edycja produktu"}</h1>
+          <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>Zaktualizuj dane i przypisz do marketplace</p>
         </div>
       </div>
 
@@ -588,8 +592,8 @@ export default function EditProductPage() {
       )}
 
       {/* Tabs */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-5">
-        <div className="flex border-b border-slate-100 overflow-x-auto">
+      <div className="rounded-2xl shadow-sm overflow-hidden mb-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+        <div className="flex border-b overflow-x-auto" style={{ borderColor: "var(--border-light)" }}>
           {TABS.map(t => {
             let badge = "";
             if (t.id === "media" && totalImages) badge = String(totalImages);
@@ -599,8 +603,8 @@ export default function EditProductPage() {
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition ${
                   tab === t.id
-                    ? "border-indigo-500 text-indigo-600 bg-indigo-50/50"
-                    : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                    ? "border-indigo-500 text-indigo-600 bg-indigo-500/5"
+                    : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
                 }`}>
                 {t.label}
                 {badge && (
@@ -799,12 +803,12 @@ export default function EditProductPage() {
                 </div>
               );
               return (
-                <div className="mb-4 flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                <div className="mb-4 flex items-center gap-2 text-xs rounded-xl px-4 py-2.5" style={{ background: "var(--bg-body)", border: "1px solid var(--border-default)" }}>
                   <svg viewBox="0 0 24 24" className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                   </svg>
-                  <span className="text-slate-500">Kategoria:</span>
-                  <span className="font-medium text-slate-700 truncate">{catName}</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Kategoria:</span>
+                  <span className="font-medium truncate" style={{ color: "var(--text-primary)" }}>{catName}</span>
                 </div>
               );
             })()}
@@ -873,16 +877,16 @@ export default function EditProductPage() {
       </div>
 
       {/* ── Fixed bottom action bar ─────────────────────────────── */}
-      <div className="fixed bottom-0 left-[220px] right-0 z-40 bg-white border-t border-slate-200 shadow-lg px-8 py-4">
+      <div className="fixed bottom-0 left-[220px] right-0 z-40 border-t shadow-lg px-8 py-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
         <div className="max-w-[900px] mx-auto flex items-center justify-between">
-          <div className="text-xs text-slate-400">
-            {title ? <span className="font-medium text-slate-600">{title}</span> : <span className="italic">Nowy produkt</span>}
+          <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+            {title ? <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{title}</span> : <span className="italic">Nowy produkt</span>}
             {ean && <span className="ml-3 font-mono">EAN: {ean}</span>}
           </div>
           <div className="flex gap-3">
             <button onClick={() => router.push("/dashboard/products")}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600
-                bg-slate-100 hover:bg-slate-200 border border-slate-200 transition">
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition"
+              style={{ color: "var(--text-secondary)", background: "var(--bg-input)", border: "1px solid var(--border-default)" }}>
               Anuluj
             </button>
             <button onClick={handleSave} disabled={saving || saved}
@@ -956,7 +960,7 @@ function AIDraftPanel({
   const applyBlocked = previewKind === "description" ? !hasDescription : !hasAttributes;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+    <div className="rounded-2xl p-4 space-y-4" style={{ background: "var(--bg-body)", border: "1px solid var(--border-default)" }}>
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
@@ -1072,9 +1076,9 @@ function AIDraftPanel({
       )}
 
       {draft && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+        <div className="rounded-2xl p-4 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-            <span className="font-semibold text-slate-700">
+            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>
               Draft: {draft.marketplaceName || draft.marketplaceSlug}
             </span>
             {draft.descriptionConfidence != null && (
@@ -1091,7 +1095,8 @@ function AIDraftPanel({
             hasDescription ? (
               <>
                 <div
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 prose prose-sm max-w-none"
+                  className="rounded-xl px-4 py-3 text-sm prose prose-sm max-w-none"
+                  style={{ background: "var(--bg-body)", border: "1px solid var(--border-default)", color: "var(--text-primary)" }}
                   dangerouslySetInnerHTML={{ __html: draft.descriptionHtml }}
                 />
                 <button
@@ -1113,13 +1118,13 @@ function AIDraftPanel({
             <>
               <div className="grid grid-cols-2 gap-2">
                 {previewAttributes.map(([fieldCode, meta]) => (
-                  <div key={fieldCode} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div key={fieldCode} className="rounded-xl px-3 py-2" style={{ background: "var(--bg-body)", border: "1px solid var(--border-default)" }}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-700 truncate">{fieldCode}</span>
-                      <span className="text-[10px] text-slate-500">{meta.score}%</span>
+                      <span className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{fieldCode}</span>
+                      <span className="text-[10px]" style={{ color: "var(--text-secondary)" }}>{meta.score}%</span>
                     </div>
-                    <div className="text-sm text-slate-700 mt-1 break-words">{meta.value}</div>
-                    <div className="text-[11px] text-slate-400 mt-1">{meta.source}</div>
+                    <div className="text-sm mt-1 break-words" style={{ color: "var(--text-primary)" }}>{meta.value}</div>
+                    <div className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>{meta.source}</div>
                   </div>
                 ))}
               </div>
@@ -1170,16 +1175,19 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml }: {
   const isEmpty = !plain && !html;
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden">
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--border-default)" }}>
       {/* Accordion header */}
       <button onClick={() => setOpen(o => !o)}
         className={`w-full flex items-center justify-between px-5 py-4 text-left transition ${
-          open ? "bg-indigo-50" : "bg-slate-50 hover:bg-slate-100"
-        }`}>
+          open ? "bg-indigo-500/10" : ""
+        }`}
+        style={open ? {} : { background: "var(--bg-body)" }}
+        onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "var(--bg-card-hover)"; }}
+        onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "var(--bg-body)"; }}>
         <div className="flex items-center gap-3">
           <svg viewBox="0 0 24 24" className={`w-4 h-4 transition-transform ${open ? "rotate-90 text-indigo-500" : "text-slate-400"}`}
             fill="none" stroke="currentColor" strokeWidth={2}><path d="m9 18 6-6-6-6"/></svg>
-          <span className={`font-semibold text-sm ${open ? "text-indigo-700" : "text-slate-700"}`}>{label}</span>
+          <span className={`font-semibold text-sm ${open ? "text-indigo-700" : ""}`} style={open ? {} : { color: "var(--text-primary)" }}>{label}</span>
           {isEmpty
             ? <span className="text-[11px] text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">Pusty</span>
             : <span className="text-[11px] text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Wypełniony</span>}
@@ -1191,9 +1199,9 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml }: {
 
       {/* Content */}
       {open && (
-        <div className="p-5 border-t border-slate-100">
+        <div className="p-5 border-t" style={{ borderColor: "var(--border-light)" }}>
           {/* Mode tabs */}
-          <div className="flex items-center gap-1 mb-3 bg-slate-100 rounded-xl p-1 w-fit">
+          <div className="flex items-center gap-1 mb-3 rounded-xl p-1 w-fit" style={{ background: "var(--bg-input)" }}>
             {(["tekst", "html"] as const).map(m => (
               <button key={m} onClick={() => { setMode(m); setPreview(false); }}
                 className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${
@@ -1218,12 +1226,14 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml }: {
               onChange={e => handlePlain(e.target.value)}
               rows={7}
               placeholder="Wpisz opis produktu..."
-              className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 text-sm text-slate-800
-                outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100
-                resize-none transition placeholder-slate-400"
+              style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+              className="w-full px-4 py-3 rounded-xl border-2 text-sm
+                outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20
+                resize-none transition placeholder-[var(--text-tertiary)]"
             />
           ) : preview ? (
-            <div className="w-full min-h-[140px] px-4 py-3 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm text-slate-800 prose prose-sm max-w-none"
+            <div className="w-full min-h-[140px] px-4 py-3 rounded-xl border-2 text-sm prose prose-sm max-w-none"
+              style={{ background: "var(--bg-body)", borderColor: "var(--border-default)", color: "var(--text-primary)" }}
               dangerouslySetInnerHTML={{ __html: html || "<p class='text-slate-400 italic'>Brak treści HTML</p>" }} />
           ) : (
             <textarea
@@ -1252,10 +1262,10 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml }: {
 function AttrField({ field, value, onChange }: { field: Field; value: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1.5">
+      <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
         {field.label}
         {field.required && <span className="text-red-400 ml-1">*</span>}
-        <span className="ml-1.5 text-[10px] font-mono text-slate-400">{field.field_code}</span>
+        <span className="ml-1.5 text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>{field.field_code}</span>
       </label>
       {field.allowedValues?.length > 0 ? (
         <Sel value={value} onChange={e => onChange(e.target.value)}>
@@ -1289,11 +1299,12 @@ function MarketplaceCard({ marketplace, selected, dbCategories, allegroTree, onC
   const isAssigned = !!(selected?.categoryPath || selected?.allegroName);
 
   return (
-    <div className={`rounded-xl border-2 p-4 transition ${isAssigned ? "border-green-300 bg-green-50" : "border-slate-200 bg-slate-50"}`}>
+    <div className="rounded-xl border-2 p-4 transition"
+      style={isAssigned ? { background: "var(--bg-input-alt)", borderColor: "#86efac" } : { background: "var(--bg-body)", borderColor: "var(--border-default)" }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isAssigned ? "bg-green-500" : "bg-slate-300"}`} />
-          <span className="font-semibold text-slate-700 text-sm">{marketplace.name}</span>
+          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>{marketplace.name}</span>
           {isAllegro && (
             <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-semibold">API</span>
           )}
@@ -1304,17 +1315,18 @@ function MarketplaceCard({ marketplace, selected, dbCategories, allegroTree, onC
         )}
       </div>
       {isAssigned ? (
-        <div className="text-xs bg-white rounded-lg border border-green-200 px-3 py-2 text-slate-700 font-medium">
+        <div className="text-xs rounded-lg border border-green-200 px-3 py-2 font-medium" style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}>
           {selected?.categoryPath || selected?.allegroName}
         </div>
       ) : (
         <>
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder={isAllegro ? "Szukaj kategorii Allegro..." : "Szukaj kategorii..."}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs outline-none
-              focus:border-indigo-400 bg-white text-slate-700 placeholder-slate-400 mb-2" />
+            style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+            className="w-full px-3 py-2 rounded-lg border text-xs outline-none
+              focus:border-indigo-400 placeholder-[var(--text-tertiary)] mb-2" />
           {search && (
-            <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white divide-y divide-slate-50">
+            <div className="max-h-44 overflow-y-auto rounded-lg border divide-y" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", borderBottomColor: "var(--border-light)" }}>
               {filtered.length === 0
                 ? <div className="px-3 py-2 text-xs text-slate-400">Brak wyników</div>
                 : filtered.slice(0, 25).map(c => (
@@ -1325,7 +1337,7 @@ function MarketplaceCard({ marketplace, selected, dbCategories, allegroTree, onC
                           : onChange({ categoryId: (c as any).id, categoryPath: (c as any).path });
                         setSearch("");
                       }}
-                      className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition">
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 hover:text-indigo-700 transition" style={{ color: "var(--text-primary)" }}>
                       {isAllegro ? (c as any).name : (c as any).path}
                     </button>
                   ))}
@@ -1404,7 +1416,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
   return (
     <div>
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 space-y-3">
+      <div className="px-6 py-4 border-b space-y-3" style={{ borderColor: "var(--border-light)", background: "var(--bg-body)" }}>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Marketplace</div>
@@ -1435,7 +1447,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
       {/* Grid */}
       <div className="p-6">
         {readOnly && (
-          <div className="mb-3 text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+          <div className="mb-3 text-xs rounded-xl px-4 py-2.5" style={{ color: "var(--text-secondary)", background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
             Wyświetlane są media globalne (tylko do odczytu). Zmień opcję aby edytować media dla tego kanału.
           </div>
         )}
