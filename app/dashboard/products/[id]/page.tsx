@@ -22,8 +22,105 @@ type MarketplaceCategory = {
   allegroId?: string; allegroName?: string;
 };
 type Field = { id: number; field_code: string; label: string; description?: string; required: boolean; allowedValues: string[] };
+type DraftAttributeConfidence = { score: number; source: string; required: boolean; value: string };
+type AIDraft = {
+  id?: number;
+  marketplaceSlug: string;
+  marketplaceName?: string;
+  descriptionHtml: string;
+  descriptionConfidence: number | null;
+  overallConfidence: number | null;
+  selectedSourcesJson: string[];
+  attributesJson: Record<string, string>;
+  attributeConfidenceJson: Record<string, DraftAttributeConfidence>;
+};
+type RawAIDraft = Partial<AIDraft> & {
+  marketplace_slug?: string;
+  marketplace_name?: string;
+  description_html?: string;
+  description_confidence?: number | null;
+  overall_confidence?: number | null;
+  selected_sources_json?: string[];
+  attributes_json?: Record<string, string>;
+  attribute_confidence_json?: Record<string, DraftAttributeConfidence>;
+};
+type JobSummary = {
+  id: string;
+  type?: string | null;
+  status: string;
+  marketplaceSlug?: string | null;
+  mode?: string | null;
+  requestedItems?: number | null;
+  processedItems?: number | null;
+  successCount?: number | null;
+  errorCount?: number | null;
+  progressPercent?: number | null;
+  currentStep?: string | null;
+  currentMessage?: string | null;
+  elapsedSeconds?: number | null;
+  etaSeconds?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+};
 type MediaOption = "global" | "separate" | "override";
 const SLOTS = 16;
+
+function stripHtml(value: string) {
+  return value.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeAIDraft(raw: RawAIDraft | null | undefined): AIDraft {
+  return {
+    id: raw?.id,
+    marketplaceSlug: raw?.marketplaceSlug ?? raw?.marketplace_slug ?? "",
+    marketplaceName: raw?.marketplaceName ?? raw?.marketplace_name ?? "",
+    descriptionHtml: raw?.descriptionHtml ?? raw?.description_html ?? "",
+    descriptionConfidence: raw?.descriptionConfidence ?? raw?.description_confidence ?? null,
+    overallConfidence: raw?.overallConfidence ?? raw?.overall_confidence ?? null,
+    selectedSourcesJson: Array.isArray(raw?.selectedSourcesJson)
+      ? raw.selectedSourcesJson
+      : Array.isArray(raw?.selected_sources_json)
+        ? raw.selected_sources_json
+        : [],
+    attributesJson: raw?.attributesJson ?? raw?.attributes_json ?? {},
+    attributeConfidenceJson: raw?.attributeConfidenceJson ?? raw?.attribute_confidence_json ?? {},
+  };
+}
+
+function normalizeJobSummary(raw: Partial<JobSummary> | null | undefined): JobSummary | null {
+  if (!raw?.id) return null;
+  return {
+    id: raw.id,
+    type: raw.type ?? null,
+    status: raw.status ?? "queued",
+    marketplaceSlug: raw.marketplaceSlug ?? null,
+    mode: raw.mode ?? null,
+    requestedItems: raw.requestedItems ?? null,
+    processedItems: raw.processedItems ?? null,
+    successCount: raw.successCount ?? null,
+    errorCount: raw.errorCount ?? null,
+    progressPercent: raw.progressPercent ?? null,
+    currentStep: raw.currentStep ?? null,
+    currentMessage: raw.currentMessage ?? null,
+    elapsedSeconds: raw.elapsedSeconds ?? null,
+    etaSeconds: raw.etaSeconds ?? null,
+    createdAt: raw.createdAt ?? null,
+    updatedAt: raw.updatedAt ?? null,
+    startedAt: raw.startedAt ?? null,
+    finishedAt: raw.finishedAt ?? null,
+  };
+}
+
+function formatDurationLabel(seconds: number | null | undefined) {
+  if (!Number.isFinite(seconds ?? NaN) || seconds == null) return "0s";
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rem = total % 60;
+  if (!minutes) return `${rem}s`;
+  return `${minutes}m ${String(rem).padStart(2, "0")}s`;
+}
 
 // ── Tabs ─────────────────────────────────────────────────────────
 const TABS = [
@@ -109,6 +206,14 @@ export default function EditProductPage() {
   const [attrFields, setAttrFields] = useState<Field[]>([]);
   const [attrVals,   setAttrVals]   = useState<Record<string, string>>({});
   const [attrLoading,setAttrLoading]= useState(false);
+  const [aiMp, setAiMp] = useState("");
+  const [aiUseAllegro, setAiUseAllegro] = useState(true);
+  const [aiUseIcecat, setAiUseIcecat] = useState(true);
+  const [aiDrafts, setAiDrafts] = useState<Record<string, AIDraft>>({});
+  const [aiBusyMode, setAiBusyMode] = useState<"" | "description" | "attributes" | "all">("");
+  const [aiError, setAiError] = useState("");
+  const [aiJob, setAiJob] = useState<JobSummary | null>(null);
+  const aiJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Media
   const emptySlots = (): (string | null)[] => Array(SLOTS).fill(null);
@@ -121,7 +226,13 @@ export default function EditProductPage() {
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json()).then(j => {
-        if (j.data) { setMarketplaces(j.data); if (j.data.length) setAttrMp(j.data[0].slug); }
+        if (j.data) {
+          setMarketplaces(j.data);
+          if (j.data.length) {
+            setAttrMp(j.data[0].slug);
+            setAiMp(j.data[0].slug);
+          }
+        }
       }).catch(() => {});
   }, []);
 
@@ -191,6 +302,74 @@ export default function EditProductPage() {
       return { ...prev, [mp.slug]: { ...ex, ...val } };
     });
   };
+
+  const loadAIDrafts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/products/${id}/ai-drafts`, { headers: authHeaders(), cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać draftów AI");
+      const next: Record<string, AIDraft> = {};
+      for (const row of (json.data || [])) {
+        const draft = normalizeAIDraft(row);
+        if (draft.marketplaceSlug) next[draft.marketplaceSlug] = draft;
+      }
+      setAiDrafts(next);
+    } catch {
+      // Drafty AI są opcjonalne — błąd nie powinien blokować edycji produktu
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!aiJob?.id) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/jobs/${aiJob.id}`, { headers: authHeaders(), cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udało się pobrać statusu joba");
+        const nextJob = normalizeJobSummary(json.data);
+        if (!nextJob || cancelled) return;
+        setAiJob(nextJob);
+        if (nextJob.status === "done") {
+          await loadAIDrafts();
+          if (!cancelled) setAiJob(null);
+        } else if (nextJob.status === "error") {
+          setAiError(nextJob.currentMessage || "Generowanie AI nie powiodło się");
+          if (!cancelled) setAiJob(null);
+        }
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setAiError(error instanceof Error ? error.message : "Nie udało się pobrać statusu joba");
+          setAiJob(null);
+        }
+      }
+    };
+
+    void poll();
+    aiJobPollRef.current = setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      if (aiJobPollRef.current) clearInterval(aiJobPollRef.current);
+      aiJobPollRef.current = null;
+    };
+  }, [aiJob?.id, loadAIDrafts]);
+
+  useEffect(() => {
+    loadAIDrafts();
+  }, [loadAIDrafts]);
+
+  useEffect(() => {
+    if (aiMp) return;
+    const assigned = marketplaces.find(mp => {
+      const cat = mktCats[mp.slug];
+      return !!(cat?.categoryPath || cat?.allegroId || cat?.allegroName);
+    });
+    if (assigned) setAiMp(assigned.slug);
+  }, [aiMp, marketplaces, mktCats]);
 
   
   useEffect(() => {
@@ -267,6 +446,61 @@ export default function EditProductPage() {
       })
       .finally(() => setLoadingProduct(false));
   }, [id]);
+
+  const aiCurrentDraft = aiMp ? aiDrafts[aiMp] : undefined;
+  const aiCurrentCategory = aiMp
+    ? (mktCats[aiMp]?.categoryPath || mktCats[aiMp]?.allegroName || "")
+    : "";
+  const aiCanGenerate = !!aiMp && !!aiCurrentCategory && !loadingProduct;
+
+  const handleGenerateAI = async (mode: "description" | "attributes" | "all") => {
+    if (!aiMp) {
+      setAiError("Wybierz marketplace dla draftu AI");
+      return;
+    }
+    if (!aiCurrentCategory) {
+      setAiError("Najpierw przypisz kategorię marketplace");
+      return;
+    }
+
+    setAiBusyMode(mode);
+    setAiError("");
+    try {
+      const res = await fetch(`${API}/api/products/${id}/generate-ai`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          marketplaceSlug: aiMp,
+          mode,
+          useAllegro: aiUseAllegro,
+          useIcecat: aiUseIcecat,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się wygenerować draftu AI");
+      const queuedJob = normalizeJobSummary(json.data?.job);
+      if (!queuedJob) throw new Error("Brak danych joba");
+      setAiJob(queuedJob);
+    } catch (e: unknown) {
+      setAiError(e instanceof Error ? e.message : "Błąd generowania AI");
+    } finally {
+      setAiBusyMode("");
+    }
+  };
+
+  const applyDescriptionDraft = () => {
+    if (!aiCurrentDraft?.descriptionHtml) return;
+    setDescHtml(aiCurrentDraft.descriptionHtml);
+    setDesc(stripHtml(aiCurrentDraft.descriptionHtml));
+    setAiError("");
+  };
+
+  const applyAttributesDraft = () => {
+    if (!aiCurrentDraft?.attributesJson) return;
+    setAttrMp(aiMp);
+    setAttrVals(prev => ({ ...prev, ...aiCurrentDraft.attributesJson }));
+    setAiError("");
+  };
 
   const totalImages = globalSlots.filter(Boolean).length;
   const assignedCount = Object.values(mktCats).filter(c => c.categoryPath || c.allegroName).length;
@@ -453,6 +687,29 @@ export default function EditProductPage() {
         {/* ── Tab: Opis produktu ──────────────────────────────────── */}
         {tab === "opis" && (
           <div className="p-6 space-y-4">
+            <AIDraftPanel
+              title="AI dla opisu"
+              description="Generuj draft opisu pod wybrany marketplace. Draft zapisuje się osobno i nie nadpisuje formularza, dopóki go nie zastosujesz."
+              marketplaces={marketplaces}
+              selectedMarketplace={aiMp}
+              onSelectMarketplace={setAiMp}
+              selectedCategory={aiCurrentCategory}
+              useAllegro={aiUseAllegro}
+              onToggleAllegro={() => setAiUseAllegro(v => !v)}
+              useIcecat={aiUseIcecat}
+              onToggleIcecat={() => setAiUseIcecat(v => !v)}
+              busyMode={aiBusyMode}
+              canGenerate={aiCanGenerate}
+              onGenerateDescription={() => handleGenerateAI("description")}
+              onGenerateAttributes={() => handleGenerateAI("attributes")}
+              onGenerateAll={() => handleGenerateAI("all")}
+              error={aiError}
+              draft={aiCurrentDraft}
+              job={aiJob}
+              previewKind="description"
+              onApply={applyDescriptionDraft}
+            />
+
             <DescriptionBlock
               label="Opis"
               plain={desc} setPlain={setDesc}
@@ -485,6 +742,29 @@ export default function EditProductPage() {
         {/* ── Tab: Atrybuty ───────────────────────────────────────── */}
         {tab === "atrybuty" && (
           <div className="p-6">
+            <AIDraftPanel
+              title="AI dla atrybutów"
+              description="AI mapuje pola pod kategorię i marketplace. Po podglądzie możesz jednym kliknięciem przenieść draft do formularza."
+              marketplaces={marketplaces}
+              selectedMarketplace={aiMp}
+              onSelectMarketplace={setAiMp}
+              selectedCategory={aiCurrentCategory}
+              useAllegro={aiUseAllegro}
+              onToggleAllegro={() => setAiUseAllegro(v => !v)}
+              useIcecat={aiUseIcecat}
+              onToggleIcecat={() => setAiUseIcecat(v => !v)}
+              busyMode={aiBusyMode}
+              canGenerate={aiCanGenerate}
+              onGenerateDescription={() => handleGenerateAI("description")}
+              onGenerateAttributes={() => handleGenerateAI("attributes")}
+              onGenerateAll={() => handleGenerateAI("all")}
+              error={aiError}
+              draft={aiCurrentDraft}
+              job={aiJob}
+              previewKind="attributes"
+              onApply={applyAttributesDraft}
+            />
+
             {/* Marketplace selector */}
             <div className="flex gap-2 mb-5 flex-wrap">
               {marketplaces.map(mp => {
@@ -623,6 +903,247 @@ export default function EditProductPage() {
 }
 
 // ── Description block with HTML toggle ───────────────────────────
+function AIDraftPanel({
+  title,
+  description,
+  marketplaces,
+  selectedMarketplace,
+  onSelectMarketplace,
+  selectedCategory,
+  useAllegro,
+  onToggleAllegro,
+  useIcecat,
+  onToggleIcecat,
+  busyMode,
+  canGenerate,
+  onGenerateDescription,
+  onGenerateAttributes,
+  onGenerateAll,
+  error,
+  draft,
+  job,
+  previewKind,
+  onApply,
+}: {
+  title: string;
+  description: string;
+  marketplaces: Marketplace[];
+  selectedMarketplace: string;
+  onSelectMarketplace: (value: string) => void;
+  selectedCategory: string;
+  useAllegro: boolean;
+  onToggleAllegro: () => void;
+  useIcecat: boolean;
+  onToggleIcecat: () => void;
+  busyMode: "" | "description" | "attributes" | "all";
+  canGenerate: boolean;
+  onGenerateDescription: () => void;
+  onGenerateAttributes: () => void;
+  onGenerateAll: () => void;
+  error: string;
+  draft?: AIDraft;
+  job?: JobSummary | null;
+  previewKind: "description" | "attributes";
+  onApply: () => void;
+}) {
+  const jobActive = !!job && job.status !== "done" && job.status !== "error";
+  const previewAttributes = Object.entries(draft?.attributeConfidenceJson || {})
+    .filter(([, meta]) => meta?.value)
+    .slice(0, 8);
+  const hasDescription = !!draft?.descriptionHtml;
+  const hasAttributes = previewAttributes.length > 0;
+  const generateBlocked = !canGenerate || busyMode !== "" || jobActive;
+  const applyBlocked = previewKind === "description" ? !hasDescription : !hasAttributes;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+            {draft?.overallConfidence != null && (
+              <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
+              Trafność {draft.overallConfidence}%
+            </span>
+          )}
+          </div>
+          <p className="text-sm text-slate-500">{description}</p>
+        </div>
+
+        {job && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold uppercase tracking-widest">
+                {job.status === "queued" ? "W kolejce" : job.status === "processing" ? "Przetwarzanie" : job.status}
+              </span>
+              <span>{Math.max(0, Math.min(100, job.progressPercent ?? 0))}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-indigo-100">
+              <div
+                className="h-full rounded-full bg-indigo-600 transition-all"
+                style={{ width: `${Math.max(0, Math.min(100, job.progressPercent ?? 0))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2 text-[11px] text-indigo-600">
+              <span>{job.currentMessage || "Czekam na worker"}</span>
+              <span>
+                {formatDurationLabel(job.elapsedSeconds)}
+                {job.etaSeconds != null ? ` • ETA ${formatDurationLabel(job.etaSeconds)}` : ""}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 items-end">
+          <div>
+            <Label>Marketplace draftu</Label>
+            <Sel value={selectedMarketplace} onChange={e => onSelectMarketplace(e.target.value)}>
+            {marketplaces.map(mp => (
+              <option key={mp.slug} value={mp.slug}>{mp.name}</option>
+            ))}
+          </Sel>
+        </div>
+        <button
+          onClick={() => { if (!generateBlocked) onToggleAllegro(); }}
+          aria-disabled={generateBlocked}
+          className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition ${
+            useAllegro ? "border-indigo-300 bg-indigo-100 text-indigo-700" : "border-slate-200 bg-white text-slate-500"
+          } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-indigo-300"}`}
+        >
+          Allegro {useAllegro ? "ON" : "OFF"}
+        </button>
+        <button
+          onClick={() => { if (!generateBlocked) onToggleIcecat(); }}
+          aria-disabled={generateBlocked}
+          className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition ${
+            useIcecat ? "border-indigo-300 bg-indigo-100 text-indigo-700" : "border-slate-200 bg-white text-slate-500"
+          } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-indigo-300"}`}
+        >
+          Icecat {useIcecat ? "ON" : "OFF"}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-slate-400">Kategoria:</span>
+        <span className={`font-medium ${selectedCategory ? "text-slate-700" : "text-amber-600"}`}>
+          {selectedCategory || "Brak przypisanej kategorii"}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => { if (!generateBlocked) onGenerateDescription(); }}
+          aria-disabled={generateBlocked}
+          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+            busyMode === "description"
+              ? "border-indigo-300 bg-indigo-100 text-indigo-700"
+              : "border-slate-200 bg-white text-slate-700"
+          } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-indigo-300"}`}
+        >
+          {busyMode === "description" ? "Generuję opis..." : "Generuj opis"}
+        </button>
+        <button
+          onClick={() => { if (!generateBlocked) onGenerateAttributes(); }}
+          aria-disabled={generateBlocked}
+          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+            busyMode === "attributes"
+              ? "border-indigo-300 bg-indigo-100 text-indigo-700"
+              : "border-slate-200 bg-white text-slate-700"
+          } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-indigo-300"}`}
+        >
+          {busyMode === "attributes" ? "Generuję atrybuty..." : "Generuj atrybuty"}
+        </button>
+        <button
+          onClick={() => { if (!generateBlocked) onGenerateAll(); }}
+          aria-disabled={generateBlocked}
+          className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+            generateBlocked
+              ? "bg-indigo-300 text-white opacity-60 cursor-not-allowed"
+              : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-md"
+          }`}
+        >
+          {busyMode === "all" ? "Generuję wszystko..." : "Generuj wszystko"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      {draft && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <span className="font-semibold text-slate-700">
+              Draft: {draft.marketplaceName || draft.marketplaceSlug}
+            </span>
+            {draft.descriptionConfidence != null && (
+              <span className="px-2 py-1 rounded-full bg-slate-100">
+                Opis {draft.descriptionConfidence}%
+              </span>
+            )}
+            {draft.selectedSourcesJson.map(source => (
+              <span key={source} className="px-2 py-1 rounded-full bg-slate-100">{source}</span>
+            ))}
+          </div>
+
+          {previewKind === "description" ? (
+            hasDescription ? (
+              <>
+                <div
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: draft.descriptionHtml }}
+                />
+                <button
+                  onClick={() => { if (!applyBlocked) onApply(); }}
+                  aria-disabled={applyBlocked}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    applyBlocked
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-emerald-500 text-white hover:bg-emerald-600"
+                  }`}
+                >
+                  Zastosuj opis do formularza
+                </button>
+              </>
+            ) : (
+              <div className="text-sm text-slate-400">Brak draftu opisu dla tego marketplace.</div>
+            )
+          ) : hasAttributes ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                {previewAttributes.map(([fieldCode, meta]) => (
+                  <div key={fieldCode} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-700 truncate">{fieldCode}</span>
+                      <span className="text-[10px] text-slate-500">{meta.score}%</span>
+                    </div>
+                    <div className="text-sm text-slate-700 mt-1 break-words">{meta.value}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">{meta.source}</div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => { if (!applyBlocked) onApply(); }}
+                aria-disabled={applyBlocked}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                  applyBlocked
+                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-emerald-500 text-white hover:bg-emerald-600"
+                }`}
+              >
+                Zastosuj atrybuty do formularza
+              </button>
+            </>
+          ) : (
+            <div className="text-sm text-slate-400">Brak draftu atrybutów dla tego marketplace.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DescriptionBlock({ label, plain, setPlain, html, setHtml }: {
   label: string;
   plain: string; setPlain: (v: string) => void;

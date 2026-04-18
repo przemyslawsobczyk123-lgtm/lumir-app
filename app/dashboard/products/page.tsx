@@ -14,6 +14,28 @@ function authHeadersJSON() {
   return { "Content-Type": "application/json", Authorization: `Bearer ${t}` };
 }
 
+function getErrorMessage(err: unknown, fallback = "Wystapil blad"): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return fallback;
+}
+
+async function getResponseErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const json: unknown = await res.json();
+    if (typeof json === "object" && json !== null && "error" in json) {
+      const error = (json as { error?: unknown }).error;
+      if (typeof error === "string" && error) return error;
+    }
+  } catch {}
+
+  try {
+    const text = await res.text();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
 type Product = {
   id: number;
   ean: string | null;
@@ -25,6 +47,27 @@ type Product = {
   status: string;
   created_at: string;
   integrations: string | null;
+};
+type MarketplaceOption = { slug: string; name: string };
+type JobSummary = {
+  id: string;
+  type?: string | null;
+  status: string;
+  marketplaceSlug?: string | null;
+  mode?: string | null;
+  requestedItems?: number | null;
+  processedItems?: number | null;
+  successCount?: number | null;
+  errorCount?: number | null;
+  progressPercent?: number | null;
+  currentStep?: string | null;
+  currentMessage?: string | null;
+  elapsedSeconds?: number | null;
+  etaSeconds?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 };
 
 // ── Icons ──────────────────────────────────────────────────────────
@@ -58,6 +101,39 @@ function DotsIcon() {
   );
 }
 
+function normalizeJobSummary(raw: Partial<JobSummary> | null | undefined): JobSummary | null {
+  if (!raw?.id) return null;
+  return {
+    id: raw.id,
+    type: raw.type ?? null,
+    status: raw.status ?? "queued",
+    marketplaceSlug: raw.marketplaceSlug ?? null,
+    mode: raw.mode ?? null,
+    requestedItems: raw.requestedItems ?? null,
+    processedItems: raw.processedItems ?? null,
+    successCount: raw.successCount ?? null,
+    errorCount: raw.errorCount ?? null,
+    progressPercent: raw.progressPercent ?? null,
+    currentStep: raw.currentStep ?? null,
+    currentMessage: raw.currentMessage ?? null,
+    elapsedSeconds: raw.elapsedSeconds ?? null,
+    etaSeconds: raw.etaSeconds ?? null,
+    createdAt: raw.createdAt ?? null,
+    updatedAt: raw.updatedAt ?? null,
+    startedAt: raw.startedAt ?? null,
+    finishedAt: raw.finishedAt ?? null,
+  };
+}
+
+function formatDurationLabel(seconds: number | null | undefined) {
+  if (!Number.isFinite(seconds ?? NaN) || seconds == null) return "0s";
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rem = total % 60;
+  if (!minutes) return `${rem}s`;
+  return `${minutes}m ${String(rem).padStart(2, "0")}s`;
+}
+
 // ── Import modal ──────────────────────────────────────────────────
 type ImportState = "idle" | "uploading" | "processing" | "success" | "error";
 
@@ -68,6 +144,8 @@ const MP_LABELS: Record<string, string> = {
   decathlon:   "Decathlon",
   xkom:        "X-Kom",
 };
+
+const LIMIT = 50;
 
 function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -132,8 +210,9 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       setImportId(json.importId);
       setDetectedMp(json.detectedMarketplace || null);
       setState("processing");
-    } catch (err: any) {
-      setState("error"); setErrorMsg(err.message);
+    } catch (err: unknown) {
+      setState("error");
+      setErrorMsg(getErrorMessage(err));
     }
   };
 
@@ -142,10 +221,10 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="font-bold text-slate-800 text-lg">Import produkt&oacute;w</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+      <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-light)]">
+          <h2 className="font-bold text-[var(--text-primary)] text-lg">Import produkt&oacute;w</h2>
+          <button onClick={onClose} className="p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-lg transition">
             <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
@@ -190,18 +269,18 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
             onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) pickFile(f); }}
             onClick={() => fileRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-              dragging ? "border-indigo-400 bg-indigo-50"
-              : file   ? "border-green-400 bg-green-50"
-              :          "border-slate-200 hover:border-indigo-300 hover:bg-slate-50"
+              dragging ? "border-indigo-400 bg-indigo-500/10"
+              : file   ? "border-green-400 bg-green-500/10"
+              :          "border-[var(--border-default)] hover:border-indigo-300 hover:bg-[var(--bg-body)]"
             }`}>
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
               onChange={e => { if (e.target.files?.[0]) pickFile(e.target.files[0]); }} />
             {file ? (
-              <div className="text-sm font-semibold text-green-700">
+              <div className="text-sm font-semibold text-green-600">
                 {file.name} &middot; {(file.size / 1024).toFixed(0)} KB
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2 text-slate-400">
+              <div className="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
                 <UploadIcon />
                 <div className="text-sm">Przeci&#261;gnij plik lub kliknij</div>
                 <div className="text-xs">.xlsx &middot; .xls &middot; .csv</div>
@@ -210,7 +289,7 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50">
+        <div className="px-6 py-4 border-t border-[var(--border-light)] bg-[var(--bg-body)]">
           {state === "idle" && (
             <button onClick={doUpload} disabled={!file}
               className="w-full py-3 rounded-xl font-semibold text-white text-sm
@@ -236,9 +315,9 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
           )}
           {state === "error" && (
             <div className="space-y-2">
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3">{errorMsg}</div>
+              <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/25 rounded-xl p-3">{errorMsg}</div>
               <button onClick={() => { setState("idle"); setFile(null); setErrorMsg(""); setDetectedMp(null); }}
-                className="w-full py-2 rounded-xl text-slate-600 text-sm bg-slate-100 hover:bg-slate-200 transition">
+                className="w-full py-2 rounded-xl text-[var(--text-secondary)] text-sm bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] transition">
                 Spr&oacute;buj ponownie
               </button>
             </div>
@@ -269,9 +348,9 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
 
       {/* Dialog */}
-      <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 animate-[fadeInUp_0.15s_ease-out]">
+      <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl border border-[var(--border-default)] w-full max-w-md p-6 animate-[fadeInUp_0.15s_ease-out]">
         {/* Icon */}
-        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-100 mx-auto mb-4">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-500/10 mx-auto mb-4">
           <svg viewBox="0 0 24 24" className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
             <polyline points="3 6 5 6 21 6"/>
             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
@@ -280,10 +359,10 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
           </svg>
         </div>
 
-        <h2 className="text-lg font-bold text-slate-800 text-center mb-1">
+        <h2 className="text-lg font-bold text-[var(--text-primary)] text-center mb-1">
           {count === 1 ? "Usun\u0105\u0107 produkt?" : `Usun\u0105\u0107 ${count} produkt\u00f3w?`}
         </h2>
-        <p className="text-sm text-slate-500 text-center mb-6">
+        <p className="text-sm text-[var(--text-secondary)] text-center mb-6">
           {count === 1
             ? "Ten produkt zostanie trwale usuni\u0119ty wraz ze wszystkimi przypisanymi atrybutami i kategoriami. Tej operacji nie mo\u017Cna cofn\u0105\u0107."
             : `Wybrane ${count} produkt\u00f3w zostanie trwale usuni\u0119tych wraz ze wszystkimi przypisanymi atrybutami i kategoriami. Tej operacji nie mo\u017Cna cofn\u0105\u0107.`}
@@ -291,8 +370,8 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
 
         <div className="flex gap-3">
           <button onClick={onCancel} disabled={loading}
-            className="flex-1 px-4 py-2.5 rounded-xl border-2 border-slate-200 text-sm font-semibold
-              text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-50">
+            className="flex-1 px-4 py-2.5 rounded-xl border-2 border-[var(--border-default)] text-sm font-semibold
+              text-[var(--text-secondary)] hover:bg-[var(--bg-body)] hover:border-[var(--border-input)] transition disabled:opacity-50">
             Anuluj
           </button>
           <button onClick={onConfirm} disabled={loading}
@@ -310,6 +389,247 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
         </div>
       </div>
     </div>
+  );
+}
+
+function BulkAIModal({
+  count,
+  selectedIds,
+  marketplaces,
+  defaultMarketplace,
+  onClose,
+}: {
+  count: number;
+  selectedIds: number[];
+  marketplaces: MarketplaceOption[];
+  defaultMarketplace: string;
+  onClose: () => void;
+}) {
+  const [marketplaceSlug, setMarketplaceSlug] = useState(defaultMarketplace || marketplaces[0]?.slug || "");
+  const [mode, setMode] = useState<"all" | "description" | "attributes">("all");
+  const [useAllegro, setUseAllegro] = useState(true);
+  const [useIcecat, setUseIcecat] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [job, setJob] = useState<JobSummary | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (defaultMarketplace) setMarketplaceSlug(defaultMarketplace);
+  }, [defaultMarketplace]);
+
+  useEffect(() => {
+    if (!job?.id) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/jobs/${job.id}`, { headers: authHeaders(), cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udało się pobrać statusu joba");
+        const nextJob = normalizeJobSummary(json.data);
+        if (!nextJob || cancelled) return;
+        setJob(nextJob);
+        if (nextJob.status === "done" || nextJob.status === "error") {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(getErrorMessage(err, "Nie udało się pobrać statusu joba"));
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    };
+
+    void poll();
+    pollRef.current = setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+  }, [job?.id]);
+
+  const jobActive = !!job && job.status !== "done" && job.status !== "error";
+  const submitBlocked = submitting || jobActive || !marketplaceSlug || selectedIds.length === 0 || selectedIds.length > 10;
+
+  const handleSubmit = async () => {
+    if (submitBlocked) return;
+    setSubmitting(true);
+    setError("");
+    setJob(null);
+    try {
+      const res = await fetch(`${API}/api/products/generate-ai-bulk`, {
+        method: "POST",
+        headers: authHeadersJSON(),
+        body: JSON.stringify({
+          productIds: selectedIds,
+          marketplaceSlug,
+          mode,
+          useAllegro,
+          useIcecat,
+        }),
+      });
+      if (!res.ok) throw new Error(await getResponseErrorMessage(res, "Nie udalo sie wygenerowac draftow AI"));
+      const json = await res.json();
+      setJob(normalizeJobSummary(json.data?.job));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Nie udalo sie wygenerowac draftow AI"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl border border-[var(--border-default)] w-full max-w-xl p-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">Bulk AI</h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Generowanie draftow dla {count} produktow. Limit MVP: 10 sztuk na jedno odpalenie.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg text-[var(--text-tertiary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] transition">
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">Marketplace</div>
+            <select
+              value={marketplaceSlug}
+              onChange={e => setMarketplaceSlug(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] text-sm text-[var(--text-primary)] outline-none focus:border-indigo-400"
+            >
+              {marketplaces.map(mp => (
+                <option key={mp.slug} value={mp.slug}>{mp.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">Zakres</div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "all", label: "Opis + atrybuty" },
+                { value: "description", label: "Tylko opis" },
+                { value: "attributes", label: "Tylko atrybuty" },
+              ].map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => setMode(option.value as "all" | "description" | "attributes")}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+                    mode === option.value
+                      ? "bg-indigo-600 border-indigo-600 text-white"
+                      : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">Zrodla</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setUseAllegro(v => !v)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+                  useAllegro
+                    ? "bg-indigo-100 border-indigo-300 text-indigo-700"
+                    : "border-[var(--border-default)] text-[var(--text-secondary)]"
+                }`}
+              >
+                Allegro {useAllegro ? "ON" : "OFF"}
+              </button>
+              <button
+                onClick={() => setUseIcecat(v => !v)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+                  useIcecat
+                    ? "bg-indigo-100 border-indigo-300 text-indigo-700"
+                    : "border-[var(--border-default)] text-[var(--text-secondary)]"
+                }`}
+              >
+                Icecat {useIcecat ? "ON" : "OFF"}
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Produkty bez przypisanej kategorii dla wybranego marketplace wroca jako blad per produkt.
+          </div>
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+              {error}
+            </div>
+          )}
+
+            {job && (
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-3 space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
+                    {job.status === "queued" ? "W kolejce" : job.status === "processing" ? "Przetwarzanie" : job.status}
+                  </span>
+                  <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                    {Math.max(0, Math.min(100, job.progressPercent ?? 0))}%
+                  </span>
+                  <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                    {formatDurationLabel(job.elapsedSeconds)}
+                  </span>
+                  {job.etaSeconds != null && (
+                    <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                      ETA {formatDurationLabel(job.etaSeconds)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-indigo-600 transition-all"
+                    style={{ width: `${Math.max(0, Math.min(100, job.progressPercent ?? 0))}%` }}
+                  />
+                </div>
+
+                <div className="text-sm text-[var(--text-secondary)]">
+                  {job.currentMessage || (job.status === "done"
+                    ? "Job zakończony. Otwórz produkt, aby zobaczyć drafty."
+                    : "Czekam na worker...")}
+                </div>
+              </div>
+            )}
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-default)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-body)] transition"
+          >
+            Zamknij
+          </button>
+          <button
+            onClick={() => { void handleSubmit(); }}
+            aria-disabled={submitBlocked}
+            className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
+              submitBlocked
+                ? "bg-indigo-300 text-white cursor-not-allowed"
+                : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg"
+            }`}
+          >
+              {submitting ? "Generowanie..." : jobActive ? "W toku..." : "Generuj drafty AI"}
+            </button>
+          </div>
+        </div>
+      </div>
   );
 }
 
@@ -333,12 +653,31 @@ export default function ProductsPage() {
   const [marketplaces, setMarketplaces]   = useState<{slug:string;name:string}[]>([]);
   const [page, setPage]                   = useState(1);
   const [showImport, setShowImport]       = useState(false);
+  const [showBulkAI, setShowBulkAI]       = useState(false);
   const [selected, setSelected]           = useState<Set<number>>(new Set());
   const [openMenu, setOpenMenu]           = useState<number | null>(null);
   const [exporting, setExporting]         = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting]           = useState(false);
-  const LIMIT = 50;
+  const requestSeq = useRef(0);
+  const loadProducts = useCallback(async (s: string, p: number, st: string, mp: string) => {
+    const requestId = ++requestSeq.current;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ search: s, page: String(p), limit: String(LIMIT), status: st, marketplace: mp });
+      const res = await fetch(`${API}/api/products/list?${params}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Blad ladowania produktow");
+      if (requestSeq.current !== requestId) return;
+      setProducts(json.data || []);
+      setTotal(json.total || 0);
+    } catch {
+      if (requestSeq.current !== requestId) return;
+      setProducts([]);
+    } finally {
+      if (requestSeq.current === requestId) setLoading(false);
+    }
+  }, []);
 
   // Załaduj listę marketplace do filtra
   useEffect(() => {
@@ -346,28 +685,13 @@ export default function ProductsPage() {
       .then(r => r.json()).then(j => { if (j.data) setMarketplaces(j.data); }).catch(() => {});
   }, []);
 
-  const loadProducts = useCallback(async (s = search, p = page, st = statusFilter, mp = mpFilter) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ search: s, page: String(p), limit: String(LIMIT), status: st, marketplace: mp });
-      const res    = await fetch(`${API}/api/products/list?${params}`, { headers: authHeaders() });
-      const json   = await res.json();
-      if (!res.ok) throw new Error(json.error);
-      setProducts(json.data || []);
-      setTotal(json.total || 0);
-    } catch {
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, page, statusFilter, mpFilter]);
-
-  useEffect(() => { loadProducts(); }, []);
-
   useEffect(() => {
-    const t = setTimeout(() => { setPage(1); loadProducts(search, 1, statusFilter, mpFilter); }, 300);
+    const t = setTimeout(() => {
+      setPage(1);
+      loadProducts(search, 1, statusFilter, mpFilter);
+    }, 300);
     return () => clearTimeout(t);
-  }, [search, statusFilter, mpFilter]);
+  }, [loadProducts, search, statusFilter, mpFilter]);
 
   useEffect(() => {
     const handler = () => setOpenMenu(null);
@@ -375,10 +699,18 @@ export default function ProductsPage() {
     return () => document.removeEventListener("click", handler);
   }, []);
 
-  const handleDelete = async (id: number) => {
+    const handleDelete = async (id: number) => {
     if (!confirm("Usun ten produkt?")) return;
-    await fetch(`${API}/api/products/${id}`, { method: "DELETE", headers: authHeadersJSON() });
-    loadProducts();
+    try {
+      const res = await fetch(`${API}/api/products/${id}`, { method: "DELETE", headers: authHeadersJSON() });
+      if (!res.ok) {
+        alert(await getResponseErrorMessage(res, "Nie udalo sie usunac produktu"));
+        return;
+      }
+      loadProducts(search, page, statusFilter, mpFilter);
+    } catch {
+      alert("Nie udalo sie usunac produktu. Sprawdz polaczenie i sprobuj ponownie.");
+    }
   };
 
   const handleExport = async () => {
@@ -395,26 +727,43 @@ export default function ProductsPage() {
       const a    = document.createElement("a");
       a.href = url; a.download = `${mpFilter}_export_${Date.now()}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) { alert("B\u0142\u0105d eksportu: " + e.message); }
+    } catch (err: unknown) { alert("B\u0142\u0105d eksportu: " + getErrorMessage(err)); }
     finally { setExporting(false); }
   };
 
-  const handleDeleteConfirmed = async () => {
+    const handleDeleteConfirmed = async () => {
     setDeleting(true);
     try {
       for (const id of selected) {
-        await fetch(`${API}/api/products/${id}`, { method: "DELETE", headers: authHeadersJSON() });
+        try {
+          const res = await fetch(`${API}/api/products/${id}`, { method: "DELETE", headers: authHeadersJSON() });
+          if (!res.ok) {
+            alert(await getResponseErrorMessage(res, "Nie udalo sie usunac wybranych produktow"));
+            return;
+          }
+        } catch {
+          alert("Nie udalo sie usunac wybranych produktow. Sprawdz polaczenie i sprobuj ponownie.");
+          return;
+        }
       }
       setSelected(new Set());
       setShowDeleteConfirm(false);
-      loadProducts();
+      loadProducts(search, page, statusFilter, mpFilter);
     } finally {
       setDeleting(false);
     }
   };
 
   const toggleSelect = (id: number) => {
-    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
   const toggleAll = () => {
     setSelected(selected.size === products.length ? new Set() : new Set(products.map(p => p.id)));
@@ -432,13 +781,14 @@ export default function ProductsPage() {
         return mp && mp.missing === 0;
       }).length
     : 0;
+  const selectedOverBulkLimit = selected.size > 10;
 
   return (
     <div>
       {showImport && (
         <ImportModal
           onClose={() => setShowImport(false)}
-          onSuccess={() => { setShowImport(false); loadProducts(); }}
+          onSuccess={() => { setShowImport(false); loadProducts(search, page, statusFilter, mpFilter); }}
         />
       )}
 
@@ -451,18 +801,28 @@ export default function ProductsPage() {
         />
       )}
 
+      {showBulkAI && (
+        <BulkAIModal
+          count={selected.size}
+          selectedIds={[...selected]}
+          marketplaces={marketplaces}
+          defaultMarketplace={mpFilter}
+          onClose={() => setShowBulkAI(false)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Lista produkt&oacute;w</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
+          <h1 className="text-xl font-bold text-[var(--text-primary)]">Lista produkt&oacute;w</h1>
+          <p className="text-sm text-[var(--text-tertiary)] mt-0.5">
             {total > 0 ? `${total} produkt${total === 1 ? "" : "ow"}` : "Brak produkt&oacute;w"}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm text-slate-700
-              bg-white border border-slate-200 hover:bg-slate-50 shadow-sm transition">
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm text-[var(--text-primary)]
+              bg-[var(--bg-card)] border border-[var(--border-default)] hover:bg-[var(--bg-body)] shadow-sm transition">
             <UploadIcon /> Import
           </button>
           <button onClick={() => router.push("/dashboard/new-product")}
@@ -486,8 +846,8 @@ export default function ProductsPage() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Szukaj po nazwie, EAN, SKU, marce..."
-              className="w-full pl-9 pr-4 py-2 rounded-xl text-sm bg-white border border-slate-200
-                text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"
+              className="w-full pl-9 pr-4 py-2 rounded-xl text-sm bg-[var(--bg-input)] border border-[var(--border-default)]
+                text-[var(--text-primary)] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 transition"
             />
           </div>
           <div className="flex items-center gap-1">
@@ -496,7 +856,7 @@ export default function ProductsPage() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                   statusFilter === f.value
                     ? "bg-indigo-600 text-white"
-                    : "text-slate-500 bg-white border border-slate-200 hover:bg-slate-50"
+                    : "text-[var(--text-secondary)] bg-[var(--bg-card)] border border-[var(--border-default)] hover:bg-[var(--bg-body)]"
                 }`}>
                 {f.label}
               </button>
@@ -507,12 +867,12 @@ export default function ProductsPage() {
         {/* Filtr marketplace */}
         {marketplaces.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Marketplace:</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">Marketplace:</span>
             <button onClick={() => setMpFilter("")}
               className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
                 mpFilter === ""
-                  ? "bg-slate-700 text-white border-slate-700"
-                  : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50"
+                  ? "bg-[var(--text-primary)] text-[var(--bg-card)] border-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] bg-[var(--bg-card)] border-[var(--border-default)] hover:bg-[var(--bg-body)]"
               }`}>
               Wszystkie
             </button>
@@ -520,8 +880,8 @@ export default function ProductsPage() {
               <button key={mp.slug} onClick={() => setMpFilter(mp.slug)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
                   mpFilter === mp.slug
-                    ? "bg-slate-700 text-white border-slate-700"
-                    : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50"
+                    ? "bg-[var(--text-primary)] text-[var(--bg-card)] border-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] bg-[var(--bg-card)] border-[var(--border-default)] hover:bg-[var(--bg-body)]"
                 }`}>
                 {mp.name}
               </button>
@@ -552,6 +912,29 @@ export default function ProductsPage() {
           )}
 
           <button
+            onClick={() => {
+              if (selectedOverBulkLimit) return;
+              setShowBulkAI(true);
+            }}
+            aria-disabled={selectedOverBulkLimit}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              selectedOverBulkLimit
+                ? "bg-indigo-200 text-indigo-500 cursor-not-allowed"
+                : "bg-indigo-600 text-white hover:bg-indigo-700"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5.64 5.64l4.24 4.24"/><path d="M14.12 14.12l4.24 4.24"/>
+              <path d="M3 12h6"/><path d="M15 12h6"/><path d="M5.64 18.36l4.24-4.24"/><path d="M14.12 9.88l4.24-4.24"/>
+            </svg>
+            Generuj AI
+          </button>
+
+          {selectedOverBulkLimit && (
+            <span className="text-amber-700 font-medium text-xs">Limit AI MVP: max 10 produktow naraz</span>
+          )}
+
+          <button
             onClick={() => setShowDeleteConfirm(true)}
             className="ml-auto text-red-500 hover:text-red-700 font-medium text-xs">
             Usu&#324; zaznaczone
@@ -560,10 +943,10 @@ export default function ProductsPage() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200">
+      <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden shadow-sm border border-[var(--border-default)]">
 
         {/* Column headers */}
-        <div className="grid items-center px-4 py-3 bg-slate-50 border-b border-slate-100"
+        <div className="grid items-center px-4 py-3 bg-[var(--bg-table-header)] border-b border-[var(--border-light)]"
           style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}>
           <div className="flex items-center justify-center">
             <input type="checkbox" checked={allChecked} onChange={toggleAll}
@@ -578,13 +961,13 @@ export default function ProductsPage() {
             </svg>
           </div>
           {["PRODUKT", "INTEGRACJE", ""].map((h, i) => (
-            <div key={i} className="text-[10px] font-bold uppercase tracking-widest text-slate-400 pl-2">{h}</div>
+            <div key={i} className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)] pl-2">{h}</div>
           ))}
         </div>
 
         {/* Body */}
         {loading ? (
-          <div className="flex items-center justify-center py-24 gap-3 text-slate-400">
+          <div className="flex items-center justify-center py-24 gap-3 text-[var(--text-tertiary)]">
             <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -593,17 +976,17 @@ export default function ProductsPage() {
           </div>
         ) : products.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.2}>
+            <div className="w-14 h-14 rounded-2xl bg-[var(--bg-empty-icon)] flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="w-7 h-7 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.2}>
                 <rect x="2" y="7" width="20" height="14" rx="2"/>
                 <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
               </svg>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-slate-600 mb-1">
+              <div className="font-semibold text-[var(--text-secondary)] mb-1">
                 {search || statusFilter ? "Brak wynikow" : "Brak produktow"}
               </div>
-              <div className="text-sm text-slate-400">
+              <div className="text-sm text-[var(--text-tertiary)]">
                 {!search && !statusFilter
                   ? "Dodaj produkt recznie lub zaimportuj plik CSV / Excel."
                   : "Zmien filtry lub wyszukaj inna fraze."}
@@ -618,7 +1001,7 @@ export default function ProductsPage() {
                 </button>
                 <button onClick={() => router.push("/dashboard/new-product")}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium
-                    text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+                    text-[var(--text-secondary)] bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] transition">
                   <PlusIcon /> Dodaj recznie
                 </button>
               </div>
@@ -626,7 +1009,7 @@ export default function ProductsPage() {
           </div>
         ) : (
           <>
-            <div className="divide-y divide-slate-50">
+            <div className="divide-y divide-[var(--border-light)]">
               {products.map(p => {
                 const integList  = parseIntegrations(p.integrations);
                 const isSelected = selected.has(p.id);
@@ -634,7 +1017,7 @@ export default function ProductsPage() {
                 return (
                   <div key={p.id}
                     className={`grid items-center px-4 py-3 group cursor-pointer transition-colors ${
-                      isSelected ? "bg-indigo-50/60" : "hover:bg-slate-50"
+                      isSelected ? "bg-[var(--bg-card-selected)]" : "hover:bg-[var(--bg-card-hover)]"
                     }`}
                     style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}
                     onClick={() => router.push(`/dashboard/products/${p.id}`)}>
@@ -647,7 +1030,7 @@ export default function ProductsPage() {
                     </div>
 
                     {/* Thumbnail */}
-                    <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center flex-shrink-0 border border-slate-200">
+                    <div className="w-9 h-9 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex items-center justify-center flex-shrink-0 border border-[var(--img-placeholder-border)]">
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.title || ""} className="w-full h-full object-cover"
                           onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -663,8 +1046,8 @@ export default function ProductsPage() {
                     {/* Product info */}
                     <div className="min-w-0 pl-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-800 truncate">
-                          {p.title || <span className="text-slate-400 font-normal italic">Brak nazwy</span>}
+                        <span className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                          {p.title || <span className="text-[var(--text-tertiary)] font-normal italic">Brak nazwy</span>}
                         </span>
                         {p.brand && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0
@@ -674,10 +1057,10 @@ export default function ProductsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-[10px] text-slate-400 font-mono">ID {p.id}</span>
-                        {p.sku  && <span className="text-[10px] text-slate-400 font-mono">SKU {p.sku}</span>}
-                        {p.ean  && <span className="text-[10px] text-slate-400 font-mono">EAN {p.ean}</span>}
-                        {p.asin && <span className="text-[10px] text-slate-400 font-mono">ASIN {p.asin}</span>}
+                        <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ID {p.id}</span>
+                        {p.sku  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">SKU {p.sku}</span>}
+                        {p.ean  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">EAN {p.ean}</span>}
+                        {p.asin && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ASIN {p.asin}</span>}
                       </div>
                     </div>
 
@@ -697,7 +1080,7 @@ export default function ProductsPage() {
                                       : "bg-green-50 text-green-700 border-green-200"
                                     : isFiltered
                                       ? "bg-amber-100 text-amber-800 border-amber-300"
-                                      : "bg-slate-100 text-slate-600 border-slate-200"
+                                      : "bg-[var(--bg-input)] text-[var(--text-secondary)] border-[var(--border-default)]"
                                 }`}>
                                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ready ? "bg-green-500" : "bg-amber-400"}`} />
                                 {integ.name}
@@ -712,15 +1095,15 @@ export default function ProductsPage() {
                     <div className="relative flex justify-center" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === p.id ? null : p.id); }}
-                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100
+                        className="p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)]
                           rounded-lg transition opacity-0 group-hover:opacity-100">
                         <DotsIcon />
                       </button>
                       {openMenu === p.id && (
-                        <div className="absolute right-0 top-8 z-20 w-40 bg-white rounded-xl shadow-xl
-                          border border-slate-200 overflow-hidden">
+                        <div className="absolute right-0 top-8 z-20 w-40 bg-[var(--menu-bg)] rounded-xl shadow-xl
+                          border border-[var(--border-default)] overflow-hidden">
                           <button onClick={() => router.push(`/dashboard/products/${p.id}`)}
-                            className="w-full text-left px-3 py-2.5 text-xs text-slate-600 font-medium hover:bg-slate-50 transition">
+                            className="w-full text-left px-3 py-2.5 text-xs text-[var(--text-secondary)] font-medium hover:bg-[var(--bg-body)] transition">
                             Edytuj
                           </button>
                           <button onClick={() => handleDelete(p.id)}
@@ -737,34 +1120,34 @@ export default function ProductsPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50">
-                <div className="text-xs text-slate-400">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-light)] bg-[var(--bg-table-header)]">
+                <div className="text-xs text-[var(--text-tertiary)]">
                   Strona {page} z {totalPages} &middot; {total} produkt&oacute;w
                 </div>
                 <div className="flex gap-1">
                   <button
                     disabled={page === 1}
-                    onClick={() => { const np = page - 1; setPage(np); loadProducts(search, np, statusFilter); }}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-slate-200
-                      text-slate-600 hover:bg-white disabled:opacity-40 transition">
+                    onClick={() => { const np = page - 1; setPage(np); loadProducts(search, np, statusFilter, mpFilter); }}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border-default)]
+                      text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)] disabled:opacity-40 transition">
                     &larr;
                   </button>
                   {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(pg => (
                     <button key={pg}
-                      onClick={() => { setPage(pg); loadProducts(search, pg, statusFilter); }}
+                      onClick={() => { setPage(pg); loadProducts(search, pg, statusFilter, mpFilter); }}
                       className={`w-8 h-8 text-xs rounded-lg border transition font-medium ${
                         page === pg
                           ? "bg-indigo-600 border-indigo-600 text-white"
-                          : "border-slate-200 text-slate-600 hover:bg-white"
+                          : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)]"
                       }`}>
                       {pg}
                     </button>
                   ))}
                   <button
                     disabled={page === totalPages}
-                    onClick={() => { const np = page + 1; setPage(np); loadProducts(search, np, statusFilter); }}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-slate-200
-                      text-slate-600 hover:bg-white disabled:opacity-40 transition">
+                    onClick={() => { const np = page + 1; setPage(np); loadProducts(search, np, statusFilter, mpFilter); }}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border-default)]
+                      text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)] disabled:opacity-40 transition">
                     &rarr;
                   </button>
                 </div>

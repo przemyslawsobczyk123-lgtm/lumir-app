@@ -37,23 +37,23 @@ const TABS = [
 // ── Small UI ─────────────────────────────────────────────────────
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">
+    <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">
       {children}{required && <span className="text-red-400 ml-1">*</span>}
     </label>
   );
 }
 function Inp(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <input {...props} className={`w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 bg-white
-      text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-4
-      focus:ring-indigo-100 transition text-sm ${props.className ?? ""}`} />
+    <input {...props} className={`w-full px-3 py-2.5 rounded-xl border-2 border-[var(--border-input)] bg-[var(--bg-input)]
+      text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none focus:border-indigo-400 focus:ring-4
+      focus:ring-indigo-500/20 transition text-sm ${props.className ?? ""}`} />
   );
 }
 function Sel({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
   return (
     <div className="relative">
-      <select {...props} className={`w-full appearance-none px-3 py-2.5 rounded-xl border-2 border-slate-200
-        bg-white text-slate-800 outline-none focus:border-indigo-400 pr-8 cursor-pointer text-sm
+      <select {...props} className={`w-full appearance-none px-3 py-2.5 rounded-xl border-2 border-[var(--border-input)]
+        bg-[var(--bg-input)] text-[var(--text-primary)] outline-none focus:border-indigo-400 pr-8 cursor-pointer text-sm
         transition ${props.className ?? ""}`}>
         {children}
       </select>
@@ -206,10 +206,10 @@ function AllegroImportModal({ onClose, onImport }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl flex flex-col max-h-[85vh]">
+      <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl border border-[var(--border-default)] w-full max-w-2xl flex flex-col max-h-[85vh]">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-light)]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
               <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -217,11 +217,11 @@ function AllegroImportModal({ onClose, onImport }: {
               </svg>
             </div>
             <div>
-              <div className="font-semibold text-slate-800 text-sm">Import z Allegro</div>
-              <div className="text-xs text-slate-400">Wybierz ofert&#x119; aby uzupe&#x142;ni&#x107; dane produktu</div>
+              <div className="font-semibold text-[var(--text-primary)] text-sm">Import z Allegro</div>
+              <div className="text-xs text-[var(--text-tertiary)]">Wybierz ofert&#x119; aby uzupe&#x142;ni&#x107; dane produktu</div>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition">
             <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
@@ -229,13 +229,13 @@ function AllegroImportModal({ onClose, onImport }: {
         {/* No accounts */}
         {!loading && accounts.length === 0 && (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12 px-6 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-2">
-              <svg viewBox="0 0 24 24" className="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <div className="w-16 h-16 rounded-2xl bg-[var(--bg-empty-icon)] flex items-center justify-center mb-2">
+              <svg viewBox="0 0 24 24" className="w-8 h-8 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.5}>
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
               </svg>
             </div>
-            <div className="font-semibold text-slate-700">Brak po&#322;&#261;czonego konta Allegro</div>
-            <div className="text-sm text-slate-400">Przejd&#378; do Ustawie&#324; i po&#322;&#261;cz swoje konto Allegro, aby m&#243;c importowa&#263; oferty.</div>
+            <div className="font-semibold text-[var(--text-primary)]">Brak po&#322;&#261;czonego konta Allegro</div>
+            <div className="text-sm text-[var(--text-tertiary)]">Przejd&#378; do Ustawie&#324; i po&#322;&#261;cz swoje konto Allegro, aby m&#243;c importowa&#263; oferty.</div>
           </div>
         )}
 
@@ -243,17 +243,17 @@ function AllegroImportModal({ onClose, onImport }: {
         {accounts.length > 0 && (
           <>
             {/* Account bar */}
-            <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-3 flex-wrap">
+            <div className="px-6 py-3 bg-[var(--bg-body)] border-b border-[var(--border-light)] flex items-center gap-3 flex-wrap">
               {accounts.map(a => (
                 <button key={a.id}
                   onClick={() => { setEnv(a.environment as "production" | "sandbox"); setPage(0); }}
                   disabled={a.status !== "valid"}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
                     env === a.environment && a.status === "valid"
-                      ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                      ? "border-indigo-400 bg-indigo-500/10 text-indigo-600"
                       : a.status !== "valid"
-                        ? "border-slate-200 text-slate-300 cursor-not-allowed"
-                        : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                        ? "border-[var(--border-default)] text-[var(--text-muted)] cursor-not-allowed"
+                        : "border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--border-input)] hover:text-[var(--text-primary)]"
                   }`}>
                   <span className={`w-2 h-2 rounded-full ${a.status === "valid" ? "bg-green-500" : "bg-red-400"}`} />
                   {a.allegro_login || a.environment}
@@ -262,7 +262,7 @@ function AllegroImportModal({ onClose, onImport }: {
                   }`}>{a.environment === "production" ? "PROD" : "SBX"}</span>
                 </button>
               ))}
-              <div className="ml-auto text-xs text-slate-400">{total > 0 && `${total} ofert`}</div>
+              <div className="ml-auto text-xs text-[var(--text-tertiary)]">{total > 0 && `${total} ofert`}</div>
             </div>
 
             {/* Search */}
@@ -273,7 +273,7 @@ function AllegroImportModal({ onClose, onImport }: {
                 </svg>
                 <input value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Szukaj po nazwie..."
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 text-slate-700 placeholder-slate-400" />
+                  className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-[var(--border-default)] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] bg-[var(--bg-input)]" />
               </div>
             </div>
 
@@ -295,7 +295,7 @@ function AllegroImportModal({ onClose, onImport }: {
             {/* Offers list */}
             <div className="flex-1 overflow-y-auto px-6 py-3 space-y-2 min-h-0">
               {loading ? (
-                <div className="flex items-center justify-center py-12 gap-2 text-slate-400 text-sm">
+                <div className="flex items-center justify-center py-12 gap-2 text-[var(--text-tertiary)] text-sm">
                   <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -314,9 +314,9 @@ function AllegroImportModal({ onClose, onImport }: {
                 </div>
               ) : filtered.map(offer => (
                 <button key={offer.id} onClick={() => handleSelect(offer)} disabled={importing}
-                  className="w-full text-left flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 transition group">
+                  className="w-full text-left flex items-center gap-3 p-3 rounded-xl border border-[var(--border-default)] hover:border-indigo-300 hover:bg-indigo-500/5 transition group">
                   {/* Thumbnail */}
-                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex-shrink-0 flex items-center justify-center">
                     {offer.primaryImage?.url ? (
                       <img src={offer.primaryImage.url} alt={offer.name} className="w-full h-full object-contain" />
                     ) : (
@@ -327,10 +327,10 @@ function AllegroImportModal({ onClose, onImport }: {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-slate-800 group-hover:text-indigo-700 line-clamp-2 leading-tight">{offer.name}</div>
+                    <div className="text-sm font-medium text-[var(--text-primary)] group-hover:text-indigo-600 line-clamp-2 leading-tight">{offer.name}</div>
                     <div className="flex items-center gap-3 mt-1.5">
                       {offer.sellingMode?.price && (
-                        <span className="text-xs font-semibold text-slate-600">
+                        <span className="text-xs font-semibold text-[var(--text-secondary)]">
                           {parseFloat(offer.sellingMode.price.amount).toFixed(2)} {offer.sellingMode.price.currency}
                         </span>
                       )}
@@ -343,7 +343,7 @@ function AllegroImportModal({ onClose, onImport }: {
                               : "bg-amber-100 text-amber-700"
                         }`}>{offer.publication.status}</span>
                       )}
-                      <span className="text-[10px] text-slate-400 font-mono truncate">ID: {offer.id}</span>
+                      <span className="text-[10px] text-[var(--text-tertiary)] font-mono truncate">ID: {offer.id}</span>
                     </div>
                   </div>
                   <div className="flex-shrink-0">
@@ -362,14 +362,14 @@ function AllegroImportModal({ onClose, onImport }: {
 
             {/* Pagination */}
             {pages > 1 && (
-              <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between">
+              <div className="px-6 py-3 border-t border-[var(--border-light)] flex items-center justify-between">
                 <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || loading}
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold text-[var(--text-secondary)] bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] disabled:opacity-40 disabled:cursor-not-allowed transition">
                   &#8592; Poprzednia
                 </button>
-                <span className="text-xs text-slate-400">Strona {page + 1} z {pages}</span>
+                <span className="text-xs text-[var(--text-tertiary)]">Strona {page + 1} z {pages}</span>
                 <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1 || loading}
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold text-[var(--text-secondary)] bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] disabled:opacity-40 disabled:cursor-not-allowed transition">
                   Nast&#x119;pna &#8594;
                 </button>
               </div>
@@ -625,7 +625,7 @@ export default function NewProductPage() {
 
       {/* Back */}
       <button onClick={() => router.push("/dashboard/products")}
-        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition mb-5">
+        className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition mb-5">
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}><path d="m15 18-6-6 6-6"/></svg>
         Wróć do listy produktów
       </button>
@@ -633,7 +633,7 @@ export default function NewProductPage() {
       {/* Header */}
       <div className="flex items-start gap-4 mb-6">
         {/* Thumbnail */}
-        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 flex-shrink-0 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-[var(--img-placeholder-bg)] border border-[var(--img-placeholder-border)] flex-shrink-0 flex items-center justify-center">
           {globalSlots[0] ? (
             <img src={globalSlots[0]} alt={title || ""} className="w-full h-full object-cover"
               onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -647,8 +647,8 @@ export default function NewProductPage() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-slate-800 truncate">{title || "Nowy produkt"}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Wype&#322;nij dane i przypisz do marketplace</p>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] truncate">{title || "Nowy produkt"}</h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-0.5">Wype&#322;nij dane i przypisz do marketplace</p>
         </div>
         <button onClick={() => setShowAllegroImport(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition hover:shadow-md hover:scale-105 flex-shrink-0"
@@ -675,8 +675,8 @@ export default function NewProductPage() {
       )}
 
       {/* Tabs */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-5">
-        <div className="flex border-b border-slate-100 overflow-x-auto">
+      <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-default)] shadow-sm overflow-hidden mb-5">
+        <div className="flex border-b border-[var(--border-light)] overflow-x-auto">
           {TABS.map(t => {
             let badge = "";
             if (t.id === "media" && totalImages) badge = String(totalImages);
@@ -686,13 +686,13 @@ export default function NewProductPage() {
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition ${
                   tab === t.id
-                    ? "border-indigo-500 text-indigo-600 bg-indigo-50/50"
-                    : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                    ? "border-indigo-500 text-indigo-600 bg-indigo-500/5"
+                    : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
                 }`}>
                 {t.label}
                 {badge && (
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                    tab === t.id ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-500"
+                    tab === t.id ? "bg-indigo-500/15 text-indigo-600" : "bg-[var(--bg-input)] text-[var(--text-tertiary)]"
                   }`}>{badge}</span>
                 )}
               </button>
@@ -717,8 +717,8 @@ export default function NewProductPage() {
               <div><Label>Producent / Marka</Label><Inp value={brand} onChange={e => setBrand(e.target.value)} placeholder="Samsung" /></div>
               <div><Label>Tagi (przecinek)</Label><Inp value={tags}  onChange={e => setTags(e.target.value)}  placeholder="smartfon, android, 5G" /></div>
             </div>
-            <div className="border-t border-slate-100 pt-5">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Wymiary i waga</div>
+            <div className="border-t border-[var(--border-light)] pt-5">
+              <div className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-widest mb-3">Wymiary i waga</div>
               <div className="grid grid-cols-4 gap-3">
                 {[
                   { label: "Waga", unit: "kg", val: weightKg, set: setWeightKg, ph: "0.233" },
@@ -732,7 +732,7 @@ export default function NewProductPage() {
                       <Inp type="number" step="0.01" min="0" value={f.val}
                         onChange={e => f.set(e.target.value)} placeholder={f.ph}
                         className="!rounded-r-none !border-r-0" />
-                      <span className="flex items-center px-3 bg-slate-100 border-2 border-slate-200 border-l-0 rounded-r-xl text-xs text-slate-500 font-medium whitespace-nowrap">
+                      <span className="flex items-center px-3 bg-[var(--bg-input)] border-2 border-[var(--border-input)] border-l-0 rounded-r-xl text-xs text-[var(--text-secondary)] font-medium whitespace-nowrap">
                         {f.unit}
                       </span>
                     </div>
@@ -756,7 +756,7 @@ export default function NewProductPage() {
 
             {/* Marketplace selector */}
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Kana&#322;</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">Kana&#322;</div>
               <div className="flex gap-2 flex-wrap">
                 {/* Globalny */}
                 <button
@@ -814,7 +814,7 @@ export default function NewProductPage() {
             {/* ── Globalny ────────────────────────────────────────── */}
             {descViewMp === "__global__" && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--bg-body)] border border-[var(--border-default)] rounded-xl text-xs text-[var(--text-secondary)]">
                   <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                     <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
                   </svg>
@@ -908,7 +908,7 @@ export default function NewProductPage() {
         {/* ── Tab: Marketplace ────────────────────────────────────── */}
         {tab === "marketplace" && (
           <div className="p-6 space-y-4">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-[var(--text-secondary)]">
               Przypisz produkt do kategorii na każdym marketplace. Jeden produkt może mieć inne kategorie na różnych platformach.
             </p>
             {marketplaces.length === 0 ? (
@@ -981,12 +981,12 @@ export default function NewProductPage() {
               return (
                 <div className="mb-4 space-y-2">
                   {/* Breadcrumb kategorii */}
-                  <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                  <div className="flex items-center gap-2 text-xs bg-[var(--bg-body)] border border-[var(--border-default)] rounded-xl px-4 py-2.5">
                     <svg viewBox="0 0 24 24" className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                     </svg>
-                    <span className="text-slate-500">Kategoria:</span>
-                    <span className="font-medium text-slate-700 truncate">{catName}</span>
+                    <span className="text-[var(--text-secondary)]">Kategoria:</span>
+                    <span className="font-medium text-[var(--text-primary)] truncate">{catName}</span>
                   </div>
 
                   {/* Pasek postępu wymaganych atrybutów */}
@@ -1025,7 +1025,7 @@ export default function NewProductPage() {
 
             {/* Fields */}
             {attrLoading ? (
-              <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
+              <div className="flex items-center justify-center py-12 gap-2 text-[var(--text-tertiary)]">
                 <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -1087,16 +1087,16 @@ export default function NewProductPage() {
       </div>
 
       {/* ── Fixed bottom action bar ─────────────────────────────── */}
-      <div className="fixed bottom-0 left-[220px] right-0 z-40 bg-white border-t border-slate-200 shadow-lg px-8 py-4">
+      <div className="fixed bottom-0 left-[220px] right-0 z-40 bg-[var(--bg-topbar)] border-t border-[var(--border-default)] shadow-lg px-8 py-4">
         <div className="max-w-[900px] mx-auto flex items-center justify-between">
-          <div className="text-xs text-slate-400">
-            {title ? <span className="font-medium text-slate-600">{title}</span> : <span className="italic">Nowy produkt</span>}
+          <div className="text-xs text-[var(--text-tertiary)]">
+            {title ? <span className="font-medium text-[var(--text-secondary)]">{title}</span> : <span className="italic">Nowy produkt</span>}
             {ean && <span className="ml-3 font-mono">EAN: {ean}</span>}
           </div>
           <div className="flex gap-3">
             <button onClick={() => router.push("/dashboard/products")}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600
-                bg-slate-100 hover:bg-slate-200 border border-slate-200 transition">
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-[var(--text-secondary)]
+                bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] border border-[var(--border-default)] transition">
               Anuluj
             </button>
             <button onClick={handleSave} disabled={saving || saved}
@@ -1144,19 +1144,19 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml, readonly }: {
   const isEmpty = !plain && !html;
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden">
+    <div className="border border-[var(--border-default)] rounded-2xl overflow-hidden">
       {/* Accordion header */}
       <button onClick={() => setOpen(o => !o)}
         className={`w-full flex items-center justify-between px-5 py-4 text-left transition ${
-          open ? "bg-indigo-50" : "bg-slate-50 hover:bg-slate-100"
+          open ? "bg-indigo-500/8" : "bg-[var(--bg-body)] hover:bg-[var(--bg-input)]"
         }`}>
         <div className="flex items-center gap-3">
           <svg viewBox="0 0 24 24" className={`w-4 h-4 transition-transform ${open ? "rotate-90 text-indigo-500" : "text-slate-400"}`}
             fill="none" stroke="currentColor" strokeWidth={2}><path d="m9 18 6-6-6-6"/></svg>
-          <span className={`font-semibold text-sm ${open ? "text-indigo-700" : "text-slate-700"}`}>{label}</span>
+          <span className={`font-semibold text-sm ${open ? "text-indigo-600" : "text-[var(--text-primary)]"}`}>{label}</span>
           {isEmpty
-            ? <span className="text-[11px] text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">Pusty</span>
-            : <span className="text-[11px] text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Wypełniony</span>}
+            ? <span className="text-[11px] text-[var(--text-tertiary)] bg-[var(--bg-input)] px-2 py-0.5 rounded-full">Pusty</span>
+            : <span className="text-[11px] text-green-600 bg-green-500/10 px-2 py-0.5 rounded-full">Wypełniony</span>}
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-400">
           {!isEmpty && <span>{(plain || html).length} znaków</span>}
@@ -1165,13 +1165,13 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml, readonly }: {
 
       {/* Content */}
       {open && (
-        <div className="p-5 border-t border-slate-100">
+        <div className="p-5 border-t border-[var(--border-light)]">
           {/* Mode tabs */}
-          <div className="flex items-center gap-1 mb-3 bg-slate-100 rounded-xl p-1 w-fit">
+          <div className="flex items-center gap-1 mb-3 bg-[var(--bg-input)] rounded-xl p-1 w-fit">
             {(["tekst", "html"] as const).map(m => (
               <button key={m} onClick={() => { setMode(m); setPreview(false); }}
                 className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  mode === m ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"
+                  mode === m ? "bg-[var(--bg-card)] shadow-sm text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}>
                 {m === "tekst" ? "Tekst" : "HTML"}
               </button>
@@ -1193,12 +1193,12 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml, readonly }: {
               onChange={e => !readonly && handlePlain(e.target.value)}
               rows={7}
               placeholder="Wpisz opis produktu..."
-              className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 text-sm text-slate-800
-                outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100
-                resize-none transition placeholder-slate-400"
+              className="w-full px-4 py-3 rounded-xl border-2 border-[var(--border-input)] bg-[var(--bg-input)] text-sm text-[var(--text-primary)]
+                outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20
+                resize-none transition placeholder-[var(--text-tertiary)]"
             />
           ) : preview ? (
-            <div className="w-full min-h-[140px] px-4 py-3 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm text-slate-800 prose prose-sm max-w-none"
+            <div className="w-full min-h-[140px] px-4 py-3 rounded-xl border-2 border-[var(--border-input)] bg-[var(--bg-body)] text-sm text-[var(--text-primary)] prose prose-sm max-w-none"
               dangerouslySetInnerHTML={{ __html: html || "<p class='text-slate-400 italic'>Brak treści HTML</p>" }} />
           ) : (
             <textarea
@@ -1228,10 +1228,10 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml, readonly }: {
 function AttrField({ field, value, onChange }: { field: Field; value: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1.5">
+      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
         {field.label}
         {field.required && <span className="text-red-400 ml-1">*</span>}
-        <span className="ml-1.5 text-[10px] font-mono text-slate-400">{field.field_code}</span>
+        <span className="ml-1.5 text-[10px] font-mono text-[var(--text-tertiary)]">{field.field_code}</span>
       </label>
       {field.allowedValues?.length > 0 ? (
         <Sel value={value} onChange={e => onChange(e.target.value)}>
@@ -1319,14 +1319,14 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
   return (
     <div className="space-y-2">
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-[var(--bg-input)] rounded-xl p-1 w-fit">
         <button onClick={() => setTab("browse")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === "browse" ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === "browse" ? "bg-[var(--bg-card)] shadow-sm text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}>
           Kategorie
         </button>
         {favs.length > 0 && (
           <button onClick={() => setTab("favorites")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${activeTab === "favorites" ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${activeTab === "favorites" ? "bg-[var(--bg-card)] shadow-sm text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}>
             <span>&#9733;</span> Ulubione
             <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{favs.length}</span>
           </button>
@@ -1335,15 +1335,15 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
 
       {activeTab === "favorites" ? (
         /* Ulubione */
-        <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-50">
+        <div className="max-h-52 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] divide-y divide-[var(--border-light)]">
           {favs.map(fav => (
             <button key={String(fav.category_id)}
               onClick={() => onSelect(String(fav.category_id), fav.category_name, fav.category_path)}
-              className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 transition group">
-              <div className="text-xs font-semibold text-slate-700 group-hover:text-indigo-700">{fav.category_name}</div>
-              <div className="text-[10px] text-slate-400 truncate mt-0.5">{fav.category_path}</div>
+              className="w-full text-left px-3 py-2.5 hover:bg-indigo-500/5 transition group">
+              <div className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-indigo-600">{fav.category_name}</div>
+              <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">{fav.category_path}</div>
               {fav.use_count > 0 && (
-                <div className="text-[10px] text-slate-300 mt-0.5">{"U\u017Cywana "}{fav.use_count}{"×"}</div>
+                <div className="text-[10px] text-[var(--text-muted)] mt-0.5">{"U\u017Cywana "}{fav.use_count}{"×"}</div>
               )}
             </button>
           ))}
@@ -1353,13 +1353,13 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
         <>
           {/* Breadcrumb */}
           {crumbs.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+            <div className="flex items-center gap-1 flex-wrap text-[11px] bg-[var(--bg-body)] border border-[var(--border-default)] rounded-lg px-3 py-1.5">
               <button onClick={() => setCrumbs([])} className="text-indigo-500 hover:underline font-medium">Allegro</button>
               {crumbs.map((c, i) => (
                 <span key={c.id} className="flex items-center gap-1">
                   <svg viewBox="0 0 24 24" className="w-3 h-3 text-slate-300" fill="none" stroke="currentColor" strokeWidth={2}><path d="m9 18 6-6-6-6"/></svg>
                   <button onClick={() => setCrumbs(prev => prev.slice(0, i + 1))}
-                    className={`hover:underline ${i === crumbs.length - 1 ? "text-slate-700 font-semibold" : "text-indigo-500"}`}>
+                    className={`hover:underline ${i === crumbs.length - 1 ? "text-[var(--text-primary)] font-semibold" : "text-indigo-500"}`}>
                     {c.name}
                   </button>
                 </span>
@@ -1370,10 +1370,10 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
           {/* Wyszukiwarka */}
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Szukaj w tej kategorii..."
-            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs outline-none focus:border-indigo-400 bg-white text-slate-700 placeholder-slate-400" />
+            className="w-full px-3 py-2 rounded-lg border border-[var(--border-default)] text-xs outline-none focus:border-indigo-400 bg-[var(--bg-input)] text-[var(--text-primary)] placeholder-[var(--text-tertiary)]" />
 
           {/* Lista */}
-          <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-50">
+          <div className="max-h-52 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] divide-y divide-[var(--border-light)]">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-4 text-xs text-slate-400">
                 <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
@@ -1386,8 +1386,8 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
               <div className="px-3 py-3 text-xs text-slate-400 text-center">Brak wynik&oacute;w</div>
             ) : filtered.map(c => (
               <button key={c.id} onClick={() => drillIn(c)}
-                className="w-full text-left px-3 py-2.5 text-xs hover:bg-indigo-50 hover:text-indigo-700 transition flex items-center justify-between group">
-                <span className="font-medium text-slate-700 group-hover:text-indigo-700">{c.name}</span>
+                className="w-full text-left px-3 py-2.5 text-xs hover:bg-indigo-500/5 hover:text-indigo-600 transition flex items-center justify-between group">
+                <span className="font-medium text-[var(--text-primary)] group-hover:text-indigo-600">{c.name}</span>
                 {c.leaf
                   ? <span className="text-[10px] text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">Wybierz</span>
                   : <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}><path d="m9 18 6-6-6-6"/></svg>}
@@ -1439,12 +1439,12 @@ function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
   };
 
   return (
-    <div className={`rounded-xl border-2 p-4 transition ${isAssigned ? "border-green-300 bg-green-50/70" : "border-slate-200 bg-slate-50"}`}>
+    <div className={`rounded-xl border-2 p-4 transition ${isAssigned ? "border-green-400/50 bg-green-500/5" : "border-[var(--border-default)] bg-[var(--bg-body)]"}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isAssigned ? "bg-green-500" : "bg-slate-300"}`} />
-          <span className="font-semibold text-slate-700 text-sm">{marketplace.name}</span>
+          <span className="font-semibold text-[var(--text-primary)] text-sm">{marketplace.name}</span>
           {isAllegro && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-semibold">API</span>}
         </div>
         {isAssigned && (
@@ -1454,9 +1454,9 @@ function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
       </div>
 
       {isAssigned ? (
-        <div className="flex items-start gap-2 bg-white rounded-lg border border-green-200 px-3 py-2">
+        <div className="flex items-start gap-2 bg-[var(--bg-card)] rounded-lg border border-green-400/40 px-3 py-2">
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5}><polyline points="20 6 9 17 4 12"/></svg>
-          <span className="text-xs text-slate-700 font-medium">{selected?.categoryPath || selected?.allegroName}</span>
+          <span className="text-xs text-[var(--text-primary)] font-medium">{selected?.categoryPath || selected?.allegroName}</span>
         </div>
       ) : isAllegro ? (
         <AllegroTreePicker onSelect={selectAllegro} />
@@ -1464,13 +1464,13 @@ function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
         /* Non-Allegro: Tabs browse / favorites */
         <>
           {favs.length > 0 && (
-            <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 w-fit mb-2">
+            <div className="flex gap-1 bg-[var(--bg-card)] border border-[var(--border-default)] rounded-xl p-1 w-fit mb-2">
               <button onClick={() => setTab("browse")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === "browse" ? "bg-slate-100 text-slate-800" : "text-slate-400 hover:text-slate-600"}`}>
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === "browse" ? "bg-[var(--bg-input)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}>
                 Szukaj
               </button>
               <button onClick={() => setTab("favorites")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${activeTab === "favorites" ? "bg-slate-100 text-slate-800" : "text-slate-400 hover:text-slate-600"}`}>
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${activeTab === "favorites" ? "bg-[var(--bg-input)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}>
                 &#9733; Ulubione
                 <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 rounded-full">{favs.length}</span>
               </button>
@@ -1478,13 +1478,13 @@ function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
           )}
 
           {activeTab === "favorites" ? (
-            <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-50">
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] divide-y divide-[var(--border-light)]">
               {favs.map(fav => (
                 <button key={fav.category_id}
                   onClick={() => onChange({ categoryId: parseInt(fav.category_id), categoryPath: fav.category_path })}
-                  className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 transition group">
-                  <div className="text-xs font-semibold text-slate-700 group-hover:text-indigo-700">{fav.category_name}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{fav.category_path}</div>
+                  className="w-full text-left px-3 py-2.5 hover:bg-indigo-500/5 transition group">
+                  <div className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-indigo-600">{fav.category_name}</div>
+                  <div className="text-[10px] text-[var(--text-tertiary)] truncate">{fav.category_path}</div>
                 </button>
               ))}
             </div>
@@ -1492,14 +1492,14 @@ function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
             <>
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Szukaj kategorii..."
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs outline-none focus:border-indigo-400 bg-white text-slate-700 placeholder-slate-400 mb-2" />
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-default)] text-xs outline-none focus:border-indigo-400 bg-[var(--bg-input)] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] mb-2" />
               {search ? (
-                <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-50">
+                <div className="max-h-44 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] divide-y divide-[var(--border-light)]">
                   {filtered.length === 0
-                    ? <div className="px-3 py-2 text-xs text-slate-400">Brak wynik&oacute;w</div>
+                    ? <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">Brak wynik&oacute;w</div>
                     : filtered.slice(0, 30).map(c => (
                       <button key={c.id} onClick={() => selectMirakl(c)}
-                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition">
+                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-primary)] hover:bg-indigo-500/5 hover:text-indigo-600 transition">
                         {c.path}
                       </button>
                     ))}
@@ -1581,10 +1581,10 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
   return (
     <div>
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 space-y-3">
+      <div className="px-6 py-4 border-b border-[var(--border-light)] bg-[var(--bg-body)] space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Marketplace</div>
+            <div className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-widest mb-1.5">Marketplace</div>
             <Sel value={mediaViewMp} onChange={e => setMediaViewMp(e.target.value)}>
               <option value="__global__">Globalne (domyślne)</option>
               {marketplaces.map(mp => <option key={mp.slug} value={mp.slug}>{mp.name}</option>)}
@@ -1592,7 +1592,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
           </div>
           {!isGlobal && (
             <div>
-              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Opcje</div>
+              <div className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-widest mb-1.5">Opcje</div>
               <Sel value={curOption ?? "global"} onChange={e => setMpMediaOption(prev => ({ ...prev, [mediaViewMp]: e.target.value as MediaOption }))}>
                 {MEDIA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Sel>
@@ -1634,12 +1634,12 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
           ))}
         </div>
 
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
-          <div className="text-xs text-slate-400 space-x-3">
-            <span><span className="font-medium text-slate-600">{filledCount}</span> / {SLOTS} zdjęć</span>
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border-light)]">
+          <div className="text-xs text-[var(--text-tertiary)] space-x-3">
+            <span><span className="font-medium text-[var(--text-secondary)]">{filledCount}</span> / {SLOTS} zdjęć</span>
             <span>·</span>
-            <span>Akceptowane: <span className="font-medium text-slate-600">JPG · PNG · WEBP · GIF</span></span>
-            <span>· Max <span className="font-medium text-slate-600">{MAX_MB} MB</span></span>
+            <span>Akceptowane: <span className="font-medium text-[var(--text-secondary)]">JPG · PNG · WEBP · GIF</span></span>
+            <span>· Max <span className="font-medium text-[var(--text-secondary)]">{MAX_MB} MB</span></span>
           </div>
           {!readOnly && (
             <>
@@ -1686,10 +1686,10 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
         onDrop={handleDrop}
         onClick={() => { if (!readOnly && !url && !uploading) inputRef.current?.click(); }}
         className={`w-full h-full rounded-xl border-2 overflow-hidden flex items-center justify-center transition-all group
-          ${url ? "border-slate-200 bg-slate-100"
-            : drag ? "border-indigo-400 bg-indigo-50 scale-[1.02]"
-            : readOnly ? "border-slate-100 bg-slate-50 cursor-default"
-            : "border-dashed border-slate-300 bg-slate-50 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer"}`}>
+          ${url ? "border-[var(--border-default)] bg-[var(--img-placeholder-bg)]"
+            : drag ? "border-indigo-400 bg-indigo-500/10 scale-[1.02]"
+            : readOnly ? "border-[var(--border-light)] bg-[var(--bg-body)] cursor-default"
+            : "border-dashed border-[var(--border-default)] bg-[var(--bg-body)] hover:border-indigo-400 hover:bg-indigo-500/5 cursor-pointer"}`}>
         {uploading ? (
           <div className="flex flex-col items-center gap-1.5 text-indigo-400">
             <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">

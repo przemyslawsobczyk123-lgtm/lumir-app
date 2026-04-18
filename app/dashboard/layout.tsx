@@ -1,7 +1,9 @@
-"use client";
+﻿"use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { fetchBillingSummary, formatCredits, type BillingSummary } from "./billing/billing-data";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -19,7 +21,49 @@ type AllegroAccountSidebar = {
   minutesLeft: number;
 };
 
-// ── Theme icons ─────────────────────────────────────────────────
+type DashboardUser = {
+  name?: string;
+  email?: string;
+};
+
+function parseStoredUser(raw: string): DashboardUser | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const candidate = parsed as Record<string, unknown>;
+    return {
+      name: typeof candidate.name === "string" ? candidate.name : undefined,
+      email: typeof candidate.email === "string" ? candidate.email : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getDashboardUserSnapshot(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem("user");
+  } catch {
+    return null;
+  }
+}
+
+function getDashboardServerUserSnapshot(): string | null {
+  return null;
+}
+
+function subscribeDashboardSnapshot(onStoreChange: () => void) {
+  const handler = () => onStoreChange();
+  window.addEventListener("storage", handler);
+  window.addEventListener("lumir-dashboard-storage", handler as EventListener);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener("lumir-dashboard-storage", handler as EventListener);
+  };
+}
+
+// ¦¦ Theme icons ¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦
 function SunIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
@@ -35,15 +79,24 @@ function MoonIcon() {
   );
 }
 
-export default function DashboardLayout({ children }: any) {
+export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router   = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [expandedMp, setExpandedMp] = useState<string | null>(null);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    try {
+      return localStorage.getItem("lumir-theme") === "dark" ? "dark" : "light";
+    } catch {
+      return "light";
+    }
+  });
   const [logoutModal, setLogoutModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userRaw = useSyncExternalStore(subscribeDashboardSnapshot, getDashboardUserSnapshot, getDashboardServerUserSnapshot);
+  const user = userRaw ? parseStoredUser(userRaw) : null;
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
 
   // Allegro per-seller account (status only — management is on dedicated page)
   const [allegroAccounts, setAllegroAccounts] = useState<AllegroAccountSidebar[]>([]);
@@ -56,22 +109,24 @@ export default function DashboardLayout({ children }: any) {
       .catch(() => {});
   }, []);
 
+  const loadBillingSummary = useCallback(() => {
+    fetchBillingSummary()
+      .then((summary) => setBillingSummary(summary))
+      .catch(() => setBillingSummary(null));
+  }, []);
+
   // Load user + theme
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) { router.push("/login"); return; }
-    const stored = localStorage.getItem("user");
-    if (stored) { try { setUser(JSON.parse(stored)); } catch {} }
-
-    // Load theme
-    const savedTheme = localStorage.getItem("lumir-theme") as "light" | "dark" | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-      document.documentElement.classList.toggle("dark", savedTheme === "dark");
-    }
 
     loadAllegroAccounts();
-  }, [loadAllegroAccounts]);
+    loadBillingSummary();
+  }, [loadAllegroAccounts, loadBillingSummary, router]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
   // Refresh Allegro status after OAuth on dedicated page
   useEffect(() => {
@@ -131,9 +186,10 @@ export default function DashboardLayout({ children }: any) {
 
         <div className="space-y-3 flex-1">
           {[
-            { href: "/dashboard",          label: "📦 Produkty",        exact: true  },
-            { href: "/dashboard/products", label: "📋 Lista produktów", exact: false },
-            { href: "/dashboard/settings", label: "⚙️ Ustawienia",      exact: false },
+            { href: "/dashboard",          label: "?? Produkty",        exact: true  },
+            { href: "/dashboard/products", label: "?? Lista produktów", exact: false },
+            { href: "/dashboard/billing",  label: "Billing",            exact: false },
+            { href: "/dashboard/settings", label: "?? Ustawienia",      exact: false },
           ].map(({ href, label, exact }) => {
             const active = exact ? pathname === href : pathname.startsWith(href);
             return (
@@ -148,6 +204,25 @@ export default function DashboardLayout({ children }: any) {
               </div>
             );
           })}
+
+          {billingSummary && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                Current credits
+              </div>
+              <div className="mt-1 flex items-end justify-between gap-3">
+                <div className="text-xl font-semibold text-white">
+                  {formatCredits(billingSummary.current?.creditsRemaining ?? billingSummary.usage.remaining ?? 0)}
+                </div>
+                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                  available
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                Open Billing for packs and history
+              </div>
+            </div>
+          )}
 
           {/* MARKETPLACE */}
           <div className="pt-4">
@@ -235,7 +310,7 @@ export default function DashboardLayout({ children }: any) {
             onClick={confirmLogout}
             className="mt-2 text-xs text-red-400 hover:text-red-300 transition"
           >
-            🚪 Wyloguj
+            ?? Wyloguj
           </button>
         </div>
       </div>
@@ -252,6 +327,17 @@ export default function DashboardLayout({ children }: any) {
             style={{ background: "var(--bg-input-alt)", color: "var(--text-primary)", border: "1px solid var(--border-default)" }}
           />
           <div className="flex items-center gap-3">
+            {billingSummary && (
+              <button
+                onClick={() => router.push("/dashboard/billing")}
+                className="hidden sm:inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+              >
+                <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[11px] font-bold text-indigo-200">
+                  {formatCredits(billingSummary.current?.creditsRemaining ?? billingSummary.usage.remaining ?? 0)}
+                </span>
+                Billing
+              </button>
+            )}
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
@@ -318,7 +404,7 @@ export default function DashboardLayout({ children }: any) {
                 onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                ⚙️ Ustawienia
+                ?? Ustawienia
               </div>
               <div
                 onClick={confirmLogout}
@@ -326,7 +412,7 @@ export default function DashboardLayout({ children }: any) {
                 onMouseEnter={e => (e.currentTarget.style.background = isDark ? "rgba(127,29,29,0.3)" : "#fef2f2")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                🚪 Wyloguj
+                ?? Wyloguj
               </div>
             </div>
           </div>
@@ -390,3 +476,4 @@ export default function DashboardLayout({ children }: any) {
     </div>
   );
 }
+
