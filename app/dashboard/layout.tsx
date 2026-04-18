@@ -333,9 +333,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {billingSummary && (
               <button
                 onClick={() => router.push("/dashboard/billing")}
-                className="hidden sm:inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+                className="hidden sm:inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)", color: "var(--text-primary)", boxShadow: "var(--shadow-card)" }}
               >
-                <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[11px] font-bold text-indigo-200">
+                <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "rgba(99,102,241,0.15)", color: "var(--accent-primary)" }}>
                   {formatCredits(billingSummary.current?.creditsRemaining ?? billingSummary.usage.remaining ?? 0)}
                 </span>
                 Billing
