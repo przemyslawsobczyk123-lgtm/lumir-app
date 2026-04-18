@@ -115,15 +115,17 @@ function SummaryStat({
   hint,
 }: StatusRow) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/8 bg-white/5 px-4 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-xl px-4 py-3"
+      style={{ background: "var(--bg-card-hover)", border: "1px solid var(--border-default)" }}>
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${tone}`} />
-          <span className="text-sm font-medium text-slate-200">{label}</span>
+          <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${tone}`} />
+          <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{label}</span>
         </div>
-        <div className="mt-1 text-xs text-slate-400">{hint}</div>
+        <div className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>{hint}</div>
       </div>
-      <div className="shrink-0 rounded-lg bg-black/20 px-3 py-1.5 text-sm font-semibold text-white">
+      <div className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold"
+        style={{ background: "var(--bg-input-alt)", color: "var(--text-primary)" }}>
         {count}
       </div>
     </div>
@@ -280,13 +282,13 @@ export default function Dashboard() {
                     className={`rounded-2xl border bg-gradient-to-br p-6 shadow-sm backdrop-blur-sm ${card.tone}`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium text-slate-300">{card.label}</div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>{card.label}</div>
                       <span className={`h-2.5 w-2.5 rounded-full ${card.dot}`} />
                     </div>
-                    <div className="mt-4 text-3xl font-semibold text-white">
+                    <div className="mt-4 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>
                       {value.toLocaleString("pl-PL")}
                     </div>
-                    <div className="mt-2 text-xs text-slate-400">
+                    <div className="mt-2 text-xs" style={{ color: "var(--text-secondary)" }}>
                       {card.hint}
                     </div>
                   </div>
@@ -314,13 +316,13 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid gap-6 xl:grid-cols-2">
-          <section className="rounded-3xl border border-white/8 bg-white/5 p-5 shadow-sm backdrop-blur-sm">
+          <section className="rounded-3xl p-5 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold text-slate-100">Produkty</h2>
-                <p className="text-sm text-slate-400">Status biezacego katalogu</p>
+                <h2 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>Produkty</h2>
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Status bieżącego katalogu</p>
               </div>
-              <div className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+              <div className="rounded-full px-3 py-1 text-xs font-medium" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
                 {countLabel(products?.total ?? 0)}
               </div>
             </div>
@@ -328,19 +330,19 @@ export default function Dashboard() {
             <div className="space-y-3">
               {loading
                 ? Array.from({ length: 5 }, (_, index) => (
-                    <div key={index} className="h-14 animate-pulse rounded-xl bg-white/5" />
+                    <div key={index} className="h-14 animate-pulse rounded-xl" style={{ background: "var(--bg-input-alt)" }} />
                   ))
                 : productRows.map(row => <SummaryStat key={row.label} {...row} />)}
             </div>
           </section>
 
-          <section className="rounded-3xl border border-white/8 bg-white/5 p-5 shadow-sm backdrop-blur-sm">
+          <section className="rounded-3xl p-5 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold text-slate-100">Importy</h2>
-                <p className="text-sm text-slate-400">Przeplyw plikow i przetwarzania</p>
+                <h2 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>Importy</h2>
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Przepływ plików i przetwarzania</p>
               </div>
-              <div className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+              <div className="rounded-full px-3 py-1 text-xs font-medium" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
                 {countLabel((imports?.processing ?? 0) + (imports?.done ?? 0) + (imports?.error ?? 0))}
               </div>
             </div>
@@ -348,7 +350,7 @@ export default function Dashboard() {
             <div className="space-y-3">
               {loading
                 ? Array.from({ length: 3 }, (_, index) => (
-                    <div key={index} className="h-14 animate-pulse rounded-xl bg-white/5" />
+                    <div key={index} className="h-14 animate-pulse rounded-xl" style={{ background: "var(--bg-input-alt)" }} />
                   ))
                 : importRows.map(row => <SummaryStat key={row.label} {...row} />)}
             </div>

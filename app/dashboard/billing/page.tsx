@@ -72,41 +72,43 @@ function PackCard({
 
   return (
     <div
-      className={`rounded-3xl border p-5 transition ${
-        pack.featured
-          ? "border-indigo-400/40 bg-gradient-to-br from-indigo-500/15 to-purple-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.15)]"
-          : "border-white/10 bg-white/5 hover:border-white/20"
-      }`}
+      className={`rounded-3xl p-5 transition ${pack.featured ? "shadow-[0_0_0_2px_rgba(99,102,241,0.3)]" : ""}`}
+      style={{
+        background: pack.featured
+          ? "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.05))"
+          : "var(--bg-card)",
+        border: pack.featured ? "1px solid rgba(99,102,241,0.35)" : "1px solid var(--border-default)",
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Pack</div>
-          <div className="mt-1 text-3xl font-semibold text-white">{formatCredits(pack.credits)}</div>
-          <div className="text-sm text-slate-400">credits / full auctions</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--text-tertiary)" }}>Pakiet</div>
+          <div className="mt-1 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(pack.credits)}</div>
+          <div className="text-sm" style={{ color: "var(--text-secondary)" }}>kredytów / pełnych aukcji</div>
         </div>
-        <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-slate-200">
+        <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
           {pack.featured ? "Popularny" : "Prepaid"}
         </span>
       </div>
 
-      <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Cena</div>
-        <div className="mt-2 text-3xl font-semibold text-white">{formatPricePln(pack.amountCents)}</div>
-        <div className="mt-1 text-sm text-slate-400">{formatUnitPricePln(pack.pricePerAuction)} / aukcja</div>
+      <div className="mt-5 rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+        <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Cena</div>
+        <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatPricePln(pack.amountCents)}</div>
+        <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{formatUnitPricePln(pack.pricePerAuction)} / aukcja</div>
       </div>
 
-      <div className="mt-5 space-y-2 text-sm text-slate-300">
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-3 py-2">
-          <span>Pelna aukcja AI</span>
-          <span className="font-semibold text-white">{fullAuctions}</span>
+      <div className="mt-5 space-y-2 text-sm">
+        <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
+          <span style={{ color: "var(--text-secondary)" }}>Pełna aukcja AI</span>
+          <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{fullAuctions}</span>
         </div>
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-3 py-2">
-          <span>Same opisy</span>
-          <span className="font-semibold text-white">{formatCredits(descriptions)}</span>
+        <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
+          <span style={{ color: "var(--text-secondary)" }}>Same opisy</span>
+          <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(descriptions)}</span>
         </div>
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-3 py-2">
-          <span>Same atrybuty</span>
-          <span className="font-semibold text-white">{formatCredits(attributes)}</span>
+        <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
+          <span style={{ color: "var(--text-secondary)" }}>Same atrybuty</span>
+          <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(attributes)}</span>
         </div>
       </div>
 
@@ -115,9 +117,10 @@ function PackCard({
         aria-disabled={loading}
         className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
           loading
-            ? "cursor-wait bg-white/10 text-slate-400"
+            ? "cursor-wait opacity-60"
             : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
         }`}
+        style={loading ? { background: "var(--bg-input-alt)", color: "var(--text-tertiary)" } : {}}
       >
         {loading ? "Przekierowanie..." : "Kup w Stripe"}
       </button>
@@ -127,17 +130,17 @@ function PackCard({
 
 function HistoryRow({ item }: { item: BillingHistoryEntry }) {
   return (
-    <tr className="border-t border-white/8">
-      <td className="px-4 py-4 text-sm text-slate-200">{formatDateTime(item.createdAt)}</td>
+    <tr style={{ borderTop: "1px solid var(--border-default)" }}>
+      <td className="px-4 py-4 text-sm" style={{ color: "var(--text-secondary)" }}>{formatDateTime(item.createdAt)}</td>
       <td className="px-4 py-4">
-        <div className="text-sm font-medium text-white">{item.title}</div>
-        <div className="mt-0.5 text-xs text-slate-400">{item.description || item.kind}</div>
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{item.title}</div>
+        <div className="mt-0.5 text-xs" style={{ color: "var(--text-tertiary)" }}>{item.description || item.kind}</div>
       </td>
-      <td className="px-4 py-4 text-sm text-slate-300">{formatCredits(item.credits)}</td>
-      <td className="px-4 py-4 text-sm text-slate-300">
+      <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>{formatCredits(item.credits)}</td>
+      <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>
         {item.amount == null ? "Brak" : formatPricePln(item.amount)}
       </td>
-      <td className="px-4 py-4 text-sm text-slate-300">{item.status}</td>
+      <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>{item.status}</td>
     </tr>
   );
 }
@@ -275,31 +278,21 @@ export default function BillingPage() {
         />
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-            <div className="text-sm font-semibold text-white">Opis produktu</div>
-            <div className="mt-3 text-4xl font-semibold text-indigo-300">
-              {billing ? formatCredits(billing.aiCosts.description) : "0,33"}
+          {[
+            { label: "Opis produktu", value: billing ? formatCredits(billing.aiCosts.description) : "0,33", hint: "Generacja opisu per marketplace i opis produktu." },
+            { label: "Atrybuty kategorii", value: billing ? formatCredits(billing.aiCosts.attributes) : "0,67", hint: "Mapowanie atrybutów pod marketplace i kategorię." },
+            { label: "Pełna aukcja AI", value: billing ? formatCredits(billing.aiCosts.all) : "1,00", hint: "Opis + atrybuty + draft marketplace razem." },
+          ].map(({ label, value, hint }) => (
+            <div key={label} className="rounded-2xl p-5" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+              <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{label}</div>
+              <div className="mt-3 text-4xl font-semibold" style={{ color: "var(--accent-primary)" }}>{value}</div>
+              <div className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>{hint}</div>
             </div>
-            <div className="mt-2 text-sm text-slate-400">Generacja opisu per marketplace i opis produktu.</div>
-          </div>
-          <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-            <div className="text-sm font-semibold text-white">Atrybuty kategorii</div>
-            <div className="mt-3 text-4xl font-semibold text-indigo-300">
-              {billing ? formatCredits(billing.aiCosts.attributes) : "0,67"}
-            </div>
-            <div className="mt-2 text-sm text-slate-400">Mapowanie atrybutow pod marketplace i kategorie.</div>
-          </div>
-          <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-            <div className="text-sm font-semibold text-white">Pelna aukcja AI</div>
-            <div className="mt-3 text-4xl font-semibold text-indigo-300">
-              {billing ? formatCredits(billing.aiCosts.all) : "1,00"}
-            </div>
-            <div className="mt-2 text-sm text-slate-400">Opis + atrybuty + draft marketplace razem.</div>
-          </div>
+          ))}
         </div>
 
-        <div className="mt-5 rounded-3xl border border-indigo-400/20 bg-indigo-500/10 p-5 text-sm text-indigo-100">
-          Bulk mnozy koszt przez liczbe produktow. Przykład: 10 pelnych aukcji = 10 kredytow.
+        <div className="mt-5 rounded-2xl p-5 text-sm" style={{ background: "var(--accent-primary-light)", border: "1px solid var(--accent-primary-border)", color: "var(--accent-primary)" }}>
+          Bulk mnoży koszt przez liczbę produktów. Przykład: 10 pełnych aukcji = 10 kredytów.
         </div>
       </section>
 
@@ -339,29 +332,27 @@ export default function BillingPage() {
           />
 
           <div className="mt-6 space-y-3">
-            <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Lacznie przyznane</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{formatCredits(totalGranted)} kred.</div>
+            <div className="rounded-2xl px-4 py-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Łącznie przyznane</div>
+              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(totalGranted)} kred.</div>
             </div>
-            <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Ostatnia platnosc</div>
-              <div className="mt-2 text-lg font-semibold text-white">
+            <div className="rounded-2xl px-4 py-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Ostatnia płatność</div>
+              <div className="mt-2 text-lg font-semibold" style={{ color: "var(--text-heading)" }}>
                 {formatDateTime(billing?.current?.lastPaymentAt)}
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-white/5 px-3 py-3 text-sm text-slate-300">
-                Free starter: <span className="text-white">{formatCredits(billing?.current?.freeCreditsGranted ?? 0)}</span>
-              </div>
-              <div className="rounded-2xl bg-white/5 px-3 py-3 text-sm text-slate-300">
-                Kupione: <span className="text-white">{formatCredits(billing?.current?.paidCreditsGranted ?? 0)}</span>
-              </div>
-              <div className="rounded-2xl bg-white/5 px-3 py-3 text-sm text-slate-300">
-                Zuzyte: <span className="text-white">{formatCredits(totalUsed)}</span>
-              </div>
-              <div className="rounded-2xl bg-white/5 px-3 py-3 text-sm text-slate-300">
-                Dostepne: <span className="text-white">{formatCredits(currentCredits)}</span>
-              </div>
+              {[
+                { label: "Free starter", val: formatCredits(billing?.current?.freeCreditsGranted ?? 0) },
+                { label: "Kupione", val: formatCredits(billing?.current?.paidCreditsGranted ?? 0) },
+                { label: "Zużyte", val: formatCredits(totalUsed) },
+                { label: "Dostępne", val: formatCredits(currentCredits) },
+              ].map(({ label, val }) => (
+                <div key={label} className="rounded-xl px-3 py-3 text-sm" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
+                  {label}: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{val}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -373,14 +364,14 @@ export default function BillingPage() {
             description="Kazdy user widzi swoje top-upy, darmowy starter i status platnosci. Dane leca z /api/billing/history."
           />
 
-          <div className="mt-6 flex items-center justify-between gap-3 rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
-            <span>Zrodlo</span>
-            <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200">{history.source}</span>
+          <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)", color: "var(--text-secondary)" }}>
+            <span>Źródło</span>
+            <span className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: "var(--bg-card-hover)", color: "var(--text-primary)" }}>{history.source}</span>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-3xl border border-white/10">
-            <table className="min-w-full divide-y divide-white/10">
-              <thead className="bg-white/5 text-left text-xs uppercase tracking-[0.22em] text-slate-400">
+          <div className="mt-4 overflow-hidden rounded-2xl" style={{ border: "1px solid var(--border-default)" }}>
+            <table className="min-w-full" style={{ borderCollapse: "collapse" }}>
+              <thead className="text-left text-xs uppercase tracking-[0.22em]" style={{ background: "var(--bg-table-header)", color: "var(--text-secondary)" }}>
                 <tr>
                   <th className="px-4 py-3 font-semibold">Data</th>
                   <th className="px-4 py-3 font-semibold">Pozycja</th>
@@ -389,19 +380,19 @@ export default function BillingPage() {
                   <th className="px-4 py-3 font-semibold">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/8 bg-black/10">
+              <tbody>
                 {historyLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={5}>
-                      Ladowanie historii...
+                    <td className="px-4 py-6 text-sm" style={{ color: "var(--text-tertiary)" }} colSpan={5}>
+                      Ładowanie historii...
                     </td>
                   </tr>
                 ) : history.items.length ? (
                   history.items.map((item) => <HistoryRow key={item.id} item={item} />)
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-sm text-slate-400" colSpan={5}>
-                      Brak historii platnosci jeszcze.
+                    <td className="px-4 py-6 text-sm" style={{ color: "var(--text-tertiary)" }} colSpan={5}>
+                      Brak historii płatności.
                     </td>
                   </tr>
                 )}
