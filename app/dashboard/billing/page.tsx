@@ -70,6 +70,12 @@ function PackCard({
   const descriptions = Math.floor(pack.credits / 0.33);
   const attributes = Math.floor(pack.credits / 0.67);
 
+  // Savings logic: base price = 5,5 zł/aukcja = 550 groszy
+  const fullPriceCents = pack.credits * 550;
+  const savingsCents = fullPriceCents - pack.amountCents;
+  const savingsPct = Math.round((savingsCents / fullPriceCents) * 100);
+  const hasSavings = savingsPct > 0;
+
   return (
     <div
       className={`rounded-3xl p-5 transition ${pack.featured ? "shadow-[0_0_0_2px_rgba(99,102,241,0.3)]" : ""}`}
@@ -86,14 +92,36 @@ function PackCard({
           <div className="mt-1 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(pack.credits)}</div>
           <div className="text-sm" style={{ color: "var(--text-secondary)" }}>kredytów / pełnych aukcji</div>
         </div>
-        <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
-          {pack.featured ? "Popularny" : "Prepaid"}
-        </span>
+        <div className="flex flex-col items-end gap-1.5">
+          <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
+            {pack.featured ? "Popularny" : "Prepaid"}
+          </span>
+          {hasSavings && (
+            <span
+              className="rounded-full px-2.5 py-1 text-[11px] font-bold"
+              style={pack.featured ? {
+                background: "rgba(16,185,129,0.2)",
+                color: "#10b981",
+                boxShadow: "0 0 8px rgba(16,185,129,0.25)",
+              } : {
+                background: "rgba(16,185,129,0.12)",
+                color: "#059669",
+              }}
+            >
+              –{savingsPct}%
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="mt-5 rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
         <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Cena</div>
-        <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatPricePln(pack.amountCents)}</div>
+        {hasSavings && (
+          <div className="mt-2 text-sm line-through opacity-50" style={{ color: "var(--text-tertiary)" }}>
+            {formatPricePln(fullPriceCents)}
+          </div>
+        )}
+        <div className={`font-semibold text-3xl ${hasSavings ? "mt-0.5" : "mt-2"}`} style={{ color: "var(--text-heading)" }}>{formatPricePln(pack.amountCents)}</div>
         <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{formatUnitPricePln(pack.pricePerAuction)} / aukcja</div>
       </div>
 
