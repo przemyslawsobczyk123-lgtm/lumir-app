@@ -186,20 +186,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         <div className="space-y-3 flex-1">
           {[
-            { href: "/dashboard",          label: "?? Produkty",        exact: true  },
-            { href: "/dashboard/products", label: "?? Lista produktów", exact: false },
-            { href: "/dashboard/billing",  label: "Billing",            exact: false },
-            { href: "/dashboard/settings", label: "?? Ustawienia",      exact: false },
-          ].map(({ href, label, exact }) => {
+            { href: "/dashboard",          label: "Dashboard",          exact: true,  icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+            { href: "/dashboard/products", label: "Lista produktów",    exact: false, icon: "M4 6h16M4 10h16M4 14h16M4 18h16" },
+            { href: "/dashboard/billing",  label: "Billing",            exact: false, icon: "M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" },
+            { href: "/dashboard/settings", label: "Ustawienia",         exact: false, icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+          ].map(({ href, label, exact, icon }) => {
             const active = exact ? pathname === href : pathname.startsWith(href);
             return (
               <div key={href}
                 onClick={() => router.push(href)}
-                className={`px-4 py-3 rounded-xl font-medium cursor-pointer transition-all ${
+                className={`flex items-center gap-2.5 px-4 py-3 rounded-xl font-medium cursor-pointer transition-all ${
                   active
                     ? "bg-green-500 text-white shadow-sm shadow-green-900/30"
-                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white"
                 }`}>
+                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d={icon}/>
+                </svg>
                 {label}
               </div>
             );
@@ -208,18 +211,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {billingSummary && (
             <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                Current credits
+                Saldo kredytów
               </div>
               <div className="mt-1 flex items-end justify-between gap-3">
                 <div className="text-xl font-semibold text-white">
                   {formatCredits(billingSummary.current?.creditsRemaining ?? billingSummary.usage.remaining ?? 0)}
                 </div>
                 <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
-                  available
+                  dostępne
                 </span>
               </div>
               <div className="mt-1 text-xs text-slate-400">
-                Open Billing for packs and history
+                Otwórz Billing → pakiety i historia
               </div>
             </div>
           )}
@@ -310,7 +313,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             onClick={confirmLogout}
             className="mt-2 text-xs text-red-400 hover:text-red-300 transition"
           >
-            ?? Wyloguj
+            Wyloguj
           </button>
         </div>
       </div>
@@ -404,7 +407,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                ?? Ustawienia
+                Ustawienia
               </div>
               <div
                 onClick={confirmLogout}
@@ -412,7 +415,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 onMouseEnter={e => (e.currentTarget.style.background = isDark ? "rgba(127,29,29,0.3)" : "#fef2f2")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                ?? Wyloguj
+                Wyloguj
               </div>
             </div>
           </div>

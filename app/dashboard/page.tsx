@@ -31,6 +31,7 @@ type SummaryCard = {
   label: string;
   tone: string;
   dot: string;
+  hint: string;
 };
 
 type StatusRow = {
@@ -46,24 +47,28 @@ const CARD_CONFIG: SummaryCard[] = [
     label: "W toku",
     tone: "from-sky-500/15 to-sky-500/5 border-sky-400/20",
     dot: "bg-sky-400",
+    hint: "Produkty w trakcie przetwarzania AI",
   },
   {
     key: "ready",
     label: "Gotowe",
     tone: "from-emerald-500/15 to-emerald-500/5 border-emerald-400/20",
     dot: "bg-emerald-400",
+    hint: "Gotowe do eksportu na marketplace",
   },
   {
     key: "exported",
     label: "Wyeksportowane",
     tone: "from-violet-500/15 to-violet-500/5 border-violet-400/20",
     dot: "bg-violet-400",
+    hint: "Wysłane do kanałów sprzedaży",
   },
   {
     key: "errors",
-    label: "Bledy",
+    label: "Błędy",
     tone: "from-rose-500/15 to-rose-500/5 border-rose-400/20",
     dot: "bg-rose-400",
+    hint: "Wymagają Twojej uwagi",
   },
 ];
 
@@ -282,7 +287,7 @@ export default function Dashboard() {
                       {value.toLocaleString("pl-PL")}
                     </div>
                     <div className="mt-2 text-xs text-slate-400">
-                      Live z /api/dashboard/summary
+                      {card.hint}
                     </div>
                   </div>
                 );

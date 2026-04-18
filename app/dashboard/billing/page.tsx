@@ -31,10 +31,10 @@ function MetricCard({
   hint: string;
 }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-sm backdrop-blur-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{label}</div>
-      <div className="mt-3 text-3xl font-semibold text-white">{value}</div>
-      <div className="mt-2 text-sm text-slate-400">{hint}</div>
+    <div className="rounded-3xl p-5 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+      <div className="text-xs font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--text-tertiary)" }}>{label}</div>
+      <div className="mt-3 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{value}</div>
+      <div className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>{hint}</div>
     </div>
   );
 }
@@ -50,9 +50,9 @@ function SectionTitle({
 }) {
   return (
     <div className="space-y-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-300/80">{eyebrow}</div>
-      <h2 className="text-2xl font-semibold text-white">{title}</h2>
-      <p className="max-w-3xl text-sm leading-6 text-slate-400">{description}</p>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.28em]" style={{ color: "var(--accent-primary)" }}>{eyebrow}</div>
+      <h2 className="text-2xl font-semibold" style={{ color: "var(--text-heading)" }}>{title}</h2>
+      <p className="max-w-3xl text-sm leading-6" style={{ color: "var(--text-secondary)" }}>{description}</p>
     </div>
   );
 }
@@ -267,7 +267,7 @@ export default function BillingPage() {
         />
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-sm backdrop-blur-sm">
+      <section className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <SectionTitle
           eyebrow="Za co placisz"
           title="Koszt akcji AI"
@@ -303,7 +303,7 @@ export default function BillingPage() {
         </div>
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-sm backdrop-blur-sm">
+      <section className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <SectionTitle
           eyebrow="Pakiety"
           title="Kup kredyty Stripe"
@@ -331,7 +331,7 @@ export default function BillingPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-sm backdrop-blur-sm">
+        <div className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
           <SectionTitle
             eyebrow="Stan konta"
             title="Saldo i historia zuzycia"
@@ -366,7 +366,7 @@ export default function BillingPage() {
           </div>
         </div>
 
-        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-sm backdrop-blur-sm">
+        <div className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
           <SectionTitle
             eyebrow="Platnosci"
             title="Historia usera"
