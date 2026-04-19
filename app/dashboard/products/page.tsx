@@ -6,16 +6,21 @@ import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
 import { useLang } from "../LangContext";
 import { translations } from "../i18n";
 import {
+  createProductExportBatchGroups,
   findProductExportCategoryGroup,
   getExportableProductIds,
+  getProductExportBatchSummary,
   filterProductsByListingFocus,
   getProductExportCategoryGroups,
   getProductExportPreflight,
   getProductExportSummary,
   getProductListingState,
   getProductListingStats,
+  getRetryableProductExportGroups,
   hasActiveProductFilters,
   parseProductIntegrations,
+  updateProductExportBatchGroup,
+  type ProductExportBatchGroup,
   type ProductExportCategoryGroup,
   type ProductListingFocus,
   type ProductExportPreflightRow,
@@ -99,6 +104,9 @@ type RecentProductExport = {
   fileName: string;
   createdAt: string;
 };
+type ProductExportResult =
+  | { ok: true }
+  | { ok: false; error: string };
 const STATUS_META_KEYS = {
   pending: "statusPending",
   mapped: "statusMapped",
@@ -151,6 +159,17 @@ const PRODUCTS_PAGE_COPY = {
     splitSelectionTitle: "Split kategorii",
     splitSelectionDesc: "Przelaczaj grupy i eksportuj seryjnie bez recznego zaznaczania.",
     splitSelectionOff: "Wylacz split",
+    splitSelectionRunAll: "Eksportuj wszystkie grupy",
+    splitSelectionRetryFailed: "Powtorz fail",
+    splitSelectionReportClose: "Schowaj raport",
+    splitSelectionReportTitle: "Raport serii eksportu",
+    splitSelectionReportDesc: "Kazda kategoria leci osobno. Fail zostaje gotowy do retry.",
+    splitSelectionStatusPending: "Czeka",
+    splitSelectionStatusRunning: "Leci",
+    splitSelectionStatusSuccess: "OK",
+    splitSelectionStatusFailed: "Fail",
+    splitSelectionGroupsLabel: "grup",
+    splitSelectionOpenGroup: "Otworz grupe",
     recentExportsTitle: "Ostatnie eksporty",
     recentExportsDesc: "Szybki powrot do ostatnio wygenerowanych paczek i ponowne pobranie bez skladania zaznaczen od zera.",
     recentExportsEmpty: "Brak historii eksportow. Pierwszy eksport pojawi sie tutaj.",
@@ -196,6 +215,17 @@ const PRODUCTS_PAGE_COPY = {
     splitSelectionTitle: "Category split",
     splitSelectionDesc: "Switch groups and export them in sequence without manual reselection.",
     splitSelectionOff: "Disable split",
+    splitSelectionRunAll: "Export all groups",
+    splitSelectionRetryFailed: "Retry failed",
+    splitSelectionReportClose: "Hide report",
+    splitSelectionReportTitle: "Batch export report",
+    splitSelectionReportDesc: "Each category runs separately. Failed groups stay ready for retry.",
+    splitSelectionStatusPending: "Pending",
+    splitSelectionStatusRunning: "Running",
+    splitSelectionStatusSuccess: "OK",
+    splitSelectionStatusFailed: "Failed",
+    splitSelectionGroupsLabel: "groups",
+    splitSelectionOpenGroup: "Open group",
     recentExportsTitle: "Recent exports",
     recentExportsDesc: "Quick return to the latest generated packages and one-click download retry without rebuilding selection.",
     recentExportsEmpty: "No export history yet. The first export will appear here.",
@@ -814,6 +844,136 @@ function RecentExportsPanel({
   );
 }
 
+function ExportBatchReportPanel({
+  groups,
+  running,
+  onRetryFailed,
+  onClose,
+  onOpenGroup,
+}: {
+  groups: ProductExportBatchGroup[];
+  running: boolean;
+  onRetryFailed: () => void;
+  onClose: () => void;
+  onOpenGroup: (group: ProductExportCategoryGroup) => void;
+}) {
+  const { lang } = useLang();
+  const copy = PRODUCTS_PAGE_COPY[lang];
+  const summary = getProductExportBatchSummary(groups);
+  const retryableGroups = getRetryableProductExportGroups(groups);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+            {copy.splitSelectionReportTitle}
+          </div>
+          <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
+            {copy.splitSelectionReportDesc}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {retryableGroups.length > 0 && (
+            <button
+              onClick={onRetryFailed}
+              disabled={running}
+              className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                running
+                  ? "cursor-not-allowed bg-amber-200 text-amber-700"
+                  : "bg-amber-600 text-white hover:bg-amber-700"
+              }`}
+            >
+              {copy.splitSelectionRetryFailed} ({retryableGroups.length})
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            disabled={running}
+            className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {copy.splitSelectionReportClose}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{copy.splitSelectionGroupsLabel}</div>
+          <div className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">{summary.total}</div>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">{copy.splitSelectionStatusSuccess}</div>
+          <div className="mt-2 text-3xl font-semibold text-emerald-800">{summary.success}</div>
+        </div>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-700">{copy.splitSelectionStatusFailed}</div>
+          <div className="mt-2 text-3xl font-semibold text-rose-800">{summary.failed}</div>
+        </div>
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+            {running ? copy.splitSelectionStatusRunning : copy.splitSelectionStatusPending}
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-sky-800">
+            {running ? summary.running : summary.pending}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {groups.map((group) => {
+          const tone = group.status === "success"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : group.status === "failed"
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : group.status === "running"
+                ? "border-sky-200 bg-sky-50 text-sky-700"
+                : "border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-secondary)]";
+          const statusLabel = group.status === "success"
+            ? copy.splitSelectionStatusSuccess
+            : group.status === "failed"
+              ? copy.splitSelectionStatusFailed
+              : group.status === "running"
+                ? copy.splitSelectionStatusRunning
+                : copy.splitSelectionStatusPending;
+
+          return (
+            <div
+              key={group.categoryPath}
+              className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 lg:flex-row lg:items-start lg:justify-between"
+            >
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
+                    {statusLabel}
+                  </span>
+                  <span className="rounded-full bg-[var(--bg-card)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                    {group.count} {copy.recentExportsProducts}
+                  </span>
+                </div>
+                <div className="text-sm font-semibold text-[var(--text-primary)]">{group.categoryPath}</div>
+                {group.error && (
+                  <div className="text-xs leading-5 text-rose-700">{group.error}</div>
+                )}
+              </div>
+
+              <button
+                onClick={() => onOpenGroup(group)}
+                disabled={running}
+                className="shrink-0 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {copy.splitSelectionOpenGroup}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BulkAIModal({
   count,
   selectedIds,
@@ -1099,6 +1259,8 @@ export default function ProductsPage() {
   const [recentExports, setRecentExports] = useState<RecentProductExport[]>([]);
   const [recentExportsLoading, setRecentExportsLoading] = useState(true);
   const [splitSelectionGroups, setSplitSelectionGroups] = useState<ProductExportCategoryGroup[]>([]);
+  const [exportBatchGroups, setExportBatchGroups] = useState<ProductExportBatchGroup[]>([]);
+  const [batchExporting, setBatchExporting] = useState(false);
   const inlineJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestSeq = useRef(0);
 
@@ -1167,14 +1329,15 @@ export default function ProductsPage() {
   }, [products]);
 
   useEffect(() => {
-    if (selected.size === 0 && splitSelectionGroups.length > 0) {
+    if (!batchExporting && selected.size === 0 && splitSelectionGroups.length > 0) {
       setSplitSelectionGroups([]);
     }
-  }, [selected, splitSelectionGroups.length]);
+  }, [batchExporting, selected, splitSelectionGroups.length]);
 
   useEffect(() => {
     setSplitSelectionGroups([]);
-  }, [mpFilter]);
+    if (!batchExporting) setExportBatchGroups([]);
+  }, [batchExporting, mpFilter]);
 
   useEffect(() => {
     if (!activeInlineJob?.id) return;
@@ -1240,10 +1403,14 @@ export default function ProductsPage() {
       marketplaceSlug?: string;
       categoryPath?: string | null;
       clearSelection?: boolean;
+      suppressErrorAlert?: boolean;
+      skipSplitAutoAdvance?: boolean;
     }
-  ) => {
+  ): Promise<ProductExportResult> => {
     const exportMarketplace = options?.marketplaceSlug || mpFilter;
-    if (!exportMarketplace || productIds.length === 0) return;
+    if (!exportMarketplace || productIds.length === 0) {
+      return { ok: false, error: "Brak danych do eksportu" };
+    }
     setExporting(true);
     try {
       const body: {
@@ -1275,30 +1442,37 @@ export default function ProductsPage() {
       a.click();
       URL.revokeObjectURL(url);
 
-      const exportedSplitGroup = splitSelectionGroups.length > 0
-        ? findProductExportCategoryGroup(splitSelectionGroups, productIds)
-        : null;
+      if (!options?.skipSplitAutoAdvance) {
+        const exportedSplitGroup = splitSelectionGroups.length > 0
+          ? findProductExportCategoryGroup(splitSelectionGroups, productIds)
+          : null;
 
-      if (exportedSplitGroup) {
-        const nextGroups = splitSelectionGroups.filter(
-          (group) => group.categoryPath !== exportedSplitGroup.categoryPath
-        );
-        setSplitSelectionGroups(nextGroups);
-        if (nextGroups[0]) {
-          setSelected(new Set(nextGroups[0].productIds));
-        } else {
+        if (exportedSplitGroup) {
+          const nextGroups = splitSelectionGroups.filter(
+            (group) => group.categoryPath !== exportedSplitGroup.categoryPath
+          );
+          setSplitSelectionGroups(nextGroups);
+          if (nextGroups[0]) {
+            setSelected(new Set(nextGroups[0].productIds));
+          } else {
+            setSelected(new Set());
+          }
+        } else if (options?.clearSelection) {
           setSelected(new Set());
         }
-      } else if (options?.clearSelection) {
-        setSelected(new Set());
       }
       setShowExportPreflight(false);
       await Promise.all([
         loadProducts(search, page, statusFilter, mpFilter),
         loadRecentExports(),
       ]);
+      return { ok: true };
     } catch (err: unknown) {
-      alert("Blad eksportu: " + getErrorMessage(err));
+      const message = getErrorMessage(err);
+      if (!options?.suppressErrorAlert) {
+        alert("Blad eksportu: " + message);
+      }
+      return { ok: false, error: message };
     } /*
     } catch (err: unknown) { alert("Błąd eksportu: " + getErrorMessage(err)); }
     */ finally { setExporting(false); }
@@ -1321,6 +1495,7 @@ export default function ProductsPage() {
       }
       setSelected(new Set());
       setSplitSelectionGroups([]);
+      setExportBatchGroups([]);
       setShowDeleteConfirm(false);
       loadProducts(search, page, statusFilter, mpFilter);
     } finally {
@@ -1339,11 +1514,67 @@ export default function ProductsPage() {
   const startSplitSelection = useCallback((groups: ProductExportCategoryGroup[]) => {
     if (groups.length <= 1) return;
     setSplitSelectionGroups(groups);
+    setExportBatchGroups([]);
     setSelected(new Set(groups[0].productIds));
     setShowExportPreflight(false);
   }, []);
 
+  const focusExportBatchGroup = useCallback((group: ProductExportCategoryGroup) => {
+    setSplitSelectionGroups([group]);
+    setSelected(new Set(group.productIds));
+  }, []);
+
+  const clearExportBatchReport = useCallback(() => {
+    if (batchExporting) return;
+    setExportBatchGroups([]);
+  }, [batchExporting]);
+
+  const runSplitBatchExport = async (groups: ProductExportCategoryGroup[]) => {
+    const exportMarketplace = mpFilter;
+    if (!exportMarketplace || groups.length === 0 || batchExporting) return;
+
+    setShowExportPreflight(false);
+    setBatchExporting(true);
+    setSplitSelectionGroups(groups);
+
+    let nextBatchGroups = createProductExportBatchGroups(groups);
+    setExportBatchGroups(nextBatchGroups);
+    try {
+      for (const group of groups) {
+        setSelected(new Set(group.productIds));
+        nextBatchGroups = updateProductExportBatchGroup(nextBatchGroups, group.categoryPath, {
+          status: "running",
+          error: null,
+        });
+        setExportBatchGroups(nextBatchGroups);
+
+        const result = await handleExport(group.productIds, {
+          marketplaceSlug: exportMarketplace,
+          categoryPath: group.categoryPath,
+          suppressErrorAlert: true,
+          skipSplitAutoAdvance: true,
+        });
+
+        nextBatchGroups = updateProductExportBatchGroup(nextBatchGroups, group.categoryPath, result.ok
+          ? { status: "success", error: null }
+          : { status: "failed", error: result.error });
+        setExportBatchGroups(nextBatchGroups);
+      }
+
+      const retryableGroups = getRetryableProductExportGroups(nextBatchGroups);
+      setSplitSelectionGroups(retryableGroups);
+      if (retryableGroups[0]) {
+        setSelected(new Set(retryableGroups[0].productIds));
+      } else {
+        setSelected(new Set());
+      }
+    } finally {
+      setBatchExporting(false);
+    }
+  };
+
   const toggleSelect = (id: number) => {
+    if (batchExporting) return;
     setSplitSelectionGroups([]);
     setSelected(prev => {
       const next = new Set(prev);
@@ -1356,6 +1587,7 @@ export default function ProductsPage() {
     });
   };
   const toggleAll = () => {
+    if (batchExporting) return;
     setSplitSelectionGroups([]);
     setSelected(prev => {
       const next = new Set(prev);
@@ -1372,6 +1604,7 @@ export default function ProductsPage() {
     });
   };
   const clearFilters = useCallback(() => {
+    if (batchExporting) return;
     setSearch("");
     setStatusFilter("");
     setMpFilter("");
@@ -1379,7 +1612,7 @@ export default function ProductsPage() {
     setSplitSelectionGroups([]);
     setPage(1);
     setOpenMenu(null);
-  }, []);
+  }, [batchExporting]);
 
   const visibleProducts = filterProductsByListingFocus(products, listingFocus);
   const listingStats = getProductListingStats(products);
@@ -1405,6 +1638,7 @@ export default function ProductsPage() {
     : "";
   const selectedReadyCount = exportSummary.ready;
   const selectedOverBulkLimit = selected.size > 10;
+  const exportBusy = exporting || batchExporting;
 
   return (
     <div>
@@ -1428,7 +1662,7 @@ export default function ProductsPage() {
         <ExportPreflightModal
           marketplaceName={currentMarketplaceName}
           rows={exportPreflightRows}
-          exporting={exporting}
+          exporting={exportBusy}
           onConfirm={() => { void handleExport(exportReadyIds, { clearSelection: true }); }}
           onExportCategory={(group) => {
             void handleExport(group.productIds, {
@@ -1478,7 +1712,7 @@ export default function ProductsPage() {
       <RecentExportsPanel
         rows={recentExports}
         loading={recentExportsLoading}
-        exporting={exporting}
+        exporting={exportBusy}
         onRetry={(row) => {
           void handleExport(row.productIds, {
             marketplaceSlug: row.marketplaceSlug,
@@ -1488,7 +1722,9 @@ export default function ProductsPage() {
       />
 
       {/* Toolbar */}
-      <div className="mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3 shadow-sm sm:p-4">
+      <div className={`mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3 shadow-sm sm:p-4 ${
+        batchExporting ? "pointer-events-none opacity-70" : ""
+      }`}>
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1 lg:max-w-md">
@@ -1602,20 +1838,21 @@ export default function ProductsPage() {
               {mpFilter && selectedCategoryGroups.length > 1 && splitSelectionGroups.length === 0 && (
                 <button
                   onClick={() => startSplitSelection(selectedCategoryGroups)}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+                  disabled={exportBusy}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {PRODUCTS_PAGE_COPY[lang].splitSelectionStart}
                 </button>
               )}
 
               {mpFilter && (
-                <button onClick={() => setShowExportPreflight(true)} disabled={exporting}
+                <button onClick={() => setShowExportPreflight(true)} disabled={exportBusy}
                   className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                    exporting
+                    exportBusy
                       ? "cursor-wait bg-green-200 text-green-700"
                       : "bg-green-500 text-white hover:bg-green-600"
                   }`}>
-                  {exporting
+                  {exportBusy
                     ? <><svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>{t.exporting}</>
                     : <><svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       {t.exportTo} {marketplaces.find(m => m.slug === mpFilter)?.name ?? mpFilter}</>}
@@ -1624,12 +1861,12 @@ export default function ProductsPage() {
 
               <button
                 onClick={() => {
-                  if (selectedOverBulkLimit) return;
+                  if (selectedOverBulkLimit || exportBusy) return;
                   setShowBulkAI(true);
                 }}
-                aria-disabled={selectedOverBulkLimit}
+                aria-disabled={selectedOverBulkLimit || exportBusy}
                 className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                  selectedOverBulkLimit
+                  selectedOverBulkLimit || exportBusy
                     ? "cursor-not-allowed bg-indigo-200 text-indigo-500"
                     : "bg-indigo-600 text-white hover:bg-indigo-700"
                 }`}
@@ -1642,8 +1879,9 @@ export default function ProductsPage() {
               </button>
 
               <button
+                disabled={exportBusy}
                 onClick={() => setShowDeleteConfirm(true)}
-                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50"
+                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {t.deleteSelected}
               </button>
@@ -1651,22 +1889,38 @@ export default function ProductsPage() {
           </div>
 
           {splitSelectionGroups.length > 0 && (
-            <div className="mt-3 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-3">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
-                    {PRODUCTS_PAGE_COPY[lang].splitSelectionTitle}
+              <div className="mt-3 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-3">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                      {PRODUCTS_PAGE_COPY[lang].splitSelectionTitle}
                   </div>
                   <p className="mt-1 text-xs text-[var(--text-secondary)]">
                     {PRODUCTS_PAGE_COPY[lang].splitSelectionDesc}
                   </p>
                 </div>
-                <button
-                  onClick={disableSplitSelection}
-                  className="rounded-xl border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-body)]"
-                >
-                  {PRODUCTS_PAGE_COPY[lang].splitSelectionOff}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {splitSelectionGroups.length > 1 && (
+                    <button
+                      onClick={() => { void runSplitBatchExport(splitSelectionGroups); }}
+                      disabled={exportBusy}
+                      className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                        exportBusy
+                          ? "cursor-wait bg-indigo-200 text-indigo-500"
+                          : "bg-indigo-600 text-white hover:bg-indigo-700"
+                      }`}
+                    >
+                      {PRODUCTS_PAGE_COPY[lang].splitSelectionRunAll}
+                    </button>
+                  )}
+                  <button
+                    onClick={disableSplitSelection}
+                    disabled={exportBusy}
+                    className="rounded-xl border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-body)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {PRODUCTS_PAGE_COPY[lang].splitSelectionOff}
+                  </button>
+                </div>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1676,11 +1930,12 @@ export default function ProductsPage() {
                     <button
                       key={group.categoryPath}
                       onClick={() => activateSplitSelectionGroup(group)}
+                      disabled={exportBusy}
                       className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
                         active
                           ? "bg-indigo-600 text-white"
                           : "border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
-                      }`}
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
                     >
                       {group.categoryPath} ({group.count})
                     </button>
@@ -1691,6 +1946,14 @@ export default function ProductsPage() {
           )}
         </div>
       )}
+
+      <ExportBatchReportPanel
+        groups={exportBatchGroups}
+        running={batchExporting}
+        onRetryFailed={() => { void runSplitBatchExport(getRetryableProductExportGroups(exportBatchGroups)); }}
+        onClose={clearExportBatchReport}
+        onOpenGroup={focusExportBatchGroup}
+      />
 
       {inlineJobActive && activeInlineJob && (
         <div className="mb-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">

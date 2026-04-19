@@ -15,6 +15,10 @@ export type ProductExportCategoryGroup = {
   productIds: number[];
   count: number;
 };
+export type ProductExportBatchGroup = ProductExportCategoryGroup & {
+  status: "pending" | "running" | "success" | "failed";
+  error: string | null;
+};
 
 type ProductListingInput = {
   status: string;
@@ -253,4 +257,58 @@ export function findProductExportCategoryGroup(
   }
 
   return null;
+}
+
+export function createProductExportBatchGroups(groups: ProductExportCategoryGroup[]): ProductExportBatchGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    status: "pending",
+    error: null,
+  }));
+}
+
+export function updateProductExportBatchGroup(
+  groups: ProductExportBatchGroup[],
+  categoryPath: string,
+  updates: Partial<Pick<ProductExportBatchGroup, "status" | "error">>
+) {
+  return groups.map((group) => {
+    if (group.categoryPath !== categoryPath) return group;
+    return {
+      ...group,
+      ...updates,
+    };
+  });
+}
+
+export function getProductExportBatchSummary(groups: ProductExportBatchGroup[]) {
+  return groups.reduce(
+    (acc, group) => {
+      acc.total += 1;
+      acc.products += group.count;
+      if (group.status === "success") acc.success += 1;
+      if (group.status === "failed") acc.failed += 1;
+      if (group.status === "running") acc.running += 1;
+      if (group.status === "pending") acc.pending += 1;
+      return acc;
+    },
+    {
+      total: 0,
+      products: 0,
+      success: 0,
+      failed: 0,
+      running: 0,
+      pending: 0,
+    }
+  );
+}
+
+export function getRetryableProductExportGroups(groups: ProductExportBatchGroup[]): ProductExportCategoryGroup[] {
+  return groups
+    .filter((group) => group.status === "failed")
+    .map(({ categoryPath, productIds, count }) => ({
+      categoryPath,
+      productIds,
+      count,
+    }));
 }

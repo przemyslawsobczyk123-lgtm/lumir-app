@@ -3,17 +3,21 @@ import test from "node:test";
 
 import {
   canAutoAssignCategory,
+  createProductExportBatchGroups,
   findProductExportCategoryGroup,
   filterProductsByListingFocus,
   getExportableProductIds,
+  getProductExportBatchSummary,
   getProductExportCategoryGroups,
   getProductExportPreflight,
   getProductExportSummary,
+  getRetryableProductExportGroups,
   getDraftCategoryHint,
   getProductListingStats,
   getProductListingState,
   hasActiveProductFilters,
   parseProductIntegrations,
+  updateProductExportBatchGroup,
 } from "./ui-helpers.ts";
 
 test("hasActiveProductFilters returns true when search text exists", () => {
@@ -226,5 +230,68 @@ test("findProductExportCategoryGroup returns null when selection spans multiple 
       [1, 2]
     ),
     null
+  );
+});
+
+test("createProductExportBatchGroups starts every group in pending state", () => {
+  assert.deepEqual(
+    createProductExportBatchGroups([
+      { categoryPath: "Dom/Ksiazki", productIds: [1, 3], count: 2 },
+      { categoryPath: "Elektronika/Audio", productIds: [2], count: 1 },
+    ]),
+    [
+      { categoryPath: "Dom/Ksiazki", productIds: [1, 3], count: 2, status: "pending", error: null },
+      { categoryPath: "Elektronika/Audio", productIds: [2], count: 1, status: "pending", error: null },
+    ]
+  );
+});
+
+test("updateProductExportBatchGroup updates only matching category group", () => {
+  assert.deepEqual(
+    updateProductExportBatchGroup(
+      createProductExportBatchGroups([
+        { categoryPath: "Dom/Ksiazki", productIds: [1, 3], count: 2 },
+        { categoryPath: "Elektronika/Audio", productIds: [2], count: 1 },
+      ]),
+      "Elektronika/Audio",
+      { status: "failed", error: "timeout" }
+    ),
+    [
+      { categoryPath: "Dom/Ksiazki", productIds: [1, 3], count: 2, status: "pending", error: null },
+      { categoryPath: "Elektronika/Audio", productIds: [2], count: 1, status: "failed", error: "timeout" },
+    ]
+  );
+});
+
+test("getProductExportBatchSummary counts success failed running and pending groups", () => {
+  assert.deepEqual(
+    getProductExportBatchSummary([
+      { categoryPath: "Dom/Ksiazki", productIds: [1, 3], count: 2, status: "success", error: null },
+      { categoryPath: "Elektronika/Audio", productIds: [2], count: 1, status: "failed", error: "timeout" },
+      { categoryPath: "AGD", productIds: [4], count: 1, status: "running", error: null },
+      { categoryPath: "RTV", productIds: [5, 6], count: 2, status: "pending", error: null },
+    ]),
+    {
+      total: 4,
+      products: 6,
+      success: 1,
+      failed: 1,
+      running: 1,
+      pending: 1,
+    }
+  );
+});
+
+test("getRetryableProductExportGroups returns only failed groups without status metadata", () => {
+  assert.deepEqual(
+    getRetryableProductExportGroups([
+      { categoryPath: "Dom/Ksiazki", productIds: [1, 3], count: 2, status: "success", error: null },
+      { categoryPath: "Elektronika/Audio", productIds: [2], count: 1, status: "failed", error: "timeout" },
+      { categoryPath: "AGD", productIds: [4], count: 1, status: "failed", error: "403" },
+    ]),
+    [
+      { categoryPath: "Elektronika/Audio", productIds: [2], count: 1 },
+      { categoryPath: "AGD", productIds: [4], count: 1 },
+    ]
   );
 });
