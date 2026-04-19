@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -218,7 +219,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
       <div className="w-[220px] text-white p-5 fixed h-full flex flex-col overflow-y-auto"
         style={{ background: "var(--bg-sidebar)" }}>
         <div className="flex items-center gap-2.5 mb-10">
-          <img src="/lumir-icon.svg" alt="LuMir" className="w-8 h-8 rounded-lg flex-shrink-0" />
+          <Image src="/lumir-icon.svg" alt="LuMir" width={32} height={32} className="w-8 h-8 rounded-lg flex-shrink-0" />
           <span className="text-[22px] font-semibold tracking-wide text-white"
             style={{ fontFamily: "var(--font-brand), Georgia, serif", letterSpacing: "0.04em" }}>
             LuMir
@@ -369,7 +370,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
               <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "rgba(245,158,11,0.18)", color: "#f59e0b" }}>
                 {activeJobs.length}
               </span>
-              Jobs
+              {t.topbar.tasks}
             </button>
 
             {billingSummary && (
@@ -452,10 +453,10 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    Aktywne joby
+                    {t.topbar.tasksTitle}
                   </div>
                   <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-                    Podgląd kolejki AI i importów
+                    {t.topbar.tasksSubtitle}
                   </div>
                 </div>
                 <button
@@ -463,7 +464,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
                   className="rounded-lg px-2 py-1 text-xs font-semibold transition"
                   style={{ background: "var(--bg-input)", color: "var(--text-secondary)" }}
                 >
-                  Zamknij
+                  {t.topbar.tasksClose}
                 </button>
               </div>
 
@@ -473,7 +474,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
                     className="rounded-xl border px-3 py-4 text-center text-sm"
                     style={{ borderColor: "var(--border-default)", background: "var(--bg-body)", color: "var(--text-tertiary)" }}
                   >
-                    Brak aktywnych jobów
+                    {t.topbar.tasksEmpty}
                   </div>
                 ) : activeJobs.map((job) => (
                   <div
