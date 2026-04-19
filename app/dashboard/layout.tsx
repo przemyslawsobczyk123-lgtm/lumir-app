@@ -388,10 +388,10 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
             {/* Language switcher */}
             <button
               onClick={() => setLang(lang === "pl" ? "en" : "pl")}
-              className="rounded-xl px-3 py-2 text-sm font-semibold transition"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)", color: "var(--text-primary)" }}
+              className="rounded-xl px-3 py-2 text-xs font-bold tracking-widest uppercase transition hover:opacity-80"
+              style={{ background: "var(--accent-primary)", color: "#fff", border: "none", letterSpacing: "0.08em" }}
             >
-              {lang === "pl" ? "🇬🇧 EN" : "🇵🇱 PL"}
+              {lang === "pl" ? "EN" : "PL"}
             </button>
 
             {/* Theme toggle */}
