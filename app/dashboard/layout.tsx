@@ -100,6 +100,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
   });
   const [logoutModal, setLogoutModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const jobsRef = useRef<HTMLDivElement>(null);
   const userRaw = useSyncExternalStore(subscribeDashboardSnapshot, getDashboardUserSnapshot, getDashboardServerUserSnapshot);
   const user = userRaw ? parseStoredUser(userRaw) : null;
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
@@ -187,6 +188,16 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
     if (open) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (jobsRef.current && !jobsRef.current.contains(e.target as Node)) {
+        setJobsOpen(false);
+      }
+    }
+    if (jobsOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [jobsOpen]);
 
   const initial = [user?.name?.[0], user?.email?.[0]]
     .map(c => c?.toUpperCase())
@@ -362,16 +373,83 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
         <div className="relative flex justify-end items-center px-8 py-4 border-b"
           style={{ background: "var(--bg-topbar)", borderColor: "var(--border-default)", boxShadow: "var(--shadow-card)" }}>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setJobsOpen((value) => !value)}
-              className="hidden sm:inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)", color: "var(--text-primary)", boxShadow: "var(--shadow-card)" }}
-            >
-              <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "rgba(245,158,11,0.18)", color: "#f59e0b" }}>
-                {activeJobs.length}
-              </span>
-              {t.topbar.tasks}
-            </button>
+            {/* Tasks button + dropdown */}
+            <div ref={jobsRef} className="relative">
+              <button
+                onClick={() => setJobsOpen((value) => !value)}
+                className="hidden sm:inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)", color: "var(--text-primary)", boxShadow: "var(--shadow-card)" }}
+              >
+                <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "rgba(245,158,11,0.18)", color: "#f59e0b" }}>
+                  {activeJobs.length}
+                </span>
+                {t.topbar.tasks}
+              </button>
+
+              {jobsOpen && (
+                <div
+                  className="absolute left-0 top-[calc(100%+8px)] z-50 w-[340px] rounded-2xl border p-4 shadow-2xl"
+                  style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", boxShadow: "var(--shadow-card)" }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                        {t.topbar.tasksTitle}
+                      </div>
+                      <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                        {t.topbar.tasksSubtitle}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setJobsOpen(false)}
+                      className="rounded-lg px-2 py-1 text-xs font-semibold transition"
+                      style={{ background: "var(--bg-input)", color: "var(--text-secondary)" }}
+                    >
+                      {t.topbar.tasksClose}
+                    </button>
+                  </div>
+
+                  <div className="mt-3 space-y-3">
+                    {activeJobs.length === 0 ? (
+                      <div
+                        className="rounded-xl border px-3 py-4 text-center text-sm"
+                        style={{ borderColor: "var(--border-default)", background: "var(--bg-body)", color: "var(--text-tertiary)" }}
+                      >
+                        {t.topbar.tasksEmpty}
+                      </div>
+                    ) : activeJobs.map((job) => (
+                      <div
+                        key={job.id}
+                        className="rounded-xl border p-3"
+                        style={{ borderColor: "var(--border-default)", background: "var(--bg-body)" }}
+                      >
+                        <div className="flex items-center justify-between gap-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                          <span>{job.label || job.type}</span>
+                          <span>{job.progressPercent}%</span>
+                        </div>
+                        <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "var(--bg-input)" }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${job.progressPercent}%`, background: "linear-gradient(90deg, #f59e0b, #f97316)" }}
+                          />
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                          <span>{job.currentStep || job.status}</span>
+                          <span>•</span>
+                          <span>{formatJobDuration(job.elapsedSeconds)}</span>
+                          {job.etaSeconds != null && (
+                            <>
+                              <span>•</span>
+                              <span>ETA {formatJobDuration(job.etaSeconds)}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {billingSummary && (
               <button
@@ -444,70 +522,6 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
               {initial}
             </div>
           </div>
-
-          {jobsOpen && (
-            <div
-              className="absolute right-8 top-[calc(100%-4px)] z-50 w-[340px] rounded-2xl border p-4 shadow-2xl"
-              style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", boxShadow: "var(--shadow-card)" }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    {t.topbar.tasksTitle}
-                  </div>
-                  <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-                    {t.topbar.tasksSubtitle}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setJobsOpen(false)}
-                  className="rounded-lg px-2 py-1 text-xs font-semibold transition"
-                  style={{ background: "var(--bg-input)", color: "var(--text-secondary)" }}
-                >
-                  {t.topbar.tasksClose}
-                </button>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                {activeJobs.length === 0 ? (
-                  <div
-                    className="rounded-xl border px-3 py-4 text-center text-sm"
-                    style={{ borderColor: "var(--border-default)", background: "var(--bg-body)", color: "var(--text-tertiary)" }}
-                  >
-                    {t.topbar.tasksEmpty}
-                  </div>
-                ) : activeJobs.map((job) => (
-                  <div
-                    key={job.id}
-                    className="rounded-xl border p-3"
-                    style={{ borderColor: "var(--border-default)", background: "var(--bg-body)" }}
-                  >
-                    <div className="flex items-center justify-between gap-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
-                      <span>{job.label || job.type}</span>
-                      <span>{job.progressPercent}%</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "var(--bg-input)" }}>
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${job.progressPercent}%`, background: "linear-gradient(90deg, #f59e0b, #f97316)" }}
-                      />
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      <span>{job.currentStep || job.status}</span>
-                      <span>•</span>
-                      <span>{formatJobDuration(job.elapsedSeconds)}</span>
-                      {job.etaSeconds != null && (
-                        <>
-                          <span>•</span>
-                          <span>ETA {formatJobDuration(job.etaSeconds)}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* DROPDOWN */}
