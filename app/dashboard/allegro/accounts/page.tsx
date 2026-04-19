@@ -169,8 +169,8 @@ export default function AllegroAccountsPage() {
         showToast("Przeglądarka zablokowała popup — zezwól na wyskakujące okna dla tej strony", false);
         setConnecting(null);
       }
-    } catch (e: any) {
-      showToast(e.message, false);
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Nie udało się połączyć konta Allegro", false);
       setConnecting(null);
     }
   };

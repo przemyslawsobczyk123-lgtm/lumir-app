@@ -1,7 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { UnoptimizedRemoteImage } from "../../_components/UnoptimizedRemoteImage";
+import { canAutoAssignCategory, getDraftCategoryHint } from "../ui-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -16,12 +18,24 @@ function authHeaders(json = true) {
 
 // ── Types ────────────────────────────────────────────────────────
 type Marketplace = { id: number; slug: string; name: string };
+type DbCategory = { id: number; path: string; name: string };
+type AllegroCategoryOption = { id: string; name: string };
+type AllegroAllowedValue = { value: string };
+type AllegroParameter = {
+  id: string;
+  name: string;
+  description?: string | null;
+  required?: boolean | null;
+  restrictions?: {
+    allowedValues?: AllegroAllowedValue[] | null;
+  } | null;
+};
 type MarketplaceCategory = {
   marketplaceId: number; marketplaceSlug: string; marketplaceLabel: string;
-  categoryId?: number; categoryPath?: string;
-  allegroId?: string; allegroName?: string;
+  categoryId?: number | null; categoryPath?: string | null;
+  allegroId?: string | null; allegroName?: string | null;
 };
-type Field = { id: number; field_code: string; label: string; description?: string; required: boolean; allowedValues: string[] };
+type Field = { id?: number | string; field_code: string; label: string; description?: string; required: boolean; allowedValues: string[] };
 type DraftAttributeConfidence = { score: number; source: string; required: boolean; value: string };
 type AIDraft = {
   id?: number;
@@ -64,11 +78,66 @@ type JobSummary = {
   startedAt?: string | null;
   finishedAt?: string | null;
 };
+type ProductMarketplaceCategoryRow = {
+  marketplace_id: number;
+  slug: string;
+  marketplace_name: string;
+  category_id?: number | null;
+  category_path?: string | null;
+  allegro_category_id?: string | null;
+  allegro_category_name?: string | null;
+};
+type ProductAttributeRow = {
+  field_code: string;
+  value: string;
+};
+type ProductDetails = {
+  title?: string | null;
+  ean?: string | null;
+  sku?: string | null;
+  asin?: string | null;
+  brand?: string | null;
+  tags?: string | null;
+  price?: number | string | null;
+  stock?: number | string | null;
+  weight_kg?: number | string | null;
+  height_cm?: number | string | null;
+  width_cm?: number | string | null;
+  length_cm?: number | string | null;
+  description?: string | null;
+  images?: string[] | null;
+  marketplaceCategories?: ProductMarketplaceCategoryRow[] | null;
+  attributes?: ProductAttributeRow[] | null;
+};
+type ProductDetailsResponse = {
+  data?: ProductDetails | null;
+  error?: string;
+};
+type MarketplaceListResponse = {
+  data?: Marketplace[];
+};
+type TemplateCategoriesResponse = {
+  data?: DbCategory[];
+};
+type AllegroCategoriesResponse = {
+  data?: AllegroCategoryOption[];
+};
+type AllegroParametersResponse = {
+  data?: AllegroParameter[];
+};
+type UploadImageResponse = {
+  url?: string;
+  error?: string;
+};
 type MediaOption = "global" | "separate" | "override";
 const SLOTS = 16;
 
 function stripHtml(value: string) {
   return value.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function normalizeAIDraft(raw: RawAIDraft | null | undefined): AIDraft {
@@ -168,7 +237,6 @@ function Sel({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElemen
 export default function EditProductPage() {
   const { id } = useParams<{ id: string }>();
   const [loadingProduct, setLoadingProduct] = useState(true);
-  const [product, setProduct] = useState<any>(null);
   const router = useRouter();
   const [tab, setTab]     = useState("produkt");
   const [saving, setSaving] = useState(false);
@@ -202,8 +270,8 @@ export default function EditProductPage() {
 
   // Marketplace categories
   const [mktCats,     setMktCats]     = useState<Record<string, MarketplaceCategory>>({});
-  const [dbCats,      setDbCats]      = useState<Record<string, { id: number; path: string; name: string }[]>>({});
-  const [allegroTree, setAllegroTree] = useState<{ id: string; name: string }[]>([]);
+  const [dbCats,      setDbCats]      = useState<Record<string, DbCategory[]>>({});
+  const [allegroTree, setAllegroTree] = useState<AllegroCategoryOption[]>([]);
 
   // Atrybuty
   const [attrMp,     setAttrMp]     = useState("");
@@ -229,7 +297,7 @@ export default function EditProductPage() {
   // Load marketplaces
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
-      .then(r => r.json()).then(j => {
+      .then(r => r.json() as Promise<MarketplaceListResponse>).then(j => {
         if (j.data) {
           setMarketplaces(j.data);
           if (j.data.length) {
@@ -246,15 +314,16 @@ export default function EditProductPage() {
     marketplaces.forEach(async mp => {
       if (mp.slug === "allegro") {
         if (!allegroTree.length) {
-          const j = await fetch(`${API}/api/allegro/categories`, { headers: authHeaders() }).then(r => r.json());
+          const j = await fetch(`${API}/api/allegro/categories`, { headers: authHeaders() }).then(r => r.json() as Promise<AllegroCategoriesResponse>);
           if (j.data) setAllegroTree(j.data);
         }
       } else if (!dbCats[mp.slug]) {
-        const j = await fetch(`${API}/api/templates/categories?marketplace=${mp.slug}`, { headers: authHeaders() }).then(r => r.json());
-        if (j.data) setDbCats(prev => ({ ...prev, [mp.slug]: j.data }));
+        const j = await fetch(`${API}/api/templates/categories?marketplace=${mp.slug}`, { headers: authHeaders() }).then(r => r.json() as Promise<TemplateCategoriesResponse>);
+        const nextCategories = j.data;
+        if (nextCategories) setDbCats(prev => ({ ...prev, [mp.slug]: nextCategories }));
       }
     });
-  }, [tab, marketplaces]);
+  }, [allegroTree.length, dbCats, marketplaces, tab]);
 
   // Load attribute fields when marketplace or category changes
   useEffect(() => {
@@ -271,14 +340,14 @@ export default function EditProductPage() {
         if (allegroId) {
           // Allegro: pobierz parametry kategorii przez API
           const r = await fetch(`${API}/api/allegro/categories/${allegroId}/parameters`, { headers: authHeaders() });
-          const j = await r.json();
+          const j: AllegroParametersResponse = await r.json();
           if (j.data) {
-            setAttrFields(j.data.map((p: any) => ({
+            setAttrFields(j.data.map((p) => ({
               field_code:    p.id,
               label:         p.name,
               description:   p.description || "",
               required:      !!p.required,
-              allowedValues: p.restrictions?.allowedValues?.map((v: any) => v.value) ?? [],
+              allowedValues: p.restrictions?.allowedValues?.map(v => v.value) ?? [],
             })));
           } else setAttrFields([]);
         } else {
@@ -305,7 +374,86 @@ export default function EditProductPage() {
       const ex = prev[mp.slug] ?? { marketplaceId: mp.id, marketplaceSlug: mp.slug, marketplaceLabel: mp.name };
       return { ...prev, [mp.slug]: { ...ex, ...val } };
     });
+    setAttrMp(mp.slug);
+    setAiMp(mp.slug);
   };
+
+  const loadProduct = useCallback(async (silent = false) => {
+    if (!silent) setLoadingProduct(true);
+    try {
+      const res = await fetch(`${API}/api/products/${id}`, { headers: authHeaders(), cache: "no-store" });
+      const json: ProductDetailsResponse = await res.json();
+      if (json.data) {
+        const p = json.data;
+        try {
+          setTitle(p.title || "");
+          setEan(p.ean || "");
+          setSku(p.sku || "");
+          setAsin(p.asin || "");
+          setBrand(p.brand || "");
+          setTags(p.tags || "");
+          setPrice(p.price != null ? String(p.price) : "");
+          setStock(p.stock != null ? String(p.stock) : "0");
+          setWeightKg(p.weight_kg != null ? String(p.weight_kg) : "");
+          setHeightCm(p.height_cm != null ? String(p.height_cm) : "");
+          setWidthCm(p.width_cm != null ? String(p.width_cm) : "");
+          setLengthCm(p.length_cm != null ? String(p.length_cm) : "");
+          setDesc(p.description || "");
+          setDescHtml(p.description || "");
+        } catch (e) { console.error("Error loading basic fields:", e); }
+
+        try {
+          if (p.images) {
+            const arr = Array(16).fill(null);
+            const imgArray = Array.isArray(p.images) ? p.images : [];
+            imgArray.forEach((img: string, i: number) => { if (i < 16) arr[i] = img; });
+            setGlobalSlots(arr);
+          }
+        } catch (e) { console.error("Error loading images:", e); }
+
+        try {
+          if (p.marketplaceCategories) {
+            const mcs: Record<string, MarketplaceCategory> = {};
+            if (Array.isArray(p.marketplaceCategories)) {
+              p.marketplaceCategories.forEach((mc) => {
+                mcs[mc.slug] = {
+                  marketplaceId: mc.marketplace_id,
+                  marketplaceSlug: mc.slug,
+                  marketplaceLabel: mc.marketplace_name,
+                  categoryId: mc.category_id,
+                  categoryPath: mc.category_path,
+                  allegroId: mc.allegro_category_id,
+                  allegroName: mc.allegro_category_name,
+                };
+              });
+            }
+            setMktCats(mcs);
+          }
+        } catch (e) { console.error("Error loading marketplace categories:", e); }
+
+        try {
+          if (p.attributes) {
+            const attrs: Record<string, string> = {};
+            if (Array.isArray(p.attributes)) {
+              p.attributes.forEach((a) => {
+                attrs[a.field_code] = a.value === "❗ UZUPEŁNIJ" ? "" : a.value;
+              });
+            }
+            setAttrVals(attrs);
+          }
+        } catch (e) { console.error("Error loading attributes:", e); }
+      } else if (json.error && !silent) {
+        setError(json.error);
+      }
+    } catch (err) {
+      console.error("Product load error:", err);
+      if (!silent) {
+        setError(err instanceof Error ? err.message : "Nie udało się wczytać produktu");
+      }
+    } finally {
+      if (!silent) setLoadingProduct(false);
+    }
+  }, [id]);
 
   const loadAIDrafts = useCallback(async () => {
     try {
@@ -336,7 +484,9 @@ export default function EditProductPage() {
         if (!nextJob || cancelled) return;
         setAiJob(nextJob);
         if (nextJob.status === "done") {
+          await loadProduct(true);
           await loadAIDrafts();
+          if (aiMp) setAttrMp(aiMp);
           if (!cancelled) setAiJob(null);
         } else if (nextJob.status === "error") {
           setAiError(nextJob.currentMessage || "Generowanie AI nie powiodło się");
@@ -360,7 +510,7 @@ export default function EditProductPage() {
       if (aiJobPollRef.current) clearInterval(aiJobPollRef.current);
       aiJobPollRef.current = null;
     };
-  }, [aiJob?.id, loadAIDrafts]);
+  }, [aiJob?.id, aiMp, loadAIDrafts, loadProduct]);
 
   useEffect(() => {
     loadAIDrafts();
@@ -375,94 +525,23 @@ export default function EditProductPage() {
     if (assigned) setAiMp(assigned.slug);
   }, [aiMp, marketplaces, mktCats]);
 
-  
   useEffect(() => {
-    fetch(`${API}/api/products/${id}`, { headers: authHeaders(), cache: "no-store" })
-      .then(res => res.json())
-      .then(json => {
-        if(json.data) {
-          const p = json.data;
-          setProduct(p);
-          try {
-            setTitle(p.title || "");
-            setEan(p.ean || "");
-            setSku(p.sku || "");
-            setAsin(p.asin || "");
-            setBrand(p.brand || "");
-            setTags(p.tags || "");
-            setPrice(p.price != null ? String(p.price) : "");
-            setStock(p.stock != null ? String(p.stock) : "0");
-            setWeightKg(p.weight_kg != null ? String(p.weight_kg) : "");
-            setHeightCm(p.height_cm != null ? String(p.height_cm) : "");
-            setWidthCm(p.width_cm != null ? String(p.width_cm) : "");
-            setLengthCm(p.length_cm != null ? String(p.length_cm) : "");
-            setDesc(p.description || "");
-            setDescHtml(p.description || "");
-          } catch(e) { console.error("Error loading basic fields:", e); }
-          
-          try {
-            if(p.images) {
-              const arr = Array(16).fill(null);
-              const imgArray = Array.isArray(p.images) ? p.images : [];
-              imgArray.forEach((img: string, i: number) => { if(i<16) arr[i] = img; });
-              setGlobalSlots(arr);
-            }
-          } catch(e) { console.error("Error loading images:", e); }
-          
-          try {
-            if(p.marketplaceCategories) {
-              const mcs: Record<string, any> = {};
-              if (Array.isArray(p.marketplaceCategories)) {
-                  p.marketplaceCategories.forEach((mc: any) => {
-                    mcs[mc.slug] = {
-                      marketplaceId: mc.marketplace_id,
-                      marketplaceSlug: mc.slug,
-                      marketplaceLabel: mc.marketplace_name,
-                      categoryId: mc.category_id,
-                      categoryPath: mc.category_path,
-                      allegroId: mc.allegro_category_id,
-                      allegroName: mc.allegro_category_name
-                    };
-                  });
-              }
-              setMktCats(mcs);
-            }
-          } catch(e) { console.error("Error loading marketplace categories:", e); }
-          
-          try {
-            if(p.attributes) {
-              const attrs: Record<string, string> = {};
-              if (Array.isArray(p.attributes)) {
-                  p.attributes.forEach((a: any) => {
-                    attrs[a.field_code] = a.value === "❗ UZUPEŁNIJ" ? "" : a.value;
-                  });
-              }
-              setAttrVals(attrs);
-            }
-          } catch(e) { console.error("Error loading attributes:", e); }
-        } else if (json.error) {
-          setError(json.error);
-        }
-      })
-      .catch(err => {
-        console.error("Product load error:", err);
-        setError("Nie udało się wczytać produktu");
-      })
-      .finally(() => setLoadingProduct(false));
-  }, [id]);
+    void loadProduct();
+  }, [loadProduct]);
 
   const aiCurrentDraft = aiMp ? aiDrafts[aiMp] : undefined;
   const aiCurrentCategory = aiMp
     ? (mktCats[aiMp]?.categoryPath || mktCats[aiMp]?.allegroName || "")
     : "";
-  const aiCanGenerate = !!aiMp && !!aiCurrentCategory && !loadingProduct;
+  const aiCanAutoAssign = canAutoAssignCategory(aiMp);
+  const aiCanGenerate = !!aiMp && (!!aiCurrentCategory || aiCanAutoAssign) && !loadingProduct;
 
   const handleGenerateAI = async (mode: "description" | "attributes" | "all") => {
     if (!aiMp) {
       setAiError("Wybierz marketplace dla draftu AI");
       return;
     }
-    if (!aiCurrentCategory) {
+    if (!aiCurrentCategory && !aiCanAutoAssign) {
       setAiError("Najpierw przypisz kategorię marketplace");
       return;
     }
@@ -482,6 +561,8 @@ export default function EditProductPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Nie udało się wygenerować draftu AI");
+      await loadProduct(true);
+      setAttrMp(aiMp);
       const queuedJob = normalizeJobSummary(json.data?.job);
       if (!queuedJob) throw new Error("Brak danych joba");
       setAiJob(queuedJob);
@@ -544,7 +625,7 @@ export default function EditProductPage() {
       if (!res.ok) throw new Error(json.error || "Błąd zapisu");
       setSaved(true);
       setTimeout(() => router.push("/dashboard/products"), 700);
-    } catch (e: any) { setError(e.message); }
+    } catch (e: unknown) { setError(getErrorMessage(e, "Błąd zapisu")); }
     finally { setSaving(false); }
   };
 
@@ -562,10 +643,21 @@ export default function EditProductPage() {
       {/* Header */}
       <div className="flex items-start gap-4 mb-6">
         {/* Thumbnail */}
-        <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: "var(--img-placeholder-bg, var(--bg-input))", border: "1px solid var(--img-placeholder-border, var(--border-default))" }}>
+        <div className="relative w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: "var(--img-placeholder-bg, var(--bg-input))", border: "1px solid var(--img-placeholder-border, var(--border-default))" }}>
           {globalSlots[0] ? (
-            <img src={globalSlots[0]} alt={title || ""} className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <UnoptimizedRemoteImage
+              src={globalSlots[0]}
+              alt={title || ""}
+              sizes="64px"
+              className="object-cover"
+              fallback={
+                <svg viewBox="0 0 24 24" className="w-7 h-7 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              }
+            />
           ) : (
             <svg viewBox="0 0 24 24" className="w-7 h-7 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
               <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -958,6 +1050,7 @@ function AIDraftPanel({
   const hasAttributes = previewAttributes.length > 0;
   const generateBlocked = !canGenerate || busyMode !== "" || jobActive;
   const applyBlocked = previewKind === "description" ? !hasDescription : !hasAttributes;
+  const categoryHint = getDraftCategoryHint(selectedCategory, selectedMarketplace);
 
   return (
     <div className="rounded-2xl p-4 space-y-4" style={{ background: "var(--bg-body)", border: "1px solid var(--border-default)" }}>
@@ -1032,6 +1125,11 @@ function AIDraftPanel({
           {selectedCategory || "Brak przypisanej kategorii"}
         </span>
       </div>
+      {categoryHint && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+          {categoryHint}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -1287,15 +1385,14 @@ function AttrField({ field, value, onChange }: { field: Field; value: string; on
 // ── Marketplace category card ─────────────────────────────────────
 function MarketplaceCard({ marketplace, selected, dbCategories, allegroTree, onChange }: {
   marketplace: Marketplace; selected?: MarketplaceCategory;
-  dbCategories: { id: number; path: string; name: string }[];
-  allegroTree: { id: string; name: string }[];
+  dbCategories: DbCategory[];
+  allegroTree: AllegroCategoryOption[];
   onChange: (val: Partial<MarketplaceCategory>) => void;
 }) {
   const isAllegro  = marketplace.slug === "allegro";
   const [search, setSearch] = useState("");
-  const filtered = isAllegro
-    ? allegroTree.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-    : dbCategories.filter(c => c.path.toLowerCase().includes(search.toLowerCase()));
+  const filteredAllegro = allegroTree.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredDbCategories = dbCategories.filter(c => c.path.toLowerCase().includes(search.toLowerCase()));
   const isAssigned = !!(selected?.categoryPath || selected?.allegroName);
 
   return (
@@ -1327,20 +1424,29 @@ function MarketplaceCard({ marketplace, selected, dbCategories, allegroTree, onC
               focus:border-indigo-400 placeholder-[var(--text-tertiary)] mb-2" />
           {search && (
             <div className="max-h-44 overflow-y-auto rounded-lg border divide-y" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", borderBottomColor: "var(--border-light)" }}>
-              {filtered.length === 0
+              {(isAllegro ? filteredAllegro.length : filteredDbCategories.length) === 0
                 ? <div className="px-3 py-2 text-xs text-slate-400">Brak wyników</div>
-                : filtered.slice(0, 25).map(c => (
-                    <button key={(c as any).id}
-                      onClick={() => {
-                        isAllegro
-                          ? onChange({ allegroId: (c as any).id, allegroName: (c as any).name })
-                          : onChange({ categoryId: (c as any).id, categoryPath: (c as any).path });
-                        setSearch("");
-                      }}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 hover:text-indigo-700 transition" style={{ color: "var(--text-primary)" }}>
-                      {isAllegro ? (c as any).name : (c as any).path}
-                    </button>
-                  ))}
+                : isAllegro
+                  ? filteredAllegro.slice(0, 25).map(c => (
+                      <button key={c.id}
+                        onClick={() => {
+                          onChange({ allegroId: c.id, allegroName: c.name });
+                          setSearch("");
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 hover:text-indigo-700 transition" style={{ color: "var(--text-primary)" }}>
+                        {c.name}
+                      </button>
+                    ))
+                  : filteredDbCategories.slice(0, 25).map(c => (
+                      <button key={c.id}
+                        onClick={() => {
+                          onChange({ categoryId: c.id, categoryPath: c.path });
+                          setSearch("");
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 hover:text-indigo-700 transition" style={{ color: "var(--text-primary)" }}>
+                        {c.path}
+                      </button>
+                    ))}
             </div>
           )}
           {!search && <div className="text-xs text-slate-400 text-center py-1">Wpisz frazę aby wyszukać kategorię</div>}
@@ -1379,7 +1485,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
       : globalSlots;
   const readOnly = !isGlobal && curOption === "global";
 
-  const setSlot = (idx: number, url: string | null) => {
+  const setSlot = useCallback((idx: number, url: string | null) => {
     if (isGlobal) {
       setGlobalSlots(prev => { const n = [...prev]; n[idx] = url; return n; });
     } else if (curOption === "separate" || curOption === "override") {
@@ -1389,7 +1495,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
         return { ...prev, [mediaViewMp]: n };
       });
     }
-  };
+  }, [curOption, isGlobal, mediaViewMp, setGlobalSlots, setMpSlots]);
 
   const uploadFile = useCallback(async (file: File, slotIdx: number) => {
     if (!ACCEPTED.includes(file.type)) { setUploadError(`Nieobsługiwany format: ${file.name}`); return; }
@@ -1398,12 +1504,13 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
     try {
       const fd = new FormData(); fd.append("image", file);
       const res  = await fetch(`${API}/api/products/upload-image`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
-      const json = await res.json();
+      const json: UploadImageResponse = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd uploadu");
+      if (!json.url) throw new Error("Brak URL po uploadzie");
       setSlot(slotIdx, json.url);
-    } catch (e: any) { setUploadError(e.message); }
+    } catch (e: unknown) { setUploadError(getErrorMessage(e, "Błąd uploadu")); }
     finally { setUploading(null); }
-  }, [isGlobal, curOption, mediaViewMp]);
+  }, [setSlot]);
 
   const handleMultiUpload = async (files: FileList) => {
     const emptyIdxs = slots.map((s, i) => (!s ? i : -1)).filter(i => i >= 0);
@@ -1520,7 +1627,7 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
         onDragLeave={() => setDrag(false)}
         onDrop={handleDrop}
         onClick={() => { if (!readOnly && !url && !uploading) inputRef.current?.click(); }}
-        className={`w-full h-full rounded-xl border-2 overflow-hidden flex items-center justify-center transition-all group
+        className={`relative w-full h-full rounded-xl border-2 overflow-hidden flex items-center justify-center transition-all group
           ${url ? "border-slate-200 bg-slate-100"
             : drag ? "border-indigo-400 bg-indigo-50 scale-[1.02]"
             : readOnly ? "border-slate-100 bg-slate-50 cursor-default"
@@ -1535,8 +1642,12 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
           </div>
         ) : url ? (
           <>
-            <img src={url} alt="" className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <UnoptimizedRemoteImage
+              src={url}
+              alt=""
+              sizes="(max-width: 768px) 25vw, 120px"
+              className="object-cover"
+            />
             {!readOnly && (
               <button onClick={e => { e.stopPropagation(); onRemove(); }}
                 className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-red-500 text-white

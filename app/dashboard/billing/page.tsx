@@ -14,6 +14,20 @@ import {
   type BillingPack,
   type BillingSummary,
 } from "./billing-data";
+import {
+  filterBillingHistoryItems,
+  getBillingHistoryFilterCounts,
+  getBillingRefreshDelays,
+  getCheckoutResultFromSearch,
+  getRetryableBillingIssues,
+  type BillingHistoryFilter,
+  type CheckoutResult,
+  type RetryableBillingIssue,
+} from "./page-helpers";
+import {
+  getBillingHistorySourceMeta,
+  getBillingHistoryStatusMeta,
+} from "./ui-helpers";
 import { useLang } from "../LangContext";
 import { translations } from "../i18n";
 
@@ -22,6 +36,55 @@ function getErrorMessage(err: unknown, fallback: string) {
   if (typeof err === "string" && err) return err;
   return fallback;
 }
+
+const BILLING_PAGE_COPY = {
+  pl: {
+    checkoutSuccessTitle: "Platnosc wraca ze Stripe",
+    checkoutSuccessBody: "Odswiezam saldo i historie kilka razy, zeby webhook zdazyl zapisac doladowanie.",
+    checkoutCancelTitle: "Checkout anulowany",
+    checkoutCancelBody: "Saldo bez zmian. Mozesz od razu sprobowac ponownie.",
+    historyCountOne: "wpis",
+    historyCountMany: "wpisow",
+    historyFilterLabel: "Filtr statusu",
+    historyFilterAll: "Wszystkie",
+    historyFilterPaid: "Oplacone",
+    historyFilterFailed: "Bledy",
+    historyFilterExpired: "Wygasle",
+    historyFilterGranted: "Starter",
+    historyFilterPending: "Oczekuje",
+    historyEmptyFiltered: "Brak pozycji dla wybranego filtra.",
+    auditEyebrow: "Audit",
+    auditTitle: "Problemy z checkoutem",
+    auditDesc: "Nieudane i wygasle checkouty mozesz wznowic jednym kliknieciem.",
+    auditRetry: "Ponow zakup",
+    auditPack: "Pakiet",
+    auditSession: "Sesja",
+    auditStatus: "Status",
+  },
+  en: {
+    checkoutSuccessTitle: "Stripe payment return detected",
+    checkoutSuccessBody: "Refreshing balance and history a few times so the webhook can persist the top-up.",
+    checkoutCancelTitle: "Checkout cancelled",
+    checkoutCancelBody: "Balance stays unchanged. You can retry right away.",
+    historyCountOne: "entry",
+    historyCountMany: "entries",
+    historyFilterLabel: "Status filter",
+    historyFilterAll: "All",
+    historyFilterPaid: "Paid",
+    historyFilterFailed: "Failed",
+    historyFilterExpired: "Expired",
+    historyFilterGranted: "Starter",
+    historyFilterPending: "Pending",
+    historyEmptyFiltered: "No rows for selected filter.",
+    auditEyebrow: "Audit",
+    auditTitle: "Checkout issues",
+    auditDesc: "Failed and expired checkouts can be resumed with one click.",
+    auditRetry: "Retry purchase",
+    auditPack: "Package",
+    auditSession: "Session",
+    auditStatus: "Status",
+  },
+} as const;
 
 function MetricCard({
   label,
@@ -72,10 +135,9 @@ function PackCard({
   const t = translations[lang].billing;
 
   const fullAuctions = Math.floor(pack.credits);
-  const descriptions = Math.floor(pack.credits / 0.33);
-  const attributes = Math.floor(pack.credits / 0.67);
+  const descriptions = Math.floor(pack.credits / 0.67);
+  const attributes = Math.floor(pack.credits / 0.33);
 
-  // Savings logic: base price = 5,5 zł/aukcja = 550 groszy
   const fullPriceCents = pack.credits * 550;
   const savingsCents = fullPriceCents - pack.amountCents;
   const savingsPct = Math.round((savingsCents / fullPriceCents) * 100);
@@ -101,7 +163,7 @@ function PackCard({
           <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
             {pack.featured ? t.packPopular : t.packPrepaid}
           </span>
-          {hasSavings && (
+          {hasSavings ? (
             <span
               className="rounded-full px-2.5 py-1 text-[11px] font-bold"
               style={pack.featured ? {
@@ -113,19 +175,19 @@ function PackCard({
                 color: "#059669",
               }}
             >
-              –{savingsPct}%
+              -{savingsPct}%
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 
       <div className="mt-5 rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
         <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>{t.packPrice}</div>
-        {hasSavings && (
+        {hasSavings ? (
           <div className="mt-2 text-sm line-through opacity-50" style={{ color: "var(--text-tertiary)" }}>
             {formatPricePln(fullPriceCents)}
           </div>
-        )}
+        ) : null}
         <div className={`font-semibold text-3xl ${hasSavings ? "mt-0.5" : "mt-2"}`} style={{ color: "var(--text-heading)" }}>{formatPricePln(pack.amountCents)}</div>
         <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{formatUnitPricePln(pack.pricePerAuction)} {t.packPricePerAuction}</div>
       </div>
@@ -164,6 +226,8 @@ function PackCard({
 function HistoryRow({ item }: { item: BillingHistoryEntry }) {
   const { lang } = useLang();
   const t = translations[lang].billing;
+  const statusMeta = getBillingHistoryStatusMeta(item.status, lang);
+
   return (
     <tr style={{ borderTop: "1px solid var(--border-default)" }}>
       <td className="px-4 py-4 text-sm" style={{ color: "var(--text-secondary)" }}>{formatDateTime(item.createdAt)}</td>
@@ -175,14 +239,114 @@ function HistoryRow({ item }: { item: BillingHistoryEntry }) {
       <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>
         {item.amount == null ? t.historyNoAmount : formatPricePln(item.amount)}
       </td>
-      <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>{item.status}</td>
+      <td className="px-4 py-4 text-sm">
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
+          {statusMeta.label}
+        </span>
+      </td>
     </tr>
+  );
+}
+
+function HistoryCard({ item }: { item: BillingHistoryEntry }) {
+  const { lang } = useLang();
+  const t = translations[lang].billing;
+  const statusMeta = getBillingHistoryStatusMeta(item.status, lang);
+
+  return (
+    <div className="rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{item.title}</div>
+          <div className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>{item.description || item.kind}</div>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
+          {statusMeta.label}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--text-tertiary)" }}>{t.historyColDate}</div>
+          <div className="mt-1" style={{ color: "var(--text-primary)" }}>{formatDateTime(item.createdAt)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--text-tertiary)" }}>{t.historyColCredits}</div>
+          <div className="mt-1" style={{ color: "var(--text-primary)" }}>{formatCredits(item.credits)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--text-tertiary)" }}>{t.historyColAmount}</div>
+          <div className="mt-1" style={{ color: "var(--text-primary)" }}>
+            {item.amount == null ? t.historyNoAmount : formatPricePln(item.amount)}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--text-tertiary)" }}>{t.historyColStatus}</div>
+          <div className="mt-1" style={{ color: "var(--text-primary)" }}>{statusMeta.label}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuditIssueCard({
+  item,
+  loading,
+  onRetry,
+}: {
+  item: RetryableBillingIssue;
+  loading: boolean;
+  onRetry: (credits: number) => void;
+}) {
+  const { lang } = useLang();
+  const copy = BILLING_PAGE_COPY[lang];
+  const statusMeta = getBillingHistoryStatusMeta(item.status, lang);
+
+  return (
+    <div className="rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
+              {statusMeta.label}
+            </span>
+            <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+              {formatDateTime(item.createdAt)}
+            </span>
+          </div>
+          <div>
+            <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{item.title}</div>
+            <div className="mt-1 text-xs leading-5" style={{ color: "var(--text-secondary)" }}>{item.description}</div>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
+            <span>{copy.auditPack}: <strong style={{ color: "var(--text-primary)" }}>{formatCredits(item.packCredits)}</strong></span>
+            {item.stripeSessionId ? (
+              <span>{copy.auditSession}: <strong style={{ color: "var(--text-primary)" }}>{item.stripeSessionId}</strong></span>
+            ) : null}
+          </div>
+        </div>
+
+        <button
+          onClick={() => onRetry(item.packCredits)}
+          aria-disabled={loading}
+          className={`shrink-0 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+            loading
+              ? "cursor-wait opacity-60"
+              : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
+          }`}
+          style={loading ? { background: "var(--bg-card)", color: "var(--text-tertiary)" } : {}}
+        >
+          {loading ? translations[lang].billing.packRedirecting : copy.auditRetry}
+        </button>
+      </div>
+    </div>
   );
 }
 
 export default function BillingPage() {
   const { lang } = useLang();
   const t = translations[lang].billing;
+  const copy = BILLING_PAGE_COPY[lang];
 
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [history, setHistory] = useState<BillingHistoryResult>({ items: [], source: "unavailable" });
@@ -190,13 +354,18 @@ export default function BillingPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState("");
   const [checkoutLoadingCredits, setCheckoutLoadingCredits] = useState<number | null>(null);
+  const [checkoutResult, setCheckoutResult] = useState<CheckoutResult>(null);
+  const [activeFilter, setActiveFilter] = useState<BillingHistoryFilter>("all");
 
   useEffect(() => {
-    const controller = new AbortController();
+    let disposed = false;
+    const timeouts: number[] = [];
 
-    async function load() {
-      setLoading(true);
-      setHistoryLoading(true);
+    async function load(options: { silent?: boolean } = {}) {
+      if (!options.silent) {
+        setLoading(true);
+        setHistoryLoading(true);
+      }
       setError("");
 
       try {
@@ -205,28 +374,62 @@ export default function BillingPage() {
           fetchBillingHistory(),
         ]);
 
-        if (controller.signal.aborted) return;
+        if (disposed) return;
         setBilling(summary);
         setHistory(ledger);
       } catch (err: unknown) {
-        if (controller.signal.aborted) return;
+        if (disposed) return;
         setError(getErrorMessage(err, "Nie udalo sie pobrac billing"));
       } finally {
-        if (!controller.signal.aborted) {
+        if (!disposed && !options.silent) {
           setLoading(false);
           setHistoryLoading(false);
         }
       }
     }
 
+    const nextCheckoutResult = typeof window === "undefined"
+      ? null
+      : getCheckoutResultFromSearch(window.location.search);
+    setCheckoutResult(nextCheckoutResult);
+
+    if (typeof window !== "undefined" && nextCheckoutResult) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     void load();
-    return () => controller.abort();
+
+    if (typeof window !== "undefined") {
+      for (const delay of getBillingRefreshDelays(nextCheckoutResult)) {
+        timeouts.push(window.setTimeout(() => {
+          void load({ silent: true });
+        }, delay));
+      }
+    }
+
+    return () => {
+      disposed = true;
+      for (const timeout of timeouts) window.clearTimeout(timeout);
+    };
   }, []);
 
   const currentCredits = billing?.current?.creditBalance ?? billing?.usage.remaining ?? 0;
   const totalGranted = billing?.usage.limit ?? 0;
   const totalUsed = billing?.usage.used ?? 0;
   const starterCredits = billing?.starterCredits ?? 3;
+  const sourceMeta = getBillingHistorySourceMeta(history.source, lang);
+  const filterCounts = getBillingHistoryFilterCounts(history.items);
+  const filteredHistory = filterBillingHistoryItems(history.items, activeFilter);
+  const retryableIssues = getRetryableBillingIssues(history.items);
+  const historyCountLabel = filteredHistory.length === 1 ? copy.historyCountOne : copy.historyCountMany;
+  const historyFilters = [
+    { id: "all" as const, label: copy.historyFilterAll },
+    { id: "paid" as const, label: copy.historyFilterPaid },
+    { id: "failed" as const, label: copy.historyFilterFailed },
+    { id: "expired" as const, label: copy.historyFilterExpired },
+    { id: "granted" as const, label: copy.historyFilterGranted },
+    { id: "pending" as const, label: copy.historyFilterPending },
+  ];
 
   const startCheckout = async (packCredits: number) => {
     if (checkoutLoadingCredits) return;
@@ -246,6 +449,28 @@ export default function BillingPage() {
       setCheckoutLoadingCredits(null);
     }
   };
+
+  const statusBanner = checkoutResult === "success"
+    ? {
+        title: copy.checkoutSuccessTitle,
+        body: copy.checkoutSuccessBody,
+        style: {
+          border: "1px solid rgba(16,185,129,0.22)",
+          background: "rgba(16,185,129,0.10)",
+          color: "#065f46",
+        },
+      }
+    : checkoutResult === "cancel"
+      ? {
+          title: copy.checkoutCancelTitle,
+          body: copy.checkoutCancelBody,
+          style: {
+            border: "1px solid rgba(245,158,11,0.22)",
+            background: "rgba(245,158,11,0.10)",
+            color: "#92400e",
+          },
+        }
+      : null;
 
   return (
     <div className="space-y-8 pb-16">
@@ -277,6 +502,13 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+
+      {statusBanner ? (
+        <div className="rounded-2xl p-5 text-sm" style={statusBanner.style}>
+          <div className="font-semibold">{statusBanner.title}</div>
+          <div className="mt-1 opacity-90">{statusBanner.body}</div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-5 text-sm text-rose-100">
@@ -317,9 +549,9 @@ export default function BillingPage() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {[
-            { label: t.aiCostDescription, value: billing ? formatCredits(billing.aiCosts.description) : "0,33", hint: t.aiCostDescriptionHint },
-            { label: t.aiCostAttributes,  value: billing ? formatCredits(billing.aiCosts.attributes)  : "0,67", hint: t.aiCostAttributesHint },
-            { label: t.aiCostAll,         value: billing ? formatCredits(billing.aiCosts.all)          : "1,00", hint: t.aiCostAllHint },
+            { label: t.aiCostDescription, value: billing ? formatCredits(billing.aiCosts.description) : "0,67", hint: t.aiCostDescriptionHint },
+            { label: t.aiCostAttributes, value: billing ? formatCredits(billing.aiCosts.attributes) : "0,33", hint: t.aiCostAttributesHint },
+            { label: t.aiCostAll, value: billing ? formatCredits(billing.aiCosts.all) : "1,00", hint: t.aiCostAllHint },
           ].map(({ label, value, hint }) => (
             <div key={label} className="rounded-2xl p-5" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
               <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{label}</div>
@@ -383,9 +615,9 @@ export default function BillingPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { label: t.freeStarter, val: formatCredits(billing?.current?.freeCreditsGranted ?? 0) },
-                { label: t.bought,      val: formatCredits(billing?.current?.paidCreditsGranted ?? 0) },
-                { label: t.used,        val: formatCredits(totalUsed) },
-                { label: t.available,   val: formatCredits(currentCredits) },
+                { label: t.bought, val: formatCredits(billing?.current?.paidCreditsGranted ?? 0) },
+                { label: t.used, val: formatCredits(totalUsed) },
+                { label: t.available, val: formatCredits(currentCredits) },
               ].map(({ label, val }) => (
                 <div key={label} className="rounded-xl px-3 py-3 text-sm" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
                   {label}: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{val}</span>
@@ -403,11 +635,80 @@ export default function BillingPage() {
           />
 
           <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)", color: "var(--text-secondary)" }}>
-            <span>{t.historySource}</span>
-            <span className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: "var(--bg-card-hover)", color: "var(--text-primary)" }}>{history.source}</span>
+            <div>
+              <div>{t.historySource}</div>
+              <div className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                {filteredHistory.length} {historyCountLabel}
+              </div>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${sourceMeta.className}`}>
+              {sourceMeta.label}
+            </span>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-2xl" style={{ border: "1px solid var(--border-default)" }}>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--text-tertiary)" }}>
+              {copy.historyFilterLabel}
+            </span>
+            {historyFilters.map((filter) => {
+              const active = activeFilter === filter.id;
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id)}
+                  className="rounded-full px-3 py-2 text-xs font-semibold transition"
+                  style={active ? {
+                    background: "var(--accent-primary-light)",
+                    border: "1px solid var(--accent-primary-border)",
+                    color: "var(--accent-primary)",
+                  } : {
+                    background: "var(--bg-input-alt)",
+                    border: "1px solid var(--border-default)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {filter.label} <span className="opacity-75">{filterCounts[filter.id]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {retryableIssues.length ? (
+            <div className="mt-4 rounded-2xl p-4" style={{ background: "var(--accent-primary-light)", border: "1px solid var(--accent-primary-border)" }}>
+              <div className="space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--accent-primary)" }}>{copy.auditEyebrow}</div>
+                <div className="text-lg font-semibold" style={{ color: "var(--text-heading)" }}>{copy.auditTitle}</div>
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{copy.auditDesc}</div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {retryableIssues.map((item) => (
+                  <AuditIssueCard
+                    key={item.id}
+                    item={item}
+                    loading={checkoutLoadingCredits === item.packCredits}
+                    onRetry={startCheckout}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-3 md:hidden">
+            {historyLoading ? (
+              <div className="rounded-2xl px-4 py-6 text-sm" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)", color: "var(--text-tertiary)" }}>
+                {t.historyLoading}
+              </div>
+            ) : filteredHistory.length ? (
+              filteredHistory.map((item) => <HistoryCard key={item.id} item={item} />)
+            ) : (
+              <div className="rounded-2xl px-4 py-6 text-sm" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)", color: "var(--text-tertiary)" }}>
+                {activeFilter === "all" ? t.historyEmpty : copy.historyEmptyFiltered}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 hidden overflow-hidden rounded-2xl md:block" style={{ border: "1px solid var(--border-default)" }}>
             <table className="min-w-full" style={{ borderCollapse: "collapse" }}>
               <thead className="text-left text-xs uppercase tracking-[0.22em]" style={{ background: "var(--bg-table-header)", color: "var(--text-secondary)" }}>
                 <tr>
@@ -425,12 +726,12 @@ export default function BillingPage() {
                       {t.historyLoading}
                     </td>
                   </tr>
-                ) : history.items.length ? (
-                  history.items.map((item) => <HistoryRow key={item.id} item={item} />)
+                ) : filteredHistory.length ? (
+                  filteredHistory.map((item) => <HistoryRow key={item.id} item={item} />)
                 ) : (
                   <tr>
                     <td className="px-4 py-6 text-sm" style={{ color: "var(--text-tertiary)" }} colSpan={5}>
-                      {t.historyEmpty}
+                      {activeFilter === "all" ? t.historyEmpty : copy.historyEmptyFiltered}
                     </td>
                   </tr>
                 )}

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -16,14 +17,36 @@ function authHeaders(json = true) {
 
 // ── Types ────────────────────────────────────────────────────────
 type Marketplace = { id: number; slug: string; name: string };
+type DbCategory = { id: number; path: string; name: string };
+type AllegroAllowedValue = { value: string };
+type AllegroParameter = {
+  id: string | number;
+  name: string;
+  description?: string | null;
+  required?: boolean | null;
+  restrictions?: {
+    allowedValues?: AllegroAllowedValue[] | null;
+  } | null;
+};
 type MarketplaceCategory = {
   marketplaceId: number; marketplaceSlug: string; marketplaceLabel: string;
-  categoryId?: number; categoryPath?: string;
-  allegroId?: string; allegroName?: string;
+  categoryId?: number | null; categoryPath?: string | null;
+  allegroId?: string | null; allegroName?: string | null;
 };
-type Field = { id: number; field_code: string; label: string; description?: string; required: boolean; allowedValues: string[] };
+type Field = { id?: number | string; field_code: string; label: string; description?: string; required: boolean; allowedValues: string[] };
+type MarketplaceListResponse = { data?: Marketplace[] };
+type TemplateCategoriesResponse = { data?: DbCategory[] };
+type AllegroParametersResponse = { data?: AllegroParameter[] };
+type AllegroCategoryApiResponse = {
+  data?: Array<{ id: string; name: string; leaf?: boolean | null }>;
+};
+type UploadImageResponse = { url?: string; error?: string };
 type MediaOption = "global" | "separate" | "override";
 const SLOTS = 16;
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
 
 // ── Tabs ─────────────────────────────────────────────────────────
 const TABS = [
@@ -196,8 +219,8 @@ function AllegroImportModal({ onClose, onImport }: {
         allegroPath,
         parameters,
       });
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się zaimportować oferty"));
     } finally {
       setImporting(false);
     }
@@ -316,9 +339,14 @@ function AllegroImportModal({ onClose, onImport }: {
                 <button key={offer.id} onClick={() => handleSelect(offer)} disabled={importing}
                   className="w-full text-left flex items-center gap-3 p-3 rounded-xl border border-[var(--border-default)] hover:border-indigo-300 hover:bg-indigo-500/5 transition group">
                   {/* Thumbnail */}
-                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex-shrink-0 flex items-center justify-center">
+                  <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex-shrink-0 flex items-center justify-center">
                     {offer.primaryImage?.url ? (
-                      <img src={offer.primaryImage.url} alt={offer.name} className="w-full h-full object-contain" />
+                      <UnoptimizedRemoteImage
+                        src={offer.primaryImage.url}
+                        alt={offer.name}
+                        sizes="56px"
+                        className="object-contain"
+                      />
                     ) : (
                       <svg viewBox="0 0 24 24" className="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
                         <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
@@ -426,7 +454,7 @@ export default function NewProductPage() {
 
   // Marketplace categories
   const [mktCats, setMktCats] = useState<Record<string, MarketplaceCategory>>({});
-  const [dbCats,  setDbCats]  = useState<Record<string, { id: number; path: string; name: string }[]>>({});
+  const [dbCats,  setDbCats]  = useState<Record<string, DbCategory[]>>({});
 
   // Atrybuty
   const [attrMp,       setAttrMp]       = useState("");
@@ -470,7 +498,7 @@ export default function NewProductPage() {
   // Load marketplaces
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
-      .then(r => r.json()).then(j => {
+      .then(r => r.json() as Promise<MarketplaceListResponse>).then(j => {
         if (j.data) { setMarketplaces(j.data); if (j.data.length) setAttrMp(j.data[0].slug); }
       }).catch(() => {});
   }, []);
@@ -480,11 +508,12 @@ export default function NewProductPage() {
     if (tab !== "marketplace") return;
     marketplaces.forEach(async mp => {
       if (mp.slug !== "allegro" && !dbCats[mp.slug]) {
-        const j = await fetch(`${API}/api/templates/categories?marketplace=${mp.slug}`, { headers: authHeaders() }).then(r => r.json());
-        if (j.data) setDbCats(prev => ({ ...prev, [mp.slug]: j.data }));
+        const j = await fetch(`${API}/api/templates/categories?marketplace=${mp.slug}`, { headers: authHeaders() }).then(r => r.json() as Promise<TemplateCategoriesResponse>);
+        const nextCategories = j.data;
+        if (nextCategories) setDbCats(prev => ({ ...prev, [mp.slug]: nextCategories }));
       }
     });
-  }, [tab, marketplaces]);
+  }, [dbCats, marketplaces, tab]);
 
   // Load attribute fields when marketplace or category changes
   useEffect(() => {
@@ -504,14 +533,14 @@ export default function NewProductPage() {
         if (allegroId) {
           // Allegro: pobierz parametry kategorii przez API
           const r = await fetch(`${API}/api/allegro/categories/${allegroId}/parameters`, { headers: authHeaders() });
-          const j = await r.json();
+          const j: AllegroParametersResponse = await r.json();
           const fields = j.data
-            ? j.data.map((p: any) => ({
+            ? j.data.map((p) => ({
                 field_code:    String(p.id),
                 label:         p.name,
                 description:   p.description || "",
                 required:      !!p.required,
-                allowedValues: p.restrictions?.allowedValues?.map((v: any) => v.value) ?? [],
+                allowedValues: p.restrictions?.allowedValues?.map(v => v.value) ?? [],
               }))
             : [];
           setAttrFields(fields);
@@ -609,11 +638,11 @@ export default function NewProductPage() {
           attributes: attrVals,
         }),
       });
-      const json = await res.json();
+      const json: UploadImageResponse = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd zapisu");
       setSaved(true);
       setTimeout(() => router.push("/dashboard/products"), 700);
-    } catch (e: any) { setError(e.message); }
+    } catch (e: unknown) { setError(getErrorMessage(e, "Błąd zapisu")); }
     finally { setSaving(false); }
   };
 
@@ -633,10 +662,21 @@ export default function NewProductPage() {
       {/* Header */}
       <div className="flex items-start gap-4 mb-6">
         {/* Thumbnail */}
-        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-[var(--img-placeholder-bg)] border border-[var(--img-placeholder-border)] flex-shrink-0 flex items-center justify-center">
+        <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-[var(--img-placeholder-bg)] border border-[var(--img-placeholder-border)] flex-shrink-0 flex items-center justify-center">
           {globalSlots[0] ? (
-            <img src={globalSlots[0]} alt={title || ""} className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <UnoptimizedRemoteImage
+              src={globalSlots[0]}
+              alt={title || ""}
+              sizes="64px"
+              className="object-cover"
+              fallback={
+                <svg viewBox="0 0 24 24" className="w-7 h-7 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              }
+            />
           ) : (
             <svg viewBox="0 0 24 24" className="w-7 h-7 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
               <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -1297,12 +1337,22 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
   // Załaduj kategorie dla bieżącego poziomu
   useEffect(() => {
     const parentId = crumbs.length ? crumbs[crumbs.length - 1].id : undefined;
-    setLoading(true); setSearch("");
-    const t   = typeof window !== "undefined" ? localStorage.getItem("token") : "";
-    const url = parentId ? `${API}/api/allegro/categories?parentId=${parentId}` : `${API}/api/allegro/categories`;
-    fetch(url, { headers: { Authorization: `Bearer ${t}` } })
-      .then(r => r.json()).then(j => { if (j.data) setCats(j.data.map((c: any) => ({ id: c.id, name: c.name, leaf: !!c.leaf }))); })
-      .catch(() => {}).finally(() => setLoading(false));
+    const load = async () => {
+      setLoading(true);
+      setSearch("");
+      const t   = typeof window !== "undefined" ? localStorage.getItem("token") : "";
+      const url = parentId ? `${API}/api/allegro/categories?parentId=${parentId}` : `${API}/api/allegro/categories`;
+      try {
+        const j: AllegroCategoryApiResponse = await fetch(url, { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json());
+        if (j.data) setCats(j.data.map(c => ({ id: c.id, name: c.name, leaf: !!c.leaf })));
+      } catch {
+        // ignore fetch errors in picker
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
   }, [crumbs]);
 
   const drillIn = (cat: AllegroCategory) => {
@@ -1403,7 +1453,7 @@ function AllegroTreePicker({ onSelect }: { onSelect: (id: string, name: string, 
 // ── Marketplace category card ─────────────────────────────────────
 function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
   marketplace: Marketplace; selected?: MarketplaceCategory;
-  dbCategories: { id: number; path: string; name: string }[];
+  dbCategories: DbCategory[];
   onChange: (val: Partial<MarketplaceCategory>) => void;
 }) {
   const isAllegro  = marketplace.slug === "allegro";
@@ -1424,7 +1474,7 @@ function MarketplaceCard({ marketplace, selected, dbCategories, onChange }: {
 
   const filtered = dbCategories.filter(c => c.path.toLowerCase().includes(search.toLowerCase()));
 
-  const selectAllegro = (id: string, name: string, _path: string) => {
+  const selectAllegro = (id: string, name: string) => {
     onChange({ allegroId: id, allegroName: name });
     // Zarejestruj użycie
     const t = typeof window !== "undefined" ? localStorage.getItem("token") : "";
@@ -1544,7 +1594,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
       : globalSlots;
   const readOnly = !isGlobal && curOption === "global";
 
-  const setSlot = (idx: number, url: string | null) => {
+  const setSlot = useCallback((idx: number, url: string | null) => {
     if (isGlobal) {
       setGlobalSlots(prev => { const n = [...prev]; n[idx] = url; return n; });
     } else if (curOption === "separate" || curOption === "override") {
@@ -1554,7 +1604,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
         return { ...prev, [mediaViewMp]: n };
       });
     }
-  };
+  }, [curOption, isGlobal, mediaViewMp, setGlobalSlots, setMpSlots]);
 
   const uploadFile = useCallback(async (file: File, slotIdx: number) => {
     if (!ACCEPTED.includes(file.type)) { setUploadError(`Nieobsługiwany format: ${file.name}`); return; }
@@ -1565,10 +1615,11 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
       const res  = await fetch(`${API}/api/products/upload-image`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd uploadu");
+      if (!json.url) throw new Error("Brak URL po uploadzie");
       setSlot(slotIdx, json.url);
-    } catch (e: any) { setUploadError(e.message); }
+    } catch (e: unknown) { setUploadError(getErrorMessage(e, "Błąd uploadu")); }
     finally { setUploading(null); }
-  }, [isGlobal, curOption, mediaViewMp]);
+  }, [setSlot]);
 
   const handleMultiUpload = async (files: FileList) => {
     const emptyIdxs = slots.map((s, i) => (!s ? i : -1)).filter(i => i >= 0);
@@ -1685,7 +1736,7 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
         onDragLeave={() => setDrag(false)}
         onDrop={handleDrop}
         onClick={() => { if (!readOnly && !url && !uploading) inputRef.current?.click(); }}
-        className={`w-full h-full rounded-xl border-2 overflow-hidden flex items-center justify-center transition-all group
+        className={`relative w-full h-full rounded-xl border-2 overflow-hidden flex items-center justify-center transition-all group
           ${url ? "border-[var(--border-default)] bg-[var(--img-placeholder-bg)]"
             : drag ? "border-indigo-400 bg-indigo-500/10 scale-[1.02]"
             : readOnly ? "border-[var(--border-light)] bg-[var(--bg-body)] cursor-default"
@@ -1700,8 +1751,12 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
           </div>
         ) : url ? (
           <>
-            <img src={url} alt="" className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <UnoptimizedRemoteImage
+              src={url}
+              alt=""
+              sizes="(max-width: 768px) 25vw, 120px"
+              className="object-cover"
+            />
             {!readOnly && (
               <button onClick={e => { e.stopPropagation(); onRemove(); }}
                 className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-red-500 text-white

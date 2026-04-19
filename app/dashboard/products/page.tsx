@@ -2,8 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
 import { useLang } from "../LangContext";
 import { translations } from "../i18n";
+import {
+  findProductExportCategoryGroup,
+  getExportableProductIds,
+  filterProductsByListingFocus,
+  getProductExportCategoryGroups,
+  getProductExportPreflight,
+  getProductExportSummary,
+  getProductListingState,
+  getProductListingStats,
+  hasActiveProductFilters,
+  parseProductIntegrations,
+  type ProductExportCategoryGroup,
+  type ProductListingFocus,
+  type ProductExportPreflightRow,
+} from "./ui-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -48,6 +64,8 @@ type Product = {
   image_url: string | null;
   status: string;
   created_at: string;
+  price?: number | null;
+  stock?: number | null;
   integrations: string | null;
 };
 type MarketplaceOption = { slug: string; name: string };
@@ -71,6 +89,150 @@ type JobSummary = {
   startedAt?: string | null;
   finishedAt?: string | null;
 };
+type RecentProductExport = {
+  id: number;
+  marketplaceSlug: string;
+  marketplaceName: string;
+  categoryPath: string;
+  productIds: number[];
+  productCount: number;
+  fileName: string;
+  createdAt: string;
+};
+const STATUS_META_KEYS = {
+  pending: "statusPending",
+  mapped: "statusMapped",
+  needs_review: "statusNeedsReview",
+  exported: "statusExported",
+} as const;
+type ProductStatusTranslationKeys =
+  | (typeof STATUS_META_KEYS)[keyof typeof STATUS_META_KEYS]
+  | "statusUnknown";
+
+function getStatusLabel(t: Record<ProductStatusTranslationKeys, string>, status: string) {
+  const key = STATUS_META_KEYS[status as keyof typeof STATUS_META_KEYS];
+  return key ? t[key] : t.statusUnknown;
+}
+
+const PRODUCTS_PAGE_COPY = {
+  pl: {
+    focusAll: "Widoczne",
+    focusReady: "Gotowe",
+    focusReview: "Do review",
+    focusBlocked: "Zablokowane",
+    focusAllHint: "po aktualnych filtrach",
+    focusReadyHint: "maja min. 1 gotowy marketplace",
+    focusReviewHint: "wymagaja sprawdzenia",
+    focusBlockedHint: "brakuje mapowania lub atrybutow",
+    blockedMixHint: "bez marketplace: {unmapped} • braki atrybutow: {attributes}",
+    focusEmpty: "Brak pozycji dla wybranego focusu.",
+    focusReset: "Pokaz wszystko",
+    issueReady: "Gotowe",
+    issuePartial: "Czesciowo gotowe",
+    issueReview: "Review",
+    issueUnmapped: "Brak marketplace",
+    issueMissingAttrs: "Braki atrybutow",
+    exportPreflightTitle: "Preflight eksportu",
+    exportPreflightDesc: "Przed eksportem sprawdzam, co jest gotowe dla wybranego marketplace.",
+    exportPreflightReady: "Gotowe",
+    exportPreflightBlocked: "Zablokowane",
+    exportPreflightReasonMapped: "Produkt nie ma przypisanego tego marketplace.",
+    exportPreflightReasonAttrs: "Marketplace ma brakujace atrybuty do uzupelnienia.",
+    exportPreflightReasonCategory: "Produkt nie ma zapisanej kategorii dla tego marketplace.",
+    exportPreflightOpen: "Otworz produkt",
+    exportPreflightRun: "Eksportuj gotowe",
+    exportPreflightNoReady: "Brak gotowych pozycji do eksportu.",
+    exportPreflightMixedTitle: "Mix kategorii",
+    exportPreflightMixedDesc: "Gotowe produkty sa w kilku kategoriach. Eksportuj osobno per kategoria.",
+    exportPreflightGroupsTitle: "Grupy kategorii",
+    exportPreflightGroupRun: "Eksportuj grupe",
+    exportPreflightPickGroup: "Wybierz grupe kategorii",
+    splitSelectionStart: "Podziel gotowe per kategoria",
+    splitSelectionTitle: "Split kategorii",
+    splitSelectionDesc: "Przelaczaj grupy i eksportuj seryjnie bez recznego zaznaczania.",
+    splitSelectionOff: "Wylacz split",
+    recentExportsTitle: "Ostatnie eksporty",
+    recentExportsDesc: "Szybki powrot do ostatnio wygenerowanych paczek i ponowne pobranie bez skladania zaznaczen od zera.",
+    recentExportsEmpty: "Brak historii eksportow. Pierwszy eksport pojawi sie tutaj.",
+    recentExportsLoading: "Laduje historie eksportow...",
+    recentExportsRetry: "Powtorz eksport",
+    recentExportsProducts: "produktow",
+    recentExportsCategory: "Kategoria",
+    recentExportsFile: "Plik",
+  },
+  en: {
+    focusAll: "Visible",
+    focusReady: "Ready",
+    focusReview: "Review",
+    focusBlocked: "Blocked",
+    focusAllHint: "after current filters",
+    focusReadyHint: "have at least 1 ready marketplace",
+    focusReviewHint: "need manual check",
+    focusBlockedHint: "missing mapping or attributes",
+    blockedMixHint: "no marketplace: {unmapped} • attr gaps: {attributes}",
+    focusEmpty: "No rows for selected focus.",
+    focusReset: "Show all",
+    issueReady: "Ready",
+    issuePartial: "Partially ready",
+    issueReview: "Review",
+    issueUnmapped: "No marketplace",
+    issueMissingAttrs: "Attr gaps",
+    exportPreflightTitle: "Export preflight",
+    exportPreflightDesc: "Before export, check what is ready for the selected marketplace.",
+    exportPreflightReady: "Ready",
+    exportPreflightBlocked: "Blocked",
+    exportPreflightReasonMapped: "Product is not mapped to this marketplace.",
+    exportPreflightReasonAttrs: "Marketplace still has missing attributes to fill.",
+    exportPreflightReasonCategory: "Product has no saved category for this marketplace.",
+    exportPreflightOpen: "Open product",
+    exportPreflightRun: "Export ready",
+    exportPreflightNoReady: "No ready rows to export.",
+    exportPreflightMixedTitle: "Mixed categories",
+    exportPreflightMixedDesc: "Ready products span multiple categories. Export them separately per category.",
+    exportPreflightGroupsTitle: "Category groups",
+    exportPreflightGroupRun: "Export group",
+    exportPreflightPickGroup: "Pick a category group",
+    splitSelectionStart: "Split ready by category",
+    splitSelectionTitle: "Category split",
+    splitSelectionDesc: "Switch groups and export them in sequence without manual reselection.",
+    splitSelectionOff: "Disable split",
+    recentExportsTitle: "Recent exports",
+    recentExportsDesc: "Quick return to the latest generated packages and one-click download retry without rebuilding selection.",
+    recentExportsEmpty: "No export history yet. The first export will appear here.",
+    recentExportsLoading: "Loading export history...",
+    recentExportsRetry: "Retry export",
+    recentExportsProducts: "products",
+    recentExportsCategory: "Category",
+    recentExportsFile: "File",
+  },
+} as const;
+
+function formatBlockedMixHint(template: string, unmapped: number, attributes: number) {
+  return template
+    .replace("{unmapped}", String(unmapped))
+    .replace("{attributes}", String(attributes));
+}
+
+function getListingIssueMeta(
+  lang: keyof typeof PRODUCTS_PAGE_COPY,
+  state: ReturnType<typeof getProductListingState>
+) {
+  const copy = PRODUCTS_PAGE_COPY[lang];
+
+  if (state.focus === "review") {
+    return { label: copy.issueReview, className: "border-rose-200 bg-rose-50 text-rose-700" };
+  }
+  if (state.blockerKind === "unmapped") {
+    return { label: copy.issueUnmapped, className: "border-slate-200 bg-slate-100 text-slate-700" };
+  }
+  if (state.blockerKind === "attributes") {
+    return { label: copy.issueMissingAttrs, className: "border-amber-200 bg-amber-50 text-amber-700" };
+  }
+  if (state.missingMarketplaceCount > 0) {
+    return { label: copy.issuePartial, className: "border-sky-200 bg-sky-50 text-sky-700" };
+  }
+  return { label: copy.issueReady, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+}
 
 // ── Icons ──────────────────────────────────────────────────────────
 function SearchIcon() {
@@ -173,31 +335,43 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
 
   useEffect(() => {
     if (!importId) return;
-    pollRef.current = setInterval(async () => {
-      const res  = await fetch(`${API}/api/products/import-status/${importId}`, { headers: authHeaders() });
-      const json = await res.json();
-      const d    = json.data;
-      if (!d) return;
-      if (d.status === "done") {
-        clearInterval(pollRef.current!);
-        if (d.error_message) {
-          try {
-            const parsed = JSON.parse(d.error_message);
-            if (parsed.missingCategories?.length) {
-              setMissingCats(parsed.missingCategories);
-            }
-          } catch {}
+    const poll = async () => {
+      try {
+        const res  = await fetch(`${API}/api/products/import-status/${importId}`, { headers: authHeaders() });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac statusu importu");
+        const d    = json.data;
+        if (!d) return;
+        if (d.status === "done") {
+          clearInterval(pollRef.current!);
+          if (d.error_message) {
+            try {
+              const parsed = JSON.parse(d.error_message);
+              if (parsed.missingCategories?.length) {
+                setMissingCats(parsed.missingCategories);
+              }
+            } catch {}
+          }
+          setState("success");
+          onSuccess();
         }
-        setState("success");
-        onSuccess();
-      }
-      if (d.status === "error") {
+        if (d.status === "error") {
+          clearInterval(pollRef.current!);
+          setState("error");
+          let msg = d.error_message || "Blad importu";
+          try { const p = JSON.parse(msg); msg = p.hint || msg; } catch {}
+          setErrorMsg(msg);
+        }
+      } catch (err: unknown) {
         clearInterval(pollRef.current!);
         setState("error");
-        let msg = d.error_message || "Blad importu";
-        try { const p = JSON.parse(msg); msg = p.hint || msg; } catch {}
-        setErrorMsg(msg);
+        setErrorMsg(getErrorMessage(err, "Nie udalo sie pobrac statusu importu"));
       }
+    };
+
+    void poll();
+    pollRef.current = setInterval(() => {
+      void poll();
     }, 1500);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [importId, onSuccess]);
@@ -333,11 +507,7 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
 // Parsuj integracje z formatu "slug\x01name\x01missingCount|||..."
 type Integration = { slug: string; name: string; missing: number };
 function parseIntegrations(raw: string | null): Integration[] {
-  if (!raw) return [];
-  return raw.split("|||").filter(Boolean).map(s => {
-    const parts = s.split("\x01");
-    return { slug: parts[0] ?? "", name: parts[1] ?? parts[0] ?? "", missing: parseInt(parts[2] ?? "0") || 0 };
-  });
+  return parseProductIntegrations(raw);
 }
 
 // ── Confirm delete modal ──────────────────────────────────────────
@@ -392,17 +562,271 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
   );
 }
 
+function ExportPreflightModal({
+  marketplaceName,
+  rows,
+  exporting,
+  onConfirm,
+  onExportCategory,
+  onOpenProduct,
+  onCancel,
+}: {
+  marketplaceName: string;
+  rows: ProductExportPreflightRow[];
+  exporting: boolean;
+  onConfirm: () => void;
+  onExportCategory: (group: ProductExportCategoryGroup) => void;
+  onOpenProduct: (productId: number) => void;
+  onCancel: () => void;
+}) {
+  const { lang } = useLang();
+  const copy = PRODUCTS_PAGE_COPY[lang];
+  const cancelLabel = translations[lang].products.bulkModal.close;
+  const summary = getProductExportSummary(rows);
+  const categoryGroups = getProductExportCategoryGroups(rows);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
+
+      <div className="relative w-full max-w-2xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">{copy.exportPreflightTitle}</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {copy.exportPreflightDesc} <span className="font-semibold text-[var(--text-primary)]">{marketplaceName}</span>
+            </p>
+          </div>
+          <button onClick={onCancel} className="rounded-lg p-2 text-[var(--text-tertiary)] transition hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">{copy.exportPreflightReady}</div>
+            <div className="mt-2 text-3xl font-semibold text-emerald-800">{summary.ready}</div>
+          </div>
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-700">{copy.exportPreflightBlocked}</div>
+            <div className="mt-2 text-3xl font-semibold text-rose-800">{summary.blocked}</div>
+          </div>
+          <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">Marketplace</div>
+            <div className="mt-2 text-lg font-semibold text-[var(--text-primary)]">{marketplaceName}</div>
+          </div>
+        </div>
+
+        <div className="mt-5 max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+          {rows.map((row) => {
+            const ready = row.status === "ready";
+            const reason = row.reason === "marketplace_not_mapped"
+              ? copy.exportPreflightReasonMapped
+              : row.reason === "missing_attributes"
+                ? `${copy.exportPreflightReasonAttrs}${row.missing ? ` (${row.missing})` : ""}`
+                : row.reason === "category_missing"
+                  ? copy.exportPreflightReasonCategory
+                : copy.exportPreflightReady;
+
+            return (
+              <div key={row.id} className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        ready ? "border border-emerald-200 bg-emerald-50 text-emerald-700" : "border border-rose-200 bg-rose-50 text-rose-700"
+                      }`}>
+                        {ready ? copy.exportPreflightReady : copy.exportPreflightBlocked}
+                      </span>
+                      <span className="text-[11px] font-mono text-[var(--text-tertiary)]">ID {row.id}</span>
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{row.title}</div>
+                    {row.categoryPath && (
+                      <div className="mt-2 inline-flex rounded-full bg-[var(--bg-card)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                        {row.categoryPath}
+                      </div>
+                    )}
+                    <div className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">{reason}</div>
+                  </div>
+
+                  <button
+                    onClick={() => onOpenProduct(row.id)}
+                    className="shrink-0 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+                  >
+                    {copy.exportPreflightOpen}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {summary.mixedCategories && categoryGroups.length > 1 && (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">
+              {copy.exportPreflightMixedTitle}
+            </div>
+            <p className="mt-2 text-sm text-amber-800">
+              {copy.exportPreflightMixedDesc}
+            </p>
+            <div className="mt-4 space-y-2">
+              <div className="text-xs font-semibold text-amber-900">{copy.exportPreflightGroupsTitle}</div>
+              <div className="flex flex-wrap gap-2">
+                {categoryGroups.map((group) => (
+                  <button
+                    key={group.categoryPath}
+                    onClick={() => onExportCategory(group)}
+                    disabled={exporting}
+                    className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      exporting
+                        ? "cursor-not-allowed bg-amber-200 text-amber-700"
+                        : "bg-amber-600 text-white hover:bg-amber-700"
+                    }`}
+                  >
+                    {copy.exportPreflightGroupRun}: {group.categoryPath} ({group.count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-3 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={exporting || summary.ready === 0 || summary.mixedCategories}
+            className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+              exporting || summary.ready === 0 || summary.mixedCategories
+                ? "cursor-not-allowed bg-emerald-200 text-emerald-700"
+                : "bg-green-500 text-white hover:bg-green-600"
+            }`}
+          >
+            {summary.ready === 0
+              ? copy.exportPreflightNoReady
+              : summary.mixedCategories
+                ? copy.exportPreflightPickGroup
+                : `${copy.exportPreflightRun} (${summary.ready})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatRecentExportDate(value: string, lang: keyof typeof PRODUCTS_PAGE_COPY) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(lang === "pl" ? "pl-PL" : "en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function RecentExportsPanel({
+  rows,
+  loading,
+  exporting,
+  onRetry,
+}: {
+  rows: RecentProductExport[];
+  loading: boolean;
+  exporting: boolean;
+  onRetry: (row: RecentProductExport) => void;
+}) {
+  const { lang } = useLang();
+  const copy = PRODUCTS_PAGE_COPY[lang];
+
+  return (
+    <div className="mb-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4 shadow-sm">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+            {copy.recentExportsTitle}
+          </div>
+          <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
+            {copy.recentExportsDesc}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {loading ? (
+          <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
+            {copy.recentExportsLoading}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
+            {copy.recentExportsEmpty}
+          </div>
+        ) : (
+          rows.map((row) => (
+            <div
+              key={row.id}
+              className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 lg:flex-row lg:items-center lg:justify-between"
+            >
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+                    {row.marketplaceName}
+                  </span>
+                  <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
+                    {formatRecentExportDate(row.createdAt, lang)}
+                  </span>
+                  <span className="rounded-full bg-[var(--bg-card)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                    {row.productCount} {copy.recentExportsProducts}
+                  </span>
+                </div>
+
+                <div className="text-sm text-[var(--text-primary)]">
+                  <span className="font-semibold">{copy.recentExportsCategory}:</span>{" "}
+                  <span className="text-[var(--text-secondary)]">{row.categoryPath || "-"}</span>
+                </div>
+
+                <div className="truncate text-xs text-[var(--text-tertiary)]">
+                  <span className="font-semibold">{copy.recentExportsFile}:</span> {row.fileName}
+                </div>
+              </div>
+
+              <button
+                onClick={() => onRetry(row)}
+                disabled={exporting || row.productIds.length === 0}
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  exporting || row.productIds.length === 0
+                    ? "cursor-not-allowed bg-slate-200 text-slate-500"
+                    : "bg-[var(--text-primary)] text-[var(--bg-card)] hover:opacity-90"
+                }`}
+              >
+                {copy.recentExportsRetry}
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BulkAIModal({
   count,
   selectedIds,
   marketplaces,
   defaultMarketplace,
+  onJobChange,
   onClose,
 }: {
   count: number;
   selectedIds: number[];
   marketplaces: MarketplaceOption[];
   defaultMarketplace: string;
+  onJobChange: (job: JobSummary | null) => void;
   onClose: () => void;
 }) {
   const { lang } = useLang();
@@ -433,6 +857,7 @@ function BulkAIModal({
         const nextJob = normalizeJobSummary(json.data);
         if (!nextJob || cancelled) return;
         setJob(nextJob);
+        onJobChange(nextJob);
         if (nextJob.status === "done" || nextJob.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
@@ -456,7 +881,7 @@ function BulkAIModal({
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [job?.id]);
+  }, [job?.id, onJobChange]);
 
   const jobActive = !!job && job.status !== "done" && job.status !== "error";
   const submitBlocked = submitting || jobActive || !marketplaceSlug || selectedIds.length === 0 || selectedIds.length > 10;
@@ -466,6 +891,7 @@ function BulkAIModal({
     setSubmitting(true);
     setError("");
     setJob(null);
+    onJobChange(null);
     try {
       const res = await fetch(`${API}/api/products/generate-ai-bulk`, {
         method: "POST",
@@ -480,7 +906,9 @@ function BulkAIModal({
       });
       if (!res.ok) throw new Error(await getResponseErrorMessage(res, "Nie udalo sie wygenerowac draftow AI"));
       const json = await res.json();
-      setJob(normalizeJobSummary(json.data?.job));
+      const nextJob = normalizeJobSummary(json.data?.job);
+      setJob(nextJob);
+      onJobChange(nextJob);
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Nie udalo sie wygenerowac draftow AI"));
     } finally {
@@ -660,11 +1088,18 @@ export default function ProductsPage() {
   const [page, setPage]                   = useState(1);
   const [showImport, setShowImport]       = useState(false);
   const [showBulkAI, setShowBulkAI]       = useState(false);
+  const [showExportPreflight, setShowExportPreflight] = useState(false);
   const [selected, setSelected]           = useState<Set<number>>(new Set());
   const [openMenu, setOpenMenu]           = useState<number | null>(null);
   const [exporting, setExporting]         = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting]           = useState(false);
+  const [activeInlineJob, setActiveInlineJob] = useState<JobSummary | null>(null);
+  const [listingFocus, setListingFocus] = useState<ProductListingFocus>("all");
+  const [recentExports, setRecentExports] = useState<RecentProductExport[]>([]);
+  const [recentExportsLoading, setRecentExportsLoading] = useState(true);
+  const [splitSelectionGroups, setSplitSelectionGroups] = useState<ProductExportCategoryGroup[]>([]);
+  const inlineJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestSeq = useRef(0);
 
   const loadProducts = useCallback(async (s: string, p: number, st: string, mp: string) => {
@@ -686,10 +1121,28 @@ export default function ProductsPage() {
     }
   }, []);
 
+  const loadRecentExports = useCallback(async () => {
+    setRecentExportsLoading(true);
+    try {
+      const res = await fetch(`${API}/api/products/exports/recent?limit=6`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Blad ladowania historii eksportow");
+      setRecentExports(Array.isArray(json.data) ? json.data : []);
+    } catch {
+      setRecentExports([]);
+    } finally {
+      setRecentExportsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json()).then(j => { if (j.data) setMarketplaces(j.data); }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    void loadRecentExports();
+  }, [loadRecentExports]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -705,6 +1158,68 @@ export default function ProductsPage() {
     return () => document.removeEventListener("click", handler);
   }, []);
 
+  useEffect(() => {
+    setSelected((prev) => {
+      const visibleIds = new Set(products.map((product) => product.id));
+      const next = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [products]);
+
+  useEffect(() => {
+    if (selected.size === 0 && splitSelectionGroups.length > 0) {
+      setSplitSelectionGroups([]);
+    }
+  }, [selected, splitSelectionGroups.length]);
+
+  useEffect(() => {
+    setSplitSelectionGroups([]);
+  }, [mpFilter]);
+
+  useEffect(() => {
+    if (!activeInlineJob?.id) return;
+    if (activeInlineJob.status === "done" || activeInlineJob.status === "error") return;
+
+    let cancelled = false;
+    const stopPolling = () => {
+      if (inlineJobPollRef.current) clearInterval(inlineJobPollRef.current);
+      inlineJobPollRef.current = null;
+    };
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/jobs/${activeInlineJob.id}`, { headers: authHeaders(), cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac statusu joba");
+        const nextJob = normalizeJobSummary(json.data);
+        if (!nextJob || cancelled) return;
+        setActiveInlineJob(nextJob);
+        if (nextJob.status === "done" || nextJob.status === "error") {
+          stopPolling();
+          await loadProducts(search, page, statusFilter, mpFilter);
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        setActiveInlineJob(prev => prev ? {
+          ...prev,
+          status: "error",
+          currentMessage: getErrorMessage(err, "Nie udalo sie pobrac statusu joba"),
+        } : prev);
+        stopPolling();
+      }
+    };
+
+    void poll();
+    inlineJobPollRef.current = setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
+  }, [activeInlineJob?.id, activeInlineJob?.status, loadProducts, mpFilter, page, search, statusFilter]);
+
   const handleDelete = async (id: number) => {
     if (!confirm(t.deleteProduct + "?")) return;
     try {
@@ -719,22 +1234,74 @@ export default function ProductsPage() {
     }
   };
 
-  const handleExport = async () => {
-    if (!mpFilter || selected.size === 0) return;
+  const handleExport = async (
+    productIds: number[],
+    options?: {
+      marketplaceSlug?: string;
+      categoryPath?: string | null;
+      clearSelection?: boolean;
+    }
+  ) => {
+    const exportMarketplace = options?.marketplaceSlug || mpFilter;
+    if (!exportMarketplace || productIds.length === 0) return;
     setExporting(true);
     try {
+      const body: {
+        productIds: number[];
+        marketplace: string;
+        category?: string;
+      } = {
+        productIds,
+        marketplace: exportMarketplace,
+      };
+
+      const exportCategory = options?.categoryPath?.trim();
+      if (exportCategory) body.category = exportCategory;
+
       const res = await fetch(`${API}/api/products/export`, {
-        method: "POST", headers: authHeadersJSON(),
-        body: JSON.stringify({ productIds: [...selected], marketplace: mpFilter }),
+        method: "POST",
+        headers: authHeadersJSON(),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) { const j = await res.json(); throw new Error(j.error); }
+      if (!res.ok) {
+        throw new Error(await getResponseErrorMessage(res, "Blad eksportu"));
+      }
+
       const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href = url; a.download = `${mpFilter}_export_${Date.now()}.xlsx`; a.click();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${exportMarketplace}_export_${Date.now()}.xlsx`;
+      a.click();
       URL.revokeObjectURL(url);
+
+      const exportedSplitGroup = splitSelectionGroups.length > 0
+        ? findProductExportCategoryGroup(splitSelectionGroups, productIds)
+        : null;
+
+      if (exportedSplitGroup) {
+        const nextGroups = splitSelectionGroups.filter(
+          (group) => group.categoryPath !== exportedSplitGroup.categoryPath
+        );
+        setSplitSelectionGroups(nextGroups);
+        if (nextGroups[0]) {
+          setSelected(new Set(nextGroups[0].productIds));
+        } else {
+          setSelected(new Set());
+        }
+      } else if (options?.clearSelection) {
+        setSelected(new Set());
+      }
+      setShowExportPreflight(false);
+      await Promise.all([
+        loadProducts(search, page, statusFilter, mpFilter),
+        loadRecentExports(),
+      ]);
+    } catch (err: unknown) {
+      alert("Blad eksportu: " + getErrorMessage(err));
+    } /*
     } catch (err: unknown) { alert("Błąd eksportu: " + getErrorMessage(err)); }
-    finally { setExporting(false); }
+    */ finally { setExporting(false); }
   };
 
   const handleDeleteConfirmed = async () => {
@@ -753,6 +1320,7 @@ export default function ProductsPage() {
         }
       }
       setSelected(new Set());
+      setSplitSelectionGroups([]);
       setShowDeleteConfirm(false);
       loadProducts(search, page, statusFilter, mpFilter);
     } finally {
@@ -760,7 +1328,23 @@ export default function ProductsPage() {
     }
   };
 
+  const activateSplitSelectionGroup = useCallback((group: ProductExportCategoryGroup) => {
+    setSelected(new Set(group.productIds));
+  }, []);
+
+  const disableSplitSelection = useCallback(() => {
+    setSplitSelectionGroups([]);
+  }, []);
+
+  const startSplitSelection = useCallback((groups: ProductExportCategoryGroup[]) => {
+    if (groups.length <= 1) return;
+    setSplitSelectionGroups(groups);
+    setSelected(new Set(groups[0].productIds));
+    setShowExportPreflight(false);
+  }, []);
+
   const toggleSelect = (id: number) => {
+    setSplitSelectionGroups([]);
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -772,21 +1356,54 @@ export default function ProductsPage() {
     });
   };
   const toggleAll = () => {
-    setSelected(selected.size === products.length ? new Set() : new Set(products.map(p => p.id)));
-  };
+    setSplitSelectionGroups([]);
+    setSelected(prev => {
+      const next = new Set(prev);
+      const visibleIds = visibleProducts.map((product) => product.id);
+      const everyVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => next.has(id));
 
+      if (everyVisibleSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+
+      return next;
+    });
+  };
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setStatusFilter("");
+    setMpFilter("");
+    setListingFocus("all");
+    setSplitSelectionGroups([]);
+    setPage(1);
+    setOpenMenu(null);
+  }, []);
+
+  const visibleProducts = filterProductsByListingFocus(products, listingFocus);
+  const listingStats = getProductListingStats(products);
   const totalPages  = Math.ceil(total / LIMIT);
-  const allChecked  = products.length > 0 && selected.size === products.length;
-  const someChecked = selected.size > 0 && selected.size < products.length;
-  const selectedReadyCount = mpFilter
-    ? [...selected].filter(id => {
-        const p = products.find(x => x.id === id);
-        if (!p) return false;
-        const integ = parseIntegrations(p.integrations);
-        const mp    = integ.find(i => i.slug === mpFilter);
-        return mp && mp.missing === 0;
-      }).length
-    : 0;
+  const allChecked  = visibleProducts.length > 0 && visibleProducts.every((product) => selected.has(product.id));
+  const someChecked = visibleProducts.some((product) => selected.has(product.id)) && !allChecked;
+  const inlineJobActive = !!activeInlineJob && activeInlineJob.status !== "done" && activeInlineJob.status !== "error";
+  const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter);
+  const focusLabels: Record<ProductListingFocus, string> = {
+    all: PRODUCTS_PAGE_COPY[lang].focusAll,
+    ready: PRODUCTS_PAGE_COPY[lang].focusReady,
+    review: PRODUCTS_PAGE_COPY[lang].focusReview,
+    blocked: PRODUCTS_PAGE_COPY[lang].focusBlocked,
+  };
+  const hasListViewFilters = hasFilters || listingFocus !== "all";
+  const exportPreflightRows = mpFilter ? getProductExportPreflight(products, [...selected], mpFilter) : [];
+  const exportSummary = getProductExportSummary(exportPreflightRows);
+  const exportReadyIds = getExportableProductIds(exportPreflightRows);
+  const selectedCategoryGroups = getProductExportCategoryGroups(exportPreflightRows);
+  const activeSplitSelectionGroup = findProductExportCategoryGroup(splitSelectionGroups, [...selected]);
+  const currentMarketplaceName = mpFilter
+    ? marketplaces.find((marketplace) => marketplace.slug === mpFilter)?.name ?? mpFilter
+    : "";
+  const selectedReadyCount = exportSummary.ready;
   const selectedOverBulkLimit = selected.size > 10;
 
   return (
@@ -807,150 +1424,367 @@ export default function ProductsPage() {
         />
       )}
 
+      {showExportPreflight && mpFilter && (
+        <ExportPreflightModal
+          marketplaceName={currentMarketplaceName}
+          rows={exportPreflightRows}
+          exporting={exporting}
+          onConfirm={() => { void handleExport(exportReadyIds, { clearSelection: true }); }}
+          onExportCategory={(group) => {
+            void handleExport(group.productIds, {
+              clearSelection: true,
+              categoryPath: group.categoryPath,
+            });
+          }}
+          onOpenProduct={(productId) => {
+            setShowExportPreflight(false);
+            router.push(`/dashboard/products/${productId}`);
+          }}
+          onCancel={() => setShowExportPreflight(false)}
+        />
+      )}
+
       {showBulkAI && (
         <BulkAIModal
           count={selected.size}
           selectedIds={[...selected]}
           marketplaces={marketplaces}
           defaultMarketplace={mpFilter}
+          onJobChange={setActiveInlineJob}
           onClose={() => setShowBulkAI(false)}
         />
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-xl font-bold text-[var(--text-primary)]">{t.pageTitle}</h1>
-          <p className="text-sm text-[var(--text-tertiary)] mt-0.5">
+          <p className="mt-0.5 text-sm text-[var(--text-tertiary)]">
             {total > 0 ? `${total} ${t.productCount}` : t.noProducts}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
           <button onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm text-[var(--text-primary)]
-              bg-[var(--bg-card)] border border-[var(--border-default)] hover:bg-[var(--bg-body)] shadow-sm transition">
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] shadow-sm transition hover:bg-[var(--bg-body)]">
             <UploadIcon /> {t.importBtn}
           </button>
           <button onClick={() => router.push("/dashboard/new-product")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-white text-sm
-              bg-gradient-to-r from-purple-500 to-indigo-500
-              shadow-md hover:scale-105 hover:shadow-lg transition-all duration-200">
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg">
             <PlusIcon /> {t.addBtn}
           </button>
         </div>
       </div>
 
+      <RecentExportsPanel
+        rows={recentExports}
+        loading={recentExportsLoading}
+        exporting={exporting}
+        onRetry={(row) => {
+          void handleExport(row.productIds, {
+            marketplaceSlug: row.marketplaceSlug,
+            categoryPath: row.categoryPath,
+          });
+        }}
+      />
+
       {/* Toolbar */}
-      <div className="space-y-2 mb-3">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-              <SearchIcon />
+      <div className="mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3 shadow-sm sm:p-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative flex-1 lg:max-w-md">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <SearchIcon />
+              </div>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder={t.searchPlaceholder}
+                className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] py-2 pl-9 pr-4 text-sm text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+              />
             </div>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder={t.searchPlaceholder}
-              className="w-full pl-9 pr-4 py-2 rounded-xl text-sm bg-[var(--bg-input)] border border-[var(--border-default)]
-                text-[var(--text-primary)] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 transition"
-            />
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+              >
+                {t.clearFilters}
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-1">
+
+          <div className="flex flex-wrap gap-1.5">
             {STATUS_FILTER.map(f => (
-              <button key={f.value} onClick={() => setStatusFilter(f.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+              <button
+                key={f.value}
+                onClick={() => setStatusFilter(f.value)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                   statusFilter === f.value
                     ? "bg-indigo-600 text-white"
-                    : "text-[var(--text-secondary)] bg-[var(--bg-card)] border border-[var(--border-default)] hover:bg-[var(--bg-body)]"
-                }`}>
+                    : "border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
+                }`}
+              >
                 {f.label}
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Filtr marketplace */}
-        {marketplaces.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Filtr marketplace */}
+          {marketplaces.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">{t.marketplace}</span>
             <button onClick={() => setMpFilter("")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
+              className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
                 mpFilter === ""
-                  ? "bg-[var(--text-primary)] text-[var(--bg-card)] border-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] bg-[var(--bg-card)] border-[var(--border-default)] hover:bg-[var(--bg-body)]"
-              }`}>
+                  ? "border-[var(--text-primary)] bg-[var(--text-primary)] text-[var(--bg-card)]"
+                  : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
+              }`}
+            >
               {t.allMarketplaces}
             </button>
             {marketplaces.map(mp => (
-              <button key={mp.slug} onClick={() => setMpFilter(mp.slug)}
-                className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
+              <button
+                key={mp.slug}
+                onClick={() => setMpFilter(mp.slug)}
+                className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
                   mpFilter === mp.slug
-                    ? "bg-[var(--text-primary)] text-[var(--bg-card)] border-[var(--text-primary)]"
-                    : "text-[var(--text-secondary)] bg-[var(--bg-card)] border-[var(--border-default)] hover:bg-[var(--bg-body)]"
-                }`}>
+                    ? "border-[var(--text-primary)] bg-[var(--text-primary)] text-[var(--bg-card)]"
+                    : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
+                }`}
+              >
                 {mp.name}
               </button>
             ))}
-          </div>
-        )}
+            </div>
+          )}
+
+          {hasFilters && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--bg-body)] px-3 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">{t.filtersActive}</span>
+              {search.trim() && (
+                <span className="rounded-full bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                  &quot;{search.trim()}&quot;
+                </span>
+              )}
+              {statusFilter && (
+                <span className="rounded-full bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                  {STATUS_FILTER.find(f => f.value === statusFilter)?.label ?? statusFilter}
+                </span>
+              )}
+              {mpFilter && (
+                <span className="rounded-full bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                  {marketplaces.find(mp => mp.slug === mpFilter)?.name ?? mpFilter}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 mb-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm flex-wrap">
-          <span className="text-indigo-700 font-medium">{selected.size} {t.selectedCount}</span>
+        <div className="mb-3 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-indigo-700">
+                {selected.size} {t.selectedCount}
+              </span>
+              {mpFilter && selectedReadyCount > 0 && (
+                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-green-700">
+                  {selectedReadyCount} {t.ready}
+                </span>
+              )}
+              {selectedOverBulkLimit && (
+                <span className="text-xs font-medium text-amber-700">{t.bulkLimit}</span>
+              )}
+            </div>
 
-          {mpFilter && (
-            <button onClick={handleExport} disabled={exporting}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                exporting
-                  ? "bg-green-200 text-green-700 cursor-wait"
-                  : "bg-green-500 text-white hover:bg-green-600"
-              }`}>
-              {exporting
-                ? <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>{t.exporting}</>
-                : <><svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  {t.exportTo} {marketplaces.find(m => m.slug === mpFilter)?.name ?? mpFilter}
-                  {selectedReadyCount > 0 && <span className="ml-1 bg-white/30 px-1 rounded">{selectedReadyCount} {t.ready}</span>}</>}
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {mpFilter && selectedCategoryGroups.length > 1 && splitSelectionGroups.length === 0 && (
+                <button
+                  onClick={() => startSplitSelection(selectedCategoryGroups)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+                >
+                  {PRODUCTS_PAGE_COPY[lang].splitSelectionStart}
+                </button>
+              )}
+
+              {mpFilter && (
+                <button onClick={() => setShowExportPreflight(true)} disabled={exporting}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                    exporting
+                      ? "cursor-wait bg-green-200 text-green-700"
+                      : "bg-green-500 text-white hover:bg-green-600"
+                  }`}>
+                  {exporting
+                    ? <><svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>{t.exporting}</>
+                    : <><svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      {t.exportTo} {marketplaces.find(m => m.slug === mpFilter)?.name ?? mpFilter}</>}
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  if (selectedOverBulkLimit) return;
+                  setShowBulkAI(true);
+                }}
+                aria-disabled={selectedOverBulkLimit}
+                className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                  selectedOverBulkLimit
+                    ? "cursor-not-allowed bg-indigo-200 text-indigo-500"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5.64 5.64l4.24 4.24"/><path d="M14.12 14.12l4.24 4.24"/>
+                  <path d="M3 12h6"/><path d="M15 12h6"/><path d="M5.64 18.36l4.24-4.24"/><path d="M14.12 9.88l4.24-4.24"/>
+                </svg>
+                {t.generateAI}
+              </button>
+
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50"
+              >
+                {t.deleteSelected}
+              </button>
+            </div>
+          </div>
+
+          {splitSelectionGroups.length > 0 && (
+            <div className="mt-3 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-3">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                    {PRODUCTS_PAGE_COPY[lang].splitSelectionTitle}
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                    {PRODUCTS_PAGE_COPY[lang].splitSelectionDesc}
+                  </p>
+                </div>
+                <button
+                  onClick={disableSplitSelection}
+                  className="rounded-xl border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-body)]"
+                >
+                  {PRODUCTS_PAGE_COPY[lang].splitSelectionOff}
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {splitSelectionGroups.map((group) => {
+                  const active = activeSplitSelectionGroup?.categoryPath === group.categoryPath;
+                  return (
+                    <button
+                      key={group.categoryPath}
+                      onClick={() => activateSplitSelectionGroup(group)}
+                      className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                        active
+                          ? "bg-indigo-600 text-white"
+                          : "border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
+                      }`}
+                    >
+                      {group.categoryPath} ({group.count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
-
-          <button
-            onClick={() => {
-              if (selectedOverBulkLimit) return;
-              setShowBulkAI(true);
-            }}
-            aria-disabled={selectedOverBulkLimit}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              selectedOverBulkLimit
-                ? "bg-indigo-200 text-indigo-500 cursor-not-allowed"
-                : "bg-indigo-600 text-white hover:bg-indigo-700"
-            }`}
-          >
-            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5.64 5.64l4.24 4.24"/><path d="M14.12 14.12l4.24 4.24"/>
-              <path d="M3 12h6"/><path d="M15 12h6"/><path d="M5.64 18.36l4.24-4.24"/><path d="M14.12 9.88l4.24-4.24"/>
-            </svg>
-            {t.generateAI}
-          </button>
-
-          {selectedOverBulkLimit && (
-            <span className="text-amber-700 font-medium text-xs">{t.bulkLimit}</span>
-          )}
-
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="ml-auto text-red-500 hover:text-red-700 font-medium text-xs">
-            {t.deleteSelected}
-          </button>
         </div>
       )}
+
+      {inlineJobActive && activeInlineJob && (
+        <div className="mb-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-indigo-900">{t.activeJobTitle}</div>
+              <div className="text-xs text-indigo-700">
+                {activeInlineJob.currentMessage || t.bulkModal.jobWaiting}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-indigo-700">
+                {Math.max(0, Math.min(100, activeInlineJob.progressPercent ?? 0))}%
+              </span>
+              <span className="rounded-full bg-white/80 px-2 py-1 text-indigo-700">
+                {formatDurationLabel(activeInlineJob.elapsedSeconds)}
+              </span>
+              {activeInlineJob.etaSeconds != null && (
+                <span className="rounded-full bg-white/80 px-2 py-1 text-indigo-700">
+                  ETA {formatDurationLabel(activeInlineJob.etaSeconds)}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 h-2 rounded-full bg-indigo-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-indigo-600 transition-all"
+              style={{ width: `${Math.max(0, Math.min(100, activeInlineJob.progressPercent ?? 0))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mb-3 grid gap-3 md:grid-cols-4">
+        {[
+          {
+            focus: "all" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusAll,
+            value: listingStats.all,
+            hint: PRODUCTS_PAGE_COPY[lang].focusAllHint,
+          },
+          {
+            focus: "ready" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusReady,
+            value: listingStats.ready,
+            hint: PRODUCTS_PAGE_COPY[lang].focusReadyHint,
+          },
+          {
+            focus: "review" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusReview,
+            value: listingStats.review,
+            hint: PRODUCTS_PAGE_COPY[lang].focusReviewHint,
+          },
+          {
+            focus: "blocked" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusBlocked,
+            value: listingStats.blocked,
+            hint: formatBlockedMixHint(
+              PRODUCTS_PAGE_COPY[lang].blockedMixHint,
+              listingStats.unmapped,
+              listingStats.attributesMissing
+            ),
+          },
+        ].map((card) => {
+          const active = listingFocus === card.focus;
+          return (
+            <button
+              key={card.focus}
+              onClick={() => setListingFocus(card.focus)}
+              className="rounded-2xl p-4 text-left transition"
+              style={active ? {
+                background: "var(--accent-primary-light)",
+                border: "1px solid var(--accent-primary-border)",
+                boxShadow: "0 0 0 1px var(--accent-primary-border) inset",
+              } : {
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-default)",
+              }}
+            >
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: active ? "var(--accent-primary)" : "var(--text-tertiary)" }}>
+                {card.label}
+              </div>
+              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{card.value}</div>
+              <div className="mt-2 text-sm leading-5" style={{ color: "var(--text-secondary)" }}>{card.hint}</div>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Table */}
       <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden shadow-sm border border-[var(--border-default)]">
 
         {/* Column headers */}
-        <div className="grid items-center px-4 py-3 bg-[var(--bg-table-header)] border-b border-[var(--border-light)]"
+        <div className="hidden items-center border-b border-[var(--border-light)] bg-[var(--bg-table-header)] px-4 py-3 md:grid"
           style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}>
           <div className="flex items-center justify-center">
             <input type="checkbox" checked={allChecked} onChange={toggleAll}
@@ -971,39 +1805,119 @@ export default function ProductsPage() {
 
         {/* Body */}
         {loading ? (
-          <div className="flex items-center justify-center py-24 gap-3 text-[var(--text-tertiary)]">
-            <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-            <span className="text-sm">{t.loading}</span>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-[var(--bg-empty-icon)] flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.2}>
+          <>
+            <div className="divide-y divide-[var(--border-light)] md:hidden">
+              {Array.from({ length: 4 }).map((_, idx) => (
+                <div key={idx} className="space-y-3 px-4 py-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1 h-4 w-4 animate-pulse rounded bg-[var(--bg-input)]" />
+                    <div className="h-14 w-14 animate-pulse rounded-xl bg-[var(--bg-input)]" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                      <div className="h-4 w-4/5 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                      <div className="h-3 w-3/5 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="h-6 w-24 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                    <div className="h-6 w-20 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden divide-y divide-[var(--border-light)] md:block">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div key={idx} className="grid items-center px-4 py-3" style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}>
+                  <div className="mx-auto h-4 w-4 animate-pulse rounded bg-[var(--bg-input)]" />
+                  <div className="h-9 w-9 animate-pulse rounded-lg bg-[var(--bg-input)]" />
+                  <div className="space-y-2 pl-3">
+                    <div className="h-4 w-2/5 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                    <div className="h-3 w-3/5 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                  </div>
+                  <div className="flex gap-2 pl-2">
+                    <div className="h-6 w-20 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                    <div className="h-6 w-16 animate-pulse rounded-full bg-[var(--bg-input)]" />
+                  </div>
+                  <div className="mx-auto h-4 w-4 animate-pulse rounded bg-[var(--bg-input)]" />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : visibleProducts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-4 px-4 py-24">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--bg-empty-icon)]">
+              <svg viewBox="0 0 24 24" className="h-7 w-7 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.2}>
                 <rect x="2" y="7" width="20" height="14" rx="2"/>
                 <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
               </svg>
             </div>
-            <div className="text-center">
-              <div className="font-semibold text-[var(--text-secondary)] mb-1">
-                {search || statusFilter ? t.noResults : t.noProducts}
+            <div className="max-w-md text-center">
+              <div className="mb-1 font-semibold text-[var(--text-secondary)]">
+                {hasListViewFilters ? t.noResults : t.noProducts}
               </div>
               <div className="text-sm text-[var(--text-tertiary)]">
-                {!search && !statusFilter ? t.emptyHint : t.emptyFilterHint}
+                {hasFilters
+                  ? t.emptyFilterHint
+                  : listingFocus !== "all"
+                    ? PRODUCTS_PAGE_COPY[lang].focusEmpty
+                    : t.emptyHint}
               </div>
             </div>
-            {!search && !statusFilter && (
-              <div className="flex gap-2 mt-1">
+
+            {hasListViewFilters && (
+              <>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {search.trim() && (
+                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                      &quot;{search.trim()}&quot;
+                    </span>
+                  )}
+                  {statusFilter && (
+                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                      {STATUS_FILTER.find(f => f.value === statusFilter)?.label ?? statusFilter}
+                    </span>
+                  )}
+                  {mpFilter && (
+                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                      {marketplaces.find(mp => mp.slug === mpFilter)?.name ?? mpFilter}
+                    </span>
+                  )}
+                  {listingFocus !== "all" && (
+                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                      {focusLabels[listingFocus]}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {listingFocus !== "all" && (
+                    <button
+                      onClick={() => setListingFocus("all")}
+                      className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+                    >
+                      {PRODUCTS_PAGE_COPY[lang].focusReset}
+                    </button>
+                  )}
+                  {hasFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+                    >
+                      {t.clearFilters}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {!hasFilters && listingFocus === "all" && (
+              <div className="mt-1 flex flex-col gap-2 sm:flex-row">
                 <button onClick={() => setShowImport(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium
-                    text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition">
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-100">
                   <UploadIcon /> {t.importProducts}
                 </button>
                 <button onClick={() => router.push("/dashboard/new-product")}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium
-                    text-[var(--text-secondary)] bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] transition">
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[var(--bg-input)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--bg-input-alt)]">
                   <PlusIcon /> {t.addManually}
                 </button>
               </div>
@@ -1011,10 +1925,137 @@ export default function ProductsPage() {
           </div>
         ) : (
           <>
-            <div className="divide-y divide-[var(--border-light)]">
-              {products.map(p => {
+            <div className="divide-y divide-[var(--border-light)] md:hidden">
+              {visibleProducts.map(p => {
+                const integList = parseIntegrations(p.integrations);
+                const isSelected = selected.has(p.id);
+                const statusLabel = getStatusLabel(t, p.status);
+                const listingState = getProductListingState(p);
+                const listingIssue = getListingIssueMeta(lang, listingState);
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`px-4 py-4 transition-colors ${isSelected ? "bg-[var(--bg-card-selected)]" : "hover:bg-[var(--bg-card-hover)]"}`}
+                    onClick={() => router.push(`/dashboard/products/${p.id}`)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="pt-1" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(p.id)}
+                          className="h-4 w-4 cursor-pointer rounded accent-indigo-600"
+                        />
+                      </div>
+
+                      <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--img-placeholder-border)] bg-[var(--img-placeholder-bg)]">
+                        {p.image_url ? (
+                          <UnoptimizedRemoteImage
+                            src={p.image_url}
+                            alt={p.title || ""}
+                            sizes="56px"
+                            className="object-cover"
+                          />
+                        ) : (
+                          <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                          </svg>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
+                            p.status === "mapped"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : p.status === "pending"
+                                ? "border-amber-200 bg-amber-50 text-amber-700"
+                                : p.status === "needs_review"
+                                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                                  : p.status === "exported"
+                                    ? "border-slate-200 bg-slate-100 text-slate-700"
+                                    : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)]"
+                          }`}>
+                            {statusLabel}
+                          </span>
+                          {p.brand && (
+                            <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
+                              {p.brand}
+                            </span>
+                          )}
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${listingIssue.className}`}>
+                            {listingIssue.label}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-sm font-semibold leading-snug text-[var(--text-primary)]">
+                          {p.title || <span className="italic font-normal text-[var(--text-tertiary)]">{t.noName}</span>}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-mono text-[var(--text-tertiary)]">
+                          <span>ID {p.id}</span>
+                          {p.sku && <span>SKU {p.sku}</span>}
+                          {p.ean && <span>EAN {p.ean}</span>}
+                          {p.asin && <span>ASIN {p.asin}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {integList.length > 0
+                        ? integList.map(integ => {
+                            const ready = integ.missing === 0;
+                            const isFiltered = mpFilter === integ.slug;
+                            return (
+                              <span
+                                key={integ.slug}
+                                title={ready ? "Wszystkie wymagane atrybuty uzupełnione" : `Brakuje ${integ.missing} atrybutów`}
+                                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-semibold transition ${
+                                  ready
+                                    ? isFiltered
+                                      ? "border-green-300 bg-green-100 text-green-800"
+                                      : "border-green-200 bg-green-50 text-green-700"
+                                    : isFiltered
+                                      ? "border-amber-300 bg-amber-100 text-amber-800"
+                                      : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)]"
+                                }`}
+                              >
+                                <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${ready ? "bg-green-500" : "bg-amber-400"}`} />
+                                {integ.name}{ready ? "" : ` / ${integ.missing}`}
+                              </span>
+                            );
+                          })
+                        : <span className="text-[10px] text-slate-300">&mdash;</span>
+                      }
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => router.push(`/dashboard/products/${p.id}`)}
+                        className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+                      >
+                        {t.edit}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(p.id)}
+                        className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                      >
+                        {t.deleteProduct}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden divide-y divide-[var(--border-light)] md:block">
+              {visibleProducts.map(p => {
                 const integList  = parseIntegrations(p.integrations);
                 const isSelected = selected.has(p.id);
+                const statusLabel = getStatusLabel(t, p.status);
+                const listingState = getProductListingState(p);
+                const listingIssue = getListingIssueMeta(lang, listingState);
 
                 return (
                   <div key={p.id}
@@ -1032,10 +2073,14 @@ export default function ProductsPage() {
                     </div>
 
                     {/* Thumbnail */}
-                    <div className="w-9 h-9 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex items-center justify-center flex-shrink-0 border border-[var(--img-placeholder-border)]">
+                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex items-center justify-center flex-shrink-0 border border-[var(--img-placeholder-border)]">
                       {p.image_url ? (
-                        <img src={p.image_url} alt={p.title || ""} className="w-full h-full object-cover"
-                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        <UnoptimizedRemoteImage
+                          src={p.image_url}
+                          alt={p.title || ""}
+                          sizes="36px"
+                          className="object-cover"
+                        />
                       ) : (
                         <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.5}>
                           <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -1051,12 +2096,28 @@ export default function ProductsPage() {
                         <span className="text-sm font-semibold text-[var(--text-primary)] truncate">
                           {p.title || <span className="text-[var(--text-tertiary)] font-normal italic">{t.noName}</span>}
                         </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
+                          p.status === "mapped"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : p.status === "pending"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : p.status === "needs_review"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : p.status === "exported"
+                                  ? "bg-slate-100 text-slate-700 border-slate-200"
+                                  : "bg-[var(--bg-input)] text-[var(--text-secondary)] border-[var(--border-default)]"
+                        }`}>
+                          {statusLabel}
+                        </span>
                         {p.brand && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0
                             text-indigo-600 bg-indigo-50">
                             {p.brand}
                           </span>
                         )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${listingIssue.className}`}>
+                          {listingIssue.label}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ID {p.id}</span>
@@ -1085,7 +2146,7 @@ export default function ProductsPage() {
                                       : "bg-[var(--bg-input)] text-[var(--text-secondary)] border-[var(--border-default)]"
                                 }`}>
                                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ready ? "bg-green-500" : "bg-amber-400"}`} />
-                                {integ.name}
+                                {integ.name}{ready ? "" : ` / ${integ.missing}`}
                               </span>
                             );
                           })
@@ -1097,8 +2158,7 @@ export default function ProductsPage() {
                     <div className="relative flex justify-center" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === p.id ? null : p.id); }}
-                        className="p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)]
-                          rounded-lg transition opacity-0 group-hover:opacity-100">
+                        className="rounded-lg p-1.5 text-[var(--text-tertiary)] transition hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] opacity-100 md:opacity-0 md:group-hover:opacity-100">
                         <DotsIcon />
                       </button>
                       {openMenu === p.id && (
@@ -1122,11 +2182,11 @@ export default function ProductsPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-light)] bg-[var(--bg-table-header)]">
+              <div className="flex flex-col gap-2 border-t border-[var(--border-light)] bg-[var(--bg-table-header)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-xs text-[var(--text-tertiary)]">
                   {t.page} {page} {t.of} {totalPages} &middot; {total} {t.productCount}
                 </div>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
                   <button
                     disabled={page === 1}
                     onClick={() => { const np = page - 1; setPage(np); loadProducts(search, np, statusFilter, mpFilter); }}

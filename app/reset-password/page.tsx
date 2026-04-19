@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -77,7 +78,7 @@ function ResetPasswordForm() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
             style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-            <img src="/lumir-icon.svg" alt="LuMir" className="w-9 h-9" />
+            <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="w-9 h-9" />
           </div>
           <h1 className="text-3xl font-semibold text-white"
             style={{ fontFamily: "var(--font-brand), Georgia, serif", letterSpacing: "0.06em" }}>

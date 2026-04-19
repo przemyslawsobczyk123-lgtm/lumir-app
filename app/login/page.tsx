@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -21,7 +22,6 @@ function LoginForm() {
   // Handle Google OAuth redirect + other query params
   useEffect(() => {
     const googleToken = params.get("google_token");
-    const name        = params.get("name");
     const err         = params.get("error");
 
     if (googleToken) {
@@ -88,8 +88,6 @@ function LoginForm() {
     if (e.key === "Enter") login();
   }
 
-  const canSubmit = email.trim() && password && !loading;
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#020617] relative overflow-hidden">
       {/* Ambient glows */}
@@ -102,7 +100,7 @@ function LoginForm() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
             style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-            <img src="/lumir-icon.svg" alt="LuMir" className="w-9 h-9" />
+              <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="w-9 h-9" />
           </div>
           <h1 className="text-3xl font-semibold text-white"
             style={{ fontFamily: "var(--font-brand), Georgia, serif", letterSpacing: "0.06em" }}>

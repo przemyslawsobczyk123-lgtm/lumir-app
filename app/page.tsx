@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 export default function Landing() {
@@ -17,7 +18,7 @@ export default function Landing() {
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center"
               style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-              <img src="/lumir-icon.svg" alt="LuMir" className="w-6 h-6" />
+              <Image src="/lumir-icon.svg" alt="LuMir" width={24} height={24} className="w-6 h-6" />
             </div>
             <span className="text-xl font-semibold tracking-wider"
               style={{ fontFamily: "var(--font-brand), Georgia, serif", letterSpacing: "0.06em" }}>
@@ -264,7 +265,6 @@ function AICard() {
         {STEPS.map((l, i) => {
           const done    = i < step;
           const active  = i === step;
-          const pending = i > step;
           return (
             <div key={l} className={`flex items-center gap-2.5 text-xs transition-all duration-300 ${
               done ? "text-slate-400" : active ? "text-indigo-300" : "text-slate-700"

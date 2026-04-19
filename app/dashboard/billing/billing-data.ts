@@ -48,6 +48,9 @@ export type BillingHistoryEntry = {
   status: string;
   source: string;
   mode: string;
+  packCredits?: number | null;
+  stripeSessionId?: string | null;
+  externalId?: string | null;
 };
 
 export type BillingHistoryResult = {
@@ -161,6 +164,17 @@ function normalizeHistoryEntry(raw: unknown, index: number): BillingHistoryEntry
     status: String(candidate.status ?? "ok"),
     source: String(candidate.source ?? candidate.kind ?? "billing"),
     mode: String(candidate.mode ?? ""),
+    packCredits: candidate.packCredits == null ? null : Number(candidate.packCredits),
+    stripeSessionId: typeof candidate.stripeSessionId === "string"
+      ? candidate.stripeSessionId
+      : typeof candidate.stripe_session_id === "string"
+        ? candidate.stripe_session_id
+        : null,
+    externalId: typeof candidate.externalId === "string"
+      ? candidate.externalId
+      : typeof candidate.external_id === "string"
+        ? candidate.external_id
+        : null,
   };
 }
 

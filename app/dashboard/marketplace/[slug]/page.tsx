@@ -22,6 +22,23 @@ type AllegroCategory = {
   parent?: { id: string } | null;
 };
 
+type AllegroStatus = {
+  status: string;
+  hoursLeft: number;
+  minutesLeft: number;
+};
+
+type SellerAllegroAccount = {
+  environment: string;
+  status: string;
+  minutesLeft: number;
+};
+
+type ImportSummary = {
+  catCount?: number;
+  fieldCount?: number;
+};
+
 type Favorite = {
   id: number; category_id: number; category_path: string;
   category_name: string; is_pinned: number; use_count: number; last_used_at: string | null;
@@ -37,6 +54,10 @@ function authHeaders() {
 function authHeadersForm() {
   const t = typeof window !== "undefined" ? localStorage.getItem("token") : "";
   return { Authorization: `Bearer ${t}` };
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 // ── Icons ────────────────────────────────────────────────────────────
@@ -118,7 +139,7 @@ function SearchInput({ value, onChange, placeholder }: {
 }
 
 // ── Allegro: Integration banner ───────────────────────────────────────
-function AllegroIntegrationBanner({ status }: { status: any }) {
+function AllegroIntegrationBanner({ status }: { status: AllegroStatus | null }) {
   const isValid  = status?.status === "valid";
   const hoursLeft = status?.hoursLeft ?? 0;
   const minLeft   = status?.minutesLeft ? status.minutesLeft % 60 : 0;
@@ -180,10 +201,9 @@ function AllegroIntegrationBanner({ status }: { status: any }) {
 type BreadcrumbItem = { id: string | null; name: string };
 
 function AllegroTreeBrowser({
-  favSet, pending, onToggleFav, onSelect,
+  favSet, onToggleFav, onSelect,
 }: {
   favSet: Set<number>;
-  pending: Set<number>;
   onToggleFav: (cat: { id: string; name: string; path: string }) => void;
   onSelect: (cat: { id: string; name: string; path: string }) => void;
 }) {
@@ -194,9 +214,6 @@ function AllegroTreeBrowser({
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([
     { id: null, name: "Allegro" },
   ]);
-
-  const currentParentId = breadcrumb[breadcrumb.length - 1].id;
-  const currentPath     = breadcrumb.map(b => b.name).join(" / ");
 
   const loadCategories = useCallback(async (parentId: string | null) => {
     setLoading(true);
@@ -210,8 +227,8 @@ function AllegroTreeBrowser({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd API");
       setItems(json.data || []);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się pobrać kategorii Allegro"));
       setItems([]);
     } finally {
       setLoading(false);
@@ -405,7 +422,7 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
   const [file, setFile]         = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [state, setState]       = useState<"idle"|"uploading"|"success"|"error">("idle");
-  const [result, setResult]     = useState<any>(null);
+  const [result, setResult]     = useState<ImportSummary | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
   const pickFile = (f: File) => {
@@ -426,9 +443,12 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd importu");
-      setResult(json.data); setState("success"); setFile(null);
-    } catch (err: any) {
-      setErrorMsg(err.message); setState("error");
+      const importData = typeof json.data === "object" && json.data
+        ? json.data as ImportSummary
+        : {};
+      setResult(importData); setState("success"); setFile(null);
+    } catch (err: unknown) {
+      setErrorMsg(getErrorMessage(err, "Nie udało się zaimportować szablonu")); setState("error");
     }
   };
 
@@ -572,7 +592,7 @@ export default function MarketplaceCategoriesPage() {
   const [loading, setLoading]         = useState(true);
   const [favLoading, setFavLoading]   = useState(false);
   const [pending, setPending]         = useState<Set<number>>(new Set());
-  const [allegroStatus, setAllegroStatus] = useState<any>(null);
+  const [allegroStatus, setAllegroStatus] = useState<AllegroStatus | null>(null);
 
   // Load Allegro status — per-seller accounts (same source as Konta Allegro page)
   useEffect(() => {
@@ -583,10 +603,11 @@ export default function MarketplaceCategoriesPage() {
     })
       .then(r => r.json())
       .then(j => {
-        if (!j.data?.length) return;
+        const accounts = Array.isArray(j.data) ? j.data as SellerAllegroAccount[] : [];
+        if (!accounts.length) return;
         // Use production account first, fallback to sandbox
-        const prod = j.data.find((a: any) => a.environment === "production");
-        const acct = prod ?? j.data[0];
+        const prod = accounts.find(account => account.environment === "production");
+        const acct = prod ?? accounts[0];
         setAllegroStatus({
           status:     acct.status,
           hoursLeft:  Math.floor(acct.minutesLeft / 60),
@@ -778,7 +799,6 @@ export default function MarketplaceCategoriesPage() {
         isAllegro ? (
           <AllegroTreeBrowser
             favSet={favSet}
-            pending={pending}
             onToggleFav={toggleAllegroFavorite}
             onSelect={cat => router.push(
               `/dashboard/new-product?marketplace=${slug}&category=${encodeURIComponent(cat.path)}`
@@ -795,7 +815,7 @@ export default function MarketplaceCategoriesPage() {
               <div className="divide-y max-h-[600px] overflow-y-auto" style={{ borderColor: "var(--border-light)" }}>
                 {filteredDbCats.length === 0 ? (
                   <div className="p-10 text-center text-slate-400">
-                    {search ? `Brak wyników dla „${search}"` : "Brak kategorii — zaimportuj szablon Mirakl."}
+                    {search ? <>Brak wyników dla &bdquo;{search}&rdquo;</> : "Brak kategorii — zaimportuj szablon Mirakl."}
                   </div>
                 ) : filteredDbCats.map(cat => {
                   const isFav = favSet.has(cat.id);
@@ -910,7 +930,7 @@ export default function MarketplaceCategoriesPage() {
                   <div className="text-xs text-slate-400">Kliknij gwiazdkę przy kategorii, aby ją dodać.</div>
                 </div>
               ) : filteredFavs.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">Brak wyników dla „{favSearch}"</div>
+                <div className="p-8 text-center text-slate-400">Brak wyników dla &bdquo;{favSearch}&rdquo;</div>
               ) : (
                 <div>
                   {pinnedFavs.length > 0 && (
