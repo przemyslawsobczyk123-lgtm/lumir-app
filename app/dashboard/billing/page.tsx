@@ -14,6 +14,8 @@ import {
   type BillingPack,
   type BillingSummary,
 } from "./billing-data";
+import { useLang } from "../LangContext";
+import { translations } from "../i18n";
 
 function getErrorMessage(err: unknown, fallback: string) {
   if (err instanceof Error && err.message) return err.message;
@@ -66,6 +68,9 @@ function PackCard({
   loading: boolean;
   onBuy: (credits: number) => void;
 }) {
+  const { lang } = useLang();
+  const t = translations[lang].billing;
+
   const fullAuctions = Math.floor(pack.credits);
   const descriptions = Math.floor(pack.credits / 0.33);
   const attributes = Math.floor(pack.credits / 0.67);
@@ -88,13 +93,13 @@ function PackCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--text-tertiary)" }}>Pakiet</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--text-tertiary)" }}>{t.packLabel}</div>
           <div className="mt-1 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(pack.credits)}</div>
-          <div className="text-sm" style={{ color: "var(--text-secondary)" }}>kredytów / pełnych aukcji</div>
+          <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{t.packCredits}</div>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
-            {pack.featured ? "Popularny" : "Prepaid"}
+            {pack.featured ? t.packPopular : t.packPrepaid}
           </span>
           {hasSavings && (
             <span
@@ -115,27 +120,27 @@ function PackCard({
       </div>
 
       <div className="mt-5 rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
-        <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Cena</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>{t.packPrice}</div>
         {hasSavings && (
           <div className="mt-2 text-sm line-through opacity-50" style={{ color: "var(--text-tertiary)" }}>
             {formatPricePln(fullPriceCents)}
           </div>
         )}
         <div className={`font-semibold text-3xl ${hasSavings ? "mt-0.5" : "mt-2"}`} style={{ color: "var(--text-heading)" }}>{formatPricePln(pack.amountCents)}</div>
-        <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{formatUnitPricePln(pack.pricePerAuction)} / aukcja</div>
+        <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{formatUnitPricePln(pack.pricePerAuction)} {t.packPricePerAuction}</div>
       </div>
 
       <div className="mt-5 space-y-2 text-sm">
         <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
-          <span style={{ color: "var(--text-secondary)" }}>Pełna aukcja AI</span>
+          <span style={{ color: "var(--text-secondary)" }}>{t.packFullAuction}</span>
           <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{fullAuctions}</span>
         </div>
         <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
-          <span style={{ color: "var(--text-secondary)" }}>Same opisy</span>
+          <span style={{ color: "var(--text-secondary)" }}>{t.packDescriptions}</span>
           <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(descriptions)}</span>
         </div>
         <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
-          <span style={{ color: "var(--text-secondary)" }}>Same atrybuty</span>
+          <span style={{ color: "var(--text-secondary)" }}>{t.packAttributes}</span>
           <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(attributes)}</span>
         </div>
       </div>
@@ -150,13 +155,15 @@ function PackCard({
         }`}
         style={loading ? { background: "var(--bg-input-alt)", color: "var(--text-tertiary)" } : {}}
       >
-        {loading ? "Przekierowanie..." : "Kup w Stripe"}
+        {loading ? t.packRedirecting : t.packBuy}
       </button>
     </div>
   );
 }
 
 function HistoryRow({ item }: { item: BillingHistoryEntry }) {
+  const { lang } = useLang();
+  const t = translations[lang].billing;
   return (
     <tr style={{ borderTop: "1px solid var(--border-default)" }}>
       <td className="px-4 py-4 text-sm" style={{ color: "var(--text-secondary)" }}>{formatDateTime(item.createdAt)}</td>
@@ -166,7 +173,7 @@ function HistoryRow({ item }: { item: BillingHistoryEntry }) {
       </td>
       <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>{formatCredits(item.credits)}</td>
       <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>
-        {item.amount == null ? "Brak" : formatPricePln(item.amount)}
+        {item.amount == null ? t.historyNoAmount : formatPricePln(item.amount)}
       </td>
       <td className="px-4 py-4 text-sm" style={{ color: "var(--text-primary)" }}>{item.status}</td>
     </tr>
@@ -174,6 +181,9 @@ function HistoryRow({ item }: { item: BillingHistoryEntry }) {
 }
 
 export default function BillingPage() {
+  const { lang } = useLang();
+  const t = translations[lang].billing;
+
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [history, setHistory] = useState<BillingHistoryResult>({ items: [], source: "unavailable" });
   const [loading, setLoading] = useState(true);
@@ -246,23 +256,23 @@ export default function BillingPage() {
               Billing
             </div>
             <div>
-              <h1 className="text-3xl font-semibold text-white sm:text-4xl">Kredyty, pakiety, platnosci</h1>
+              <h1 className="text-3xl font-semibold text-white sm:text-4xl">{t.pageTitle}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                Prepaid MVP. User widzi saldo, darmowe 3 kredyty, pakiety Stripe, koszt AI per akcja, historie platnosci.
+                {t.pageDesc}
               </p>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[360px]">
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Aktualne saldo</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{t.currentBalance}</div>
               <div className="mt-2 text-4xl font-semibold text-white">{formatCredits(currentCredits)}</div>
-              <div className="mt-1 text-sm text-slate-400">kredytow dostepnych teraz</div>
+              <div className="mt-1 text-sm text-slate-400">{t.currentBalanceHint}</div>
             </div>
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Starter</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{t.starter}</div>
               <div className="mt-2 text-4xl font-semibold text-white">{formatCredits(starterCredits)}</div>
-              <div className="mt-1 text-sm text-slate-400">darmowe kredyty po starcie konta</div>
+              <div className="mt-1 text-sm text-slate-400">{t.starterHint}</div>
             </div>
           </div>
         </div>
@@ -270,46 +280,46 @@ export default function BillingPage() {
 
       {error ? (
         <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-5 text-sm text-rose-100">
-          <div className="font-semibold">Billing load failed</div>
+          <div className="font-semibold">{t.loadFailed}</div>
           <div className="mt-1 text-rose-200/80">{error}</div>
         </div>
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-4">
         <MetricCard
-          label="Saldo"
-          value={`${formatCredits(currentCredits)} kred.`}
-          hint="To mozesz wydac od razu na generacje AI."
+          label={t.metricBalance}
+          value={`${formatCredits(currentCredits)} ${t.credits}`}
+          hint={t.metricBalanceHint}
         />
         <MetricCard
-          label="Kupione"
-          value={`${formatCredits(billing?.current?.paidCreditsGranted ?? 0)} kred.`}
-          hint="Suma wszystkich kupionych pakietow."
+          label={t.metricBought}
+          value={`${formatCredits(billing?.current?.paidCreditsGranted ?? 0)} ${t.credits}`}
+          hint={t.metricBoughtHint}
         />
         <MetricCard
-          label="Zuzyte"
-          value={`${formatCredits(totalUsed)} kred.`}
-          hint="Laczne zuzycie usera do teraz."
+          label={t.metricUsed}
+          value={`${formatCredits(totalUsed)} ${t.credits}`}
+          hint={t.metricUsedHint}
         />
         <MetricCard
-          label="Starter free"
-          value={`${formatCredits(billing?.current?.freeCreditsGranted ?? starterCredits)} kred.`}
-          hint="Jednorazowy bonus startowy dla nowego konta."
+          label={t.metricStarterFree}
+          value={`${formatCredits(billing?.current?.freeCreditsGranted ?? starterCredits)} ${t.credits}`}
+          hint={t.metricStarterFreeHint}
         />
       </section>
 
       <section className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <SectionTitle
-          eyebrow="Za co placisz"
-          title="Koszt akcji AI"
-          description="Jedna pelna aukcja AI to 1 kredyt. Opisy i atrybuty licza sie osobno, wiec user widzi realny koszt kazdej akcji."
+          eyebrow={t.aiCostEyebrow}
+          title={t.aiCostTitle}
+          description={t.aiCostDesc}
         />
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {[
-            { label: "Opis produktu", value: billing ? formatCredits(billing.aiCosts.description) : "0,33", hint: "Generacja opisu per marketplace i opis produktu." },
-            { label: "Atrybuty kategorii", value: billing ? formatCredits(billing.aiCosts.attributes) : "0,67", hint: "Mapowanie atrybutów pod marketplace i kategorię." },
-            { label: "Pełna aukcja AI", value: billing ? formatCredits(billing.aiCosts.all) : "1,00", hint: "Opis + atrybuty + draft marketplace razem." },
+            { label: t.aiCostDescription, value: billing ? formatCredits(billing.aiCosts.description) : "0,33", hint: t.aiCostDescriptionHint },
+            { label: t.aiCostAttributes,  value: billing ? formatCredits(billing.aiCosts.attributes)  : "0,67", hint: t.aiCostAttributesHint },
+            { label: t.aiCostAll,         value: billing ? formatCredits(billing.aiCosts.all)          : "1,00", hint: t.aiCostAllHint },
           ].map(({ label, value, hint }) => (
             <div key={label} className="rounded-2xl p-5" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
               <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{label}</div>
@@ -320,15 +330,15 @@ export default function BillingPage() {
         </div>
 
         <div className="mt-5 rounded-2xl p-5 text-sm" style={{ background: "var(--accent-primary-light)", border: "1px solid var(--accent-primary-border)", color: "var(--accent-primary)" }}>
-          Bulk mnoży koszt przez liczbę produktów. Przykład: 10 pełnych aukcji = 10 kredytów.
+          {t.aiCostBulkNote}
         </div>
       </section>
 
       <section className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <SectionTitle
-          eyebrow="Pakiety"
-          title="Kup kredyty Stripe"
-          description="Pakiety maleja z cena za aukcje od 5,5 zl do 2,4 zl. Checkout otwiera Stripe i po platnosci doladowuje saldo usera."
+          eyebrow={t.packsEyebrow}
+          title={t.packsTitle}
+          description={t.packsDesc}
         />
 
         {loading ? (
@@ -354,28 +364,28 @@ export default function BillingPage() {
       <section className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
           <SectionTitle
-            eyebrow="Stan konta"
-            title="Saldo i historia zuzycia"
-            description="Latwo dostepne info: ile kredytow user dostal, kupil, zuzyl i kiedy byla ostatnia platnosc."
+            eyebrow={t.accountEyebrow}
+            title={t.accountTitle}
+            description={t.accountDesc}
           />
 
           <div className="mt-6 space-y-3">
             <div className="rounded-2xl px-4 py-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Łącznie przyznane</div>
-              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(totalGranted)} kred.</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>{t.totalGranted}</div>
+              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(totalGranted)} {t.credits}</div>
             </div>
             <div className="rounded-2xl px-4 py-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>Ostatnia płatność</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>{t.lastPayment}</div>
               <div className="mt-2 text-lg font-semibold" style={{ color: "var(--text-heading)" }}>
                 {formatDateTime(billing?.current?.lastPaymentAt)}
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {[
-                { label: "Free starter", val: formatCredits(billing?.current?.freeCreditsGranted ?? 0) },
-                { label: "Kupione", val: formatCredits(billing?.current?.paidCreditsGranted ?? 0) },
-                { label: "Zużyte", val: formatCredits(totalUsed) },
-                { label: "Dostępne", val: formatCredits(currentCredits) },
+                { label: t.freeStarter, val: formatCredits(billing?.current?.freeCreditsGranted ?? 0) },
+                { label: t.bought,      val: formatCredits(billing?.current?.paidCreditsGranted ?? 0) },
+                { label: t.used,        val: formatCredits(totalUsed) },
+                { label: t.available,   val: formatCredits(currentCredits) },
               ].map(({ label, val }) => (
                 <div key={label} className="rounded-xl px-3 py-3 text-sm" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
                   {label}: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{val}</span>
@@ -387,13 +397,13 @@ export default function BillingPage() {
 
         <div className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
           <SectionTitle
-            eyebrow="Platnosci"
-            title="Historia usera"
-            description="Kazdy user widzi swoje top-upy, darmowy starter i status platnosci. Dane leca z /api/billing/history."
+            eyebrow={t.historyEyebrow}
+            title={t.historyTitle}
+            description={t.historyDesc}
           />
 
           <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)", color: "var(--text-secondary)" }}>
-            <span>Źródło</span>
+            <span>{t.historySource}</span>
             <span className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: "var(--bg-card-hover)", color: "var(--text-primary)" }}>{history.source}</span>
           </div>
 
@@ -401,18 +411,18 @@ export default function BillingPage() {
             <table className="min-w-full" style={{ borderCollapse: "collapse" }}>
               <thead className="text-left text-xs uppercase tracking-[0.22em]" style={{ background: "var(--bg-table-header)", color: "var(--text-secondary)" }}>
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Data</th>
-                  <th className="px-4 py-3 font-semibold">Pozycja</th>
-                  <th className="px-4 py-3 font-semibold">Kredyty</th>
-                  <th className="px-4 py-3 font-semibold">Kwota</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">{t.historyColDate}</th>
+                  <th className="px-4 py-3 font-semibold">{t.historyColItem}</th>
+                  <th className="px-4 py-3 font-semibold">{t.historyColCredits}</th>
+                  <th className="px-4 py-3 font-semibold">{t.historyColAmount}</th>
+                  <th className="px-4 py-3 font-semibold">{t.historyColStatus}</th>
                 </tr>
               </thead>
               <tbody>
                 {historyLoading ? (
                   <tr>
                     <td className="px-4 py-6 text-sm" style={{ color: "var(--text-tertiary)" }} colSpan={5}>
-                      Ładowanie historii...
+                      {t.historyLoading}
                     </td>
                   </tr>
                 ) : history.items.length ? (
@@ -420,7 +430,7 @@ export default function BillingPage() {
                 ) : (
                   <tr>
                     <td className="px-4 py-6 text-sm" style={{ color: "var(--text-tertiary)" }} colSpan={5}>
-                      Brak historii płatności.
+                      {t.historyEmpty}
                     </td>
                   </tr>
                 )}

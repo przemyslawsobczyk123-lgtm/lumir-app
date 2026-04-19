@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "../LangContext";
+import { translations } from "../i18n";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -62,6 +64,9 @@ function Toast({ msg, ok }: { msg: string; ok: boolean }) {
 }
 
 export default function SettingsPage() {
+  const { lang } = useLang();
+  const t = translations[lang].settings;
+
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
@@ -92,9 +97,9 @@ export default function SettingsPage() {
 
   const changePassword = async () => {
     if (pwdLoading) return;
-    if (!curPwd) return showToast("Podaj obecne haslo", false);
-    if (newPwd.length < 8) return showToast("Nowe haslo musi miec min. 8 znakow", false);
-    if (newPwd !== repPwd) return showToast("Hasla nie sa takie same", false);
+    if (!curPwd) return showToast(t.toastNoCurrent, false);
+    if (newPwd.length < 8) return showToast(t.toastTooShort, false);
+    if (newPwd !== repPwd) return showToast(t.toastMismatch, false);
 
     setPwdLoading(true);
     try {
@@ -110,13 +115,13 @@ export default function SettingsPage() {
       if (json.error) {
         showToast(json.error, false);
       } else {
-        showToast("Haslo zmienione", true);
+        showToast(t.toastPwdChanged, true);
         setCurPwd("");
         setNewPwd("");
         setRepPwd("");
       }
     } catch (err) {
-      showToast(getErrorMessage(err, "Blad polaczenia z serwerem"), false);
+      showToast(getErrorMessage(err, t.toastConnError), false);
     } finally {
       setPwdLoading(false);
     }
@@ -128,25 +133,25 @@ export default function SettingsPage() {
 
       <div className="rounded-2xl p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <div className="mb-4">
-          <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>Dane konta</h2>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>Billing moved out. Settings stays on account and password only.</p>
+          <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>{t.accountTitle}</h2>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{t.accountDesc}</p>
         </div>
         <div className="mb-4 grid gap-4 md:grid-cols-2">
-          <Field label="Imie / nazwa" value={name} />
-          <Field label="Firma" value={company} />
+          <Field label={t.fieldName} value={name} />
+          <Field label={t.fieldCompany} value={company} />
         </div>
-        <Field label="Email" value={email} />
-        <p className="mt-3 text-xs" style={{ color: "var(--text-tertiary)" }}>Zmiana danych konta jest obecnie poza MVP panelu.</p>
+        <Field label={t.fieldEmail} value={email} />
+        <p className="mt-3 text-xs" style={{ color: "var(--text-tertiary)" }}>{t.accountReadonly}</p>
       </div>
 
       <div className="rounded-2xl p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
-        <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>Zmien haslo</h2>
+        <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>{t.passwordTitle}</h2>
         <div className="mt-4 max-w-md space-y-3">
-          <Field label="Obecne haslo" type="password" value={curPwd} onChange={setCurPwd} placeholder="********" />
-          <Field label="Nowe haslo (min. 8 znakow)" type="password" value={newPwd} onChange={setNewPwd} placeholder="********" />
-          <Field label="Powtorz nowe haslo" type="password" value={repPwd} onChange={setRepPwd} placeholder="********" />
+          <Field label={t.fieldCurrentPwd} type="password" value={curPwd} onChange={setCurPwd} placeholder="********" />
+          <Field label={t.fieldNewPwd} type="password" value={newPwd} onChange={setNewPwd} placeholder="********" />
+          <Field label={t.fieldRepeatPwd} type="password" value={repPwd} onChange={setRepPwd} placeholder="********" />
           {newPwd && repPwd && newPwd !== repPwd ? (
-            <p className="text-xs text-red-500">Hasla nie sa takie same</p>
+            <p className="text-xs text-red-500">{t.passwordMismatch}</p>
           ) : null}
         </div>
 
@@ -161,23 +166,23 @@ export default function SettingsPage() {
               : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:shadow-md"
           }`}
         >
-          {pwdLoading ? "Zapisywanie..." : "Zmien haslo"}
+          {pwdLoading ? t.savingPwd : t.changePwd}
         </button>
       </div>
 
       <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="text-sm font-semibold text-indigo-700">Billing przeniesiony</div>
+            <div className="text-sm font-semibold text-indigo-700">{t.billingBanner}</div>
             <p className="mt-1 text-sm text-indigo-600/80">
-              Kredyty, packi i historia platnosci sa teraz w osobnym widoku.
+              {t.billingBannerDesc}
             </p>
           </div>
           <a
             href="/dashboard/billing"
             className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
           >
-            Otworz Billing
+            {t.openBilling}
           </a>
         </div>
       </div>

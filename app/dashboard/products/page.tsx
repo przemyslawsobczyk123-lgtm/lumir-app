@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useLang } from "../LangContext";
+import { translations } from "../i18n";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -148,6 +150,9 @@ const MP_LABELS: Record<string, string> = {
 const LIMIT = 50;
 
 function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { lang } = useLang();
+  const t = translations[lang].products.importModal;
+
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile]               = useState<File | null>(null);
   const [dragging, setDragging]       = useState(false);
@@ -160,7 +165,7 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
 
   const pickFile = (f: File) => {
     if (!f.name.match(/\.(xlsx|xls|csv)$/i)) {
-      setErrorMsg("Akceptowane formaty: .xlsx, .xls, .csv");
+      setErrorMsg(t.acceptedFormats);
       setState("error"); return;
     }
     setFile(f); setState("idle"); setErrorMsg(""); setDetectedMp(null); setMissingCats([]);
@@ -175,7 +180,6 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       if (!d) return;
       if (d.status === "done") {
         clearInterval(pollRef.current!);
-        // Sprawdz czy sa brakujace kategorie
         if (d.error_message) {
           try {
             const parsed = JSON.parse(d.error_message);
@@ -223,41 +227,39 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-light)]">
-          <h2 className="font-bold text-[var(--text-primary)] text-lg">Import produkt&oacute;w</h2>
+          <h2 className="font-bold text-[var(--text-primary)] text-lg">{t.title}</h2>
           <button onClick={onClose} className="p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-lg transition">
             <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Info o auto-wykrywaniu */}
+          {/* Auto-detect info */}
           <div className="flex items-start gap-3 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm text-indigo-700">
             <svg viewBox="0 0 24 24" className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
               <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
             </svg>
-            <span>Format pliku (Media Expert, Allegro&hellip;) jest wykrywany automatycznie.</span>
+            <span>{t.autoDetect}</span>
           </div>
 
-          {/* Wykryty marketplace (po wgraniu) */}
           {mpLabel && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
               <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5}>
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              Wykryto: {mpLabel}
+              {t.detected} {mpLabel}
             </div>
           )}
 
-          {/* Ostrzezenie o brakujacych kategoriach */}
           {missingCats.length > 0 && (
             <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              <div className="font-semibold mb-1">Brak kategorii w bazie:</div>
+              <div className="font-semibold mb-1">{t.missingCats}</div>
               <ul className="list-disc pl-4 space-y-0.5">
                 {missingCats.slice(0, 5).map(c => <li key={c} className="font-mono text-xs">{c}</li>)}
-                {missingCats.length > 5 && <li className="text-xs">...i {missingCats.length - 5} wi&#281;cej</li>}
+                {missingCats.length > 5 && <li className="text-xs">...{t.missingCatsMore && `i ${missingCats.length - 5} ${t.missingCatsMore}`}</li>}
               </ul>
               <div className="mt-2 text-xs text-amber-700">
-                Zaimportuj szablon marketplace, aby produkty z tych kategorii by&#322;y w pe&#322;ni mapowane.
+                {t.missingCatsHint}
               </div>
             </div>
           )}
@@ -282,7 +284,7 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
             ) : (
               <div className="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
                 <UploadIcon />
-                <div className="text-sm">Przeci&#261;gnij plik lub kliknij</div>
+                <div className="text-sm">{t.dragOrClick}</div>
                 <div className="text-xs">.xlsx &middot; .xls &middot; .csv</div>
               </div>
             )}
@@ -295,7 +297,7 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
               className="w-full py-3 rounded-xl font-semibold text-white text-sm
                 bg-gradient-to-r from-indigo-500 to-purple-500
                 disabled:opacity-40 shadow-md hover:shadow-lg transition-all">
-              Importuj produkty
+              {t.importBtn}
             </button>
           )}
           {(state === "uploading" || state === "processing") && (
@@ -304,13 +306,13 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
               </svg>
-              {state === "processing" ? `Przetwarzanie${mpLabel ? ` (${mpLabel})` : ""}...` : "Wysylanie..."}
+              {state === "processing" ? `${t.processing}${mpLabel ? ` (${mpLabel})` : ""}...` : t.uploading}
             </div>
           )}
           {state === "success" && (
             <button onClick={onClose}
               className="w-full py-3 rounded-xl font-semibold text-white text-sm bg-green-500 hover:bg-green-600 transition">
-              Gotowe &mdash; poka&#380; produkty
+              {t.doneBtn}
             </button>
           )}
           {state === "error" && (
@@ -318,7 +320,7 @@ function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
               <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/25 rounded-xl p-3">{errorMsg}</div>
               <button onClick={() => { setState("idle"); setFile(null); setErrorMsg(""); setDetectedMp(null); }}
                 className="w-full py-2 rounded-xl text-[var(--text-secondary)] text-sm bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] transition">
-                Spr&oacute;buj ponownie
+                {t.retry}
               </button>
             </div>
           )}
@@ -342,14 +344,14 @@ function parseIntegrations(raw: string | null): Integration[] {
 function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
   count: number; onConfirm: () => void; onCancel: () => void; loading: boolean;
 }) {
+  const { lang } = useLang();
+  const t = translations[lang].products.deleteModal;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
 
-      {/* Dialog */}
       <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl border border-[var(--border-default)] w-full max-w-md p-6 animate-[fadeInUp_0.15s_ease-out]">
-        {/* Icon */}
         <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-500/10 mx-auto mb-4">
           <svg viewBox="0 0 24 24" className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
             <polyline points="3 6 5 6 21 6"/>
@@ -360,19 +362,17 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
         </div>
 
         <h2 className="text-lg font-bold text-[var(--text-primary)] text-center mb-1">
-          {count === 1 ? "Usun\u0105\u0107 produkt?" : `Usun\u0105\u0107 ${count} produkt\u00f3w?`}
+          {count === 1 ? t.titleSingle : `${t.titleMulti} ${count} ${t.titleMultiSuffix}`}
         </h2>
         <p className="text-sm text-[var(--text-secondary)] text-center mb-6">
-          {count === 1
-            ? "Ten produkt zostanie trwale usuni\u0119ty wraz ze wszystkimi przypisanymi atrybutami i kategoriami. Tej operacji nie mo\u017Cna cofn\u0105\u0107."
-            : `Wybrane ${count} produkt\u00f3w zostanie trwale usuni\u0119tych wraz ze wszystkimi przypisanymi atrybutami i kategoriami. Tej operacji nie mo\u017Cna cofn\u0105\u0107.`}
+          {count === 1 ? t.bodySingle : `${count} ${t.bodyMulti}`}
         </p>
 
         <div className="flex gap-3">
           <button onClick={onCancel} disabled={loading}
             className="flex-1 px-4 py-2.5 rounded-xl border-2 border-[var(--border-default)] text-sm font-semibold
               text-[var(--text-secondary)] hover:bg-[var(--bg-body)] hover:border-[var(--border-input)] transition disabled:opacity-50">
-            Anuluj
+            {t.cancel}
           </button>
           <button onClick={onConfirm} disabled={loading}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
@@ -381,10 +381,10 @@ function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
               ? <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>Usuwanie...</>
+                </svg>{t.deleting}</>
               : <><svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
                   <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                </svg>{count === 1 ? "Usu\u0144 produkt" : `Usu\u0144 ${count} produkt\u00f3w`}</>}
+                </svg>{count === 1 ? t.confirmSingle : `${t.confirmMulti} ${count}`}</>}
           </button>
         </div>
       </div>
@@ -405,6 +405,9 @@ function BulkAIModal({
   defaultMarketplace: string;
   onClose: () => void;
 }) {
+  const { lang } = useLang();
+  const t = translations[lang].products.bulkModal;
+
   const [marketplaceSlug, setMarketplaceSlug] = useState(defaultMarketplace || marketplaces[0]?.slug || "");
   const [mode, setMode] = useState<"all" | "description" | "attributes">("all");
   const [useAllegro, setUseAllegro] = useState(true);
@@ -485,15 +488,21 @@ function BulkAIModal({
     }
   };
 
+  const scopeOptions = [
+    { value: "all",         label: t.scopeAll  },
+    { value: "description", label: t.scopeDesc },
+    { value: "attributes",  label: t.scopeAttrs },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl border border-[var(--border-default)] w-full max-w-xl p-6">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">Bulk AI</h2>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">{t.title}</h2>
             <p className="text-sm text-[var(--text-secondary)]">
-              Generowanie draftow dla {count} produktow. Limit MVP: 10 sztuk na jedno odpalenie.
+              {t.desc} {count} {t.descSuffix}
             </p>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg text-[var(--text-tertiary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] transition">
@@ -503,7 +512,7 @@ function BulkAIModal({
 
         <div className="space-y-4">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">Marketplace</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">{t.marketplaceLabel}</div>
             <select
               value={marketplaceSlug}
               onChange={e => setMarketplaceSlug(e.target.value)}
@@ -516,13 +525,9 @@ function BulkAIModal({
           </div>
 
           <div>
-            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">Zakres</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">{t.scopeLabel}</div>
             <div className="flex flex-wrap gap-2">
-              {[
-                { value: "all", label: "Opis + atrybuty" },
-                { value: "description", label: "Tylko opis" },
-                { value: "attributes", label: "Tylko atrybuty" },
-              ].map(option => (
+              {scopeOptions.map(option => (
                 <button
                   key={option.value}
                   onClick={() => setMode(option.value as "all" | "description" | "attributes")}
@@ -539,7 +544,7 @@ function BulkAIModal({
           </div>
 
           <div>
-            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">Zrodla</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">{t.sourcesLabel}</div>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setUseAllegro(v => !v)}
@@ -565,7 +570,7 @@ function BulkAIModal({
           </div>
 
           <div className="rounded-xl border px-3 py-2 text-sm" style={{ background: "var(--bg-input-alt)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
-            Produkty bez przypisanej kategorii dla wybranego marketplace wroca jako blad per produkt.
+            {t.noCategoryHint}
           </div>
 
           {error && (
@@ -578,7 +583,7 @@ function BulkAIModal({
               <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-3 space-y-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
-                    {job.status === "queued" ? "W kolejce" : job.status === "processing" ? "Przetwarzanie" : job.status}
+                    {job.status === "queued" ? t.jobQueued : job.status === "processing" ? t.jobProcessing : job.status}
                   </span>
                   <span className="px-2 py-1 rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)]">
                     {Math.max(0, Math.min(100, job.progressPercent ?? 0))}%
@@ -601,9 +606,7 @@ function BulkAIModal({
                 </div>
 
                 <div className="text-sm text-[var(--text-secondary)]">
-                  {job.currentMessage || (job.status === "done"
-                    ? "Job zakończony. Otwórz produkt, aby zobaczyć drafty."
-                    : "Czekam na worker...")}
+                  {job.currentMessage || (job.status === "done" ? t.jobDone : t.jobWaiting)}
                 </div>
               </div>
             )}
@@ -614,7 +617,7 @@ function BulkAIModal({
             onClick={onClose}
             className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-default)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-body)] transition"
           >
-            Zamknij
+            {t.close}
           </button>
           <button
             onClick={() => { void handleSubmit(); }}
@@ -625,25 +628,28 @@ function BulkAIModal({
                 : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg"
             }`}
           >
-              {submitting ? "Generowanie..." : jobActive ? "W toku..." : "Generuj drafty AI"}
-            </button>
-          </div>
+            {submitting ? t.generating : jobActive ? t.inProgress : t.generate}
+          </button>
         </div>
       </div>
+    </div>
   );
 }
-
-const STATUS_FILTER = [
-  { value: "",             label: "Wszystkie" },
-  { value: "mapped",       label: "Aktywne"   },
-  { value: "pending",      label: "Oczekuje"  },
-  { value: "needs_review", label: "Do poprawy"},
-  { value: "exported",     label: "Eksport"   },
-];
 
 // ── Main page ─────────────────────────────────────────────────────
 export default function ProductsPage() {
   const router = useRouter();
+  const { lang } = useLang();
+  const t = translations[lang].products;
+
+  const STATUS_FILTER = [
+    { value: "",             label: t.filterAll     },
+    { value: "mapped",       label: t.filterActive  },
+    { value: "pending",      label: t.filterPending },
+    { value: "needs_review", label: t.filterReview  },
+    { value: "exported",     label: t.filterExported},
+  ];
+
   const [products, setProducts]           = useState<Product[]>([]);
   const [total, setTotal]                 = useState(0);
   const [loading, setLoading]             = useState(true);
@@ -660,6 +666,7 @@ export default function ProductsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting]           = useState(false);
   const requestSeq = useRef(0);
+
   const loadProducts = useCallback(async (s: string, p: number, st: string, mp: string) => {
     const requestId = ++requestSeq.current;
     setLoading(true);
@@ -679,18 +686,17 @@ export default function ProductsPage() {
     }
   }, []);
 
-  // Załaduj listę marketplace do filtra
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json()).then(j => { if (j.data) setMarketplaces(j.data); }).catch(() => {});
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timeout = setTimeout(() => {
       setPage(1);
       loadProducts(search, 1, statusFilter, mpFilter);
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timeout);
   }, [loadProducts, search, statusFilter, mpFilter]);
 
   useEffect(() => {
@@ -699,8 +705,8 @@ export default function ProductsPage() {
     return () => document.removeEventListener("click", handler);
   }, []);
 
-    const handleDelete = async (id: number) => {
-    if (!confirm("Usun ten produkt?")) return;
+  const handleDelete = async (id: number) => {
+    if (!confirm(t.deleteProduct + "?")) return;
     try {
       const res = await fetch(`${API}/api/products/${id}`, { method: "DELETE", headers: authHeadersJSON() });
       if (!res.ok) {
@@ -727,11 +733,11 @@ export default function ProductsPage() {
       const a    = document.createElement("a");
       a.href = url; a.download = `${mpFilter}_export_${Date.now()}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (err: unknown) { alert("B\u0142\u0105d eksportu: " + getErrorMessage(err)); }
+    } catch (err: unknown) { alert("Błąd eksportu: " + getErrorMessage(err)); }
     finally { setExporting(false); }
   };
 
-    const handleDeleteConfirmed = async () => {
+  const handleDeleteConfirmed = async () => {
     setDeleting(true);
     try {
       for (const id of selected) {
@@ -814,29 +820,28 @@ export default function ProductsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold text-[var(--text-primary)]">Lista produkt&oacute;w</h1>
+          <h1 className="text-xl font-bold text-[var(--text-primary)]">{t.pageTitle}</h1>
           <p className="text-sm text-[var(--text-tertiary)] mt-0.5">
-            {total > 0 ? `${total} produkt${total === 1 ? "" : "ow"}` : "Brak produkt&oacute;w"}
+            {total > 0 ? `${total} ${t.productCount}` : t.noProducts}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowImport(true)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-medium text-sm text-[var(--text-primary)]
               bg-[var(--bg-card)] border border-[var(--border-default)] hover:bg-[var(--bg-body)] shadow-sm transition">
-            <UploadIcon /> Import
+            <UploadIcon /> {t.importBtn}
           </button>
           <button onClick={() => router.push("/dashboard/new-product")}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-white text-sm
               bg-gradient-to-r from-purple-500 to-indigo-500
               shadow-md hover:scale-105 hover:shadow-lg transition-all duration-200">
-            <PlusIcon /> Dodaj produkt
+            <PlusIcon /> {t.addBtn}
           </button>
         </div>
       </div>
 
       {/* Toolbar */}
       <div className="space-y-2 mb-3">
-        {/* Wyszukiwarka + status */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-sm">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
@@ -845,7 +850,7 @@ export default function ProductsPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Szukaj po nazwie, EAN, SKU, marce..."
+              placeholder={t.searchPlaceholder}
               className="w-full pl-9 pr-4 py-2 rounded-xl text-sm bg-[var(--bg-input)] border border-[var(--border-default)]
                 text-[var(--text-primary)] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 transition"
             />
@@ -867,14 +872,14 @@ export default function ProductsPage() {
         {/* Filtr marketplace */}
         {marketplaces.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">Marketplace:</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">{t.marketplace}</span>
             <button onClick={() => setMpFilter("")}
               className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
                 mpFilter === ""
                   ? "bg-[var(--text-primary)] text-[var(--bg-card)] border-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] bg-[var(--bg-card)] border-[var(--border-default)] hover:bg-[var(--bg-body)]"
               }`}>
-              Wszystkie
+              {t.allMarketplaces}
             </button>
             {marketplaces.map(mp => (
               <button key={mp.slug} onClick={() => setMpFilter(mp.slug)}
@@ -893,9 +898,8 @@ export default function ProductsPage() {
       {/* Bulk action bar */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 mb-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm flex-wrap">
-          <span className="text-indigo-700 font-medium">{selected.size} zaznaczonych</span>
+          <span className="text-indigo-700 font-medium">{selected.size} {t.selectedCount}</span>
 
-          {/* Eksport do marketplace */}
           {mpFilter && (
             <button onClick={handleExport} disabled={exporting}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
@@ -904,10 +908,10 @@ export default function ProductsPage() {
                   : "bg-green-500 text-white hover:bg-green-600"
               }`}>
               {exporting
-                ? <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Eksportowanie...</>
+                ? <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>{t.exporting}</>
                 : <><svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Eksportuj do {marketplaces.find(m => m.slug === mpFilter)?.name ?? mpFilter}
-                  {selectedReadyCount > 0 && <span className="ml-1 bg-white/30 px-1 rounded">{selectedReadyCount} gotowych</span>}</>}
+                  {t.exportTo} {marketplaces.find(m => m.slug === mpFilter)?.name ?? mpFilter}
+                  {selectedReadyCount > 0 && <span className="ml-1 bg-white/30 px-1 rounded">{selectedReadyCount} {t.ready}</span>}</>}
             </button>
           )}
 
@@ -927,17 +931,17 @@ export default function ProductsPage() {
               <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5.64 5.64l4.24 4.24"/><path d="M14.12 14.12l4.24 4.24"/>
               <path d="M3 12h6"/><path d="M15 12h6"/><path d="M5.64 18.36l4.24-4.24"/><path d="M14.12 9.88l4.24-4.24"/>
             </svg>
-            Generuj AI
+            {t.generateAI}
           </button>
 
           {selectedOverBulkLimit && (
-            <span className="text-amber-700 font-medium text-xs">Limit AI MVP: max 10 produktow naraz</span>
+            <span className="text-amber-700 font-medium text-xs">{t.bulkLimit}</span>
           )}
 
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="ml-auto text-red-500 hover:text-red-700 font-medium text-xs">
-            Usu&#324; zaznaczone
+            {t.deleteSelected}
           </button>
         </div>
       )}
@@ -972,7 +976,7 @@ export default function ProductsPage() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            <span className="text-sm">Ladowanie...</span>
+            <span className="text-sm">{t.loading}</span>
           </div>
         ) : products.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4">
@@ -984,12 +988,10 @@ export default function ProductsPage() {
             </div>
             <div className="text-center">
               <div className="font-semibold text-[var(--text-secondary)] mb-1">
-                {search || statusFilter ? "Brak wynikow" : "Brak produktow"}
+                {search || statusFilter ? t.noResults : t.noProducts}
               </div>
               <div className="text-sm text-[var(--text-tertiary)]">
-                {!search && !statusFilter
-                  ? "Dodaj produkt recznie lub zaimportuj plik CSV / Excel."
-                  : "Zmien filtry lub wyszukaj inna fraze."}
+                {!search && !statusFilter ? t.emptyHint : t.emptyFilterHint}
               </div>
             </div>
             {!search && !statusFilter && (
@@ -997,12 +999,12 @@ export default function ProductsPage() {
                 <button onClick={() => setShowImport(true)}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium
                     text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition">
-                  <UploadIcon /> Import produktow
+                  <UploadIcon /> {t.importProducts}
                 </button>
                 <button onClick={() => router.push("/dashboard/new-product")}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium
                     text-[var(--text-secondary)] bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] transition">
-                  <PlusIcon /> Dodaj recznie
+                  <PlusIcon /> {t.addManually}
                 </button>
               </div>
             )}
@@ -1047,7 +1049,7 @@ export default function ProductsPage() {
                     <div className="min-w-0 pl-3">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-[var(--text-primary)] truncate">
-                          {p.title || <span className="text-[var(--text-tertiary)] font-normal italic">Brak nazwy</span>}
+                          {p.title || <span className="text-[var(--text-tertiary)] font-normal italic">{t.noName}</span>}
                         </span>
                         {p.brand && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0
@@ -1072,7 +1074,7 @@ export default function ProductsPage() {
                             const isFiltered = mpFilter === integ.slug;
                             return (
                               <span key={integ.slug}
-                                title={ready ? "Wszystkie wymagane atrybuty uzupe\u0142nione" : `Brakuje ${integ.missing} atrybut\u00f3w`}
+                                title={ready ? "Wszystkie wymagane atrybuty uzupełnione" : `Brakuje ${integ.missing} atrybutów`}
                                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
                                   ready
                                     ? isFiltered
@@ -1104,11 +1106,11 @@ export default function ProductsPage() {
                           border border-[var(--border-default)] overflow-hidden">
                           <button onClick={() => router.push(`/dashboard/products/${p.id}`)}
                             className="w-full text-left px-3 py-2.5 text-xs text-[var(--text-secondary)] font-medium hover:bg-[var(--bg-body)] transition">
-                            Edytuj
+                            {t.edit}
                           </button>
                           <button onClick={() => handleDelete(p.id)}
                             className="w-full text-left px-3 py-2.5 text-xs text-red-500 font-medium hover:bg-red-50 transition">
-                            Usun produkt
+                            {t.deleteProduct}
                           </button>
                         </div>
                       )}
@@ -1122,7 +1124,7 @@ export default function ProductsPage() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-light)] bg-[var(--bg-table-header)]">
                 <div className="text-xs text-[var(--text-tertiary)]">
-                  Strona {page} z {totalPages} &middot; {total} produkt&oacute;w
+                  {t.page} {page} {t.of} {totalPages} &middot; {total} {t.productCount}
                 </div>
                 <div className="flex gap-1">
                   <button

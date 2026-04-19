@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "./LangContext";
+import { translations } from "./i18n";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -28,10 +30,8 @@ type DashboardSummary = {
 
 type SummaryCard = {
   key: keyof DashboardSummary["cards"];
-  label: string;
   tone: string;
   dot: string;
-  hint: string;
 };
 
 type StatusRow = {
@@ -44,31 +44,23 @@ type StatusRow = {
 const CARD_CONFIG: SummaryCard[] = [
   {
     key: "inProgress",
-    label: "W toku",
     tone: "from-sky-500/15 to-sky-500/5 border-sky-400/20",
     dot: "bg-sky-400",
-    hint: "Produkty w trakcie przetwarzania AI",
   },
   {
     key: "ready",
-    label: "Gotowe",
     tone: "from-emerald-500/15 to-emerald-500/5 border-emerald-400/20",
     dot: "bg-emerald-400",
-    hint: "Gotowe do eksportu na marketplace",
   },
   {
     key: "exported",
-    label: "Wyeksportowane",
     tone: "from-violet-500/15 to-violet-500/5 border-violet-400/20",
     dot: "bg-violet-400",
-    hint: "Wysłane do kanałów sprzedaży",
   },
   {
     key: "errors",
-    label: "Błędy",
     tone: "from-rose-500/15 to-rose-500/5 border-rose-400/20",
     dot: "bg-rose-400",
-    hint: "Wymagają Twojej uwagi",
   },
 ];
 
@@ -104,8 +96,8 @@ function isDashboardSummary(value: unknown): value is DashboardSummary {
   );
 }
 
-function countLabel(count: number) {
-  return `${count.toLocaleString("pl-PL")} ${count === 1 ? "pozycja" : "pozycji"}`;
+function countLabel(count: number, item: string, items: string) {
+  return `${count.toLocaleString("pl-PL")} ${count === 1 ? item : items}`;
 }
 
 function SummaryStat({
@@ -143,6 +135,9 @@ function SkeletonCard() {
 }
 
 export default function Dashboard() {
+  const { lang } = useLang();
+  const t = translations[lang].dashboard;
+
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -156,7 +151,7 @@ export default function Dashboard() {
 
       const token = typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
       if (!token) {
-        setError("Brak tokenu logowania");
+        setError(t.noToken);
         setLoading(false);
         return;
       }
@@ -174,12 +169,12 @@ export default function Dashboard() {
           const apiError =
             typeof json === "object" && json !== null && "error" in json && typeof (json as { error?: unknown }).error === "string"
               ? (json as { error: string }).error
-              : "Nie udalo sie pobrac podsumowania";
+              : t.loadFailed;
           throw new Error(apiError);
         }
 
         if (!isDashboardSummary(json)) {
-          throw new Error("Nieprawidlowa odpowiedz serwera");
+          throw new Error(t.invalidResponse);
         }
 
         setSummary(json);
@@ -194,7 +189,8 @@ export default function Dashboard() {
 
     loadSummary();
     return () => controller.abort();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
 
   const cards = summary?.cards ?? null;
   const products = summary?.products ?? null;
@@ -210,61 +206,28 @@ export default function Dashboard() {
     imports.done === 0 &&
     imports.error === 0;
 
+  const CARD_LABELS: Record<keyof DashboardSummary["cards"], { label: string; hint: string }> = {
+    inProgress: { label: t.inProgress,  hint: t.inProgressHint  },
+    ready:      { label: t.ready,       hint: t.readyHint       },
+    exported:   { label: t.exported,    hint: t.exportedHint    },
+    errors:     { label: t.errors,      hint: t.errorsHint      },
+  };
+
   const productRows: StatusRow[] = products
     ? [
-        {
-          label: "Wszystkie",
-          count: products.total,
-          tone: "bg-slate-300",
-          hint: "Laczna liczba produktow w systemie",
-        },
-        {
-          label: "Oczekujace",
-          count: products.pending,
-          tone: "bg-sky-400",
-          hint: "Jeszcze nieprzypisane do eksportu",
-        },
-        {
-          label: "Zmapowane",
-          count: products.mapped,
-          tone: "bg-emerald-400",
-          hint: "Gotowe do dalszej pracy",
-        },
-        {
-          label: "Do weryfikacji",
-          count: products.needs_review,
-          tone: "bg-amber-400",
-          hint: "Wymagaja sprawdzenia lub poprawy",
-        },
-        {
-          label: "Wyeksportowane",
-          count: products.exported,
-          tone: "bg-violet-400",
-          hint: "Juz wyslane do kanalu sprzedazy",
-        },
+        { label: t.productAll,      count: products.total,        tone: "bg-slate-300",  hint: t.productAllHint      },
+        { label: t.productPending,  count: products.pending,      tone: "bg-sky-400",    hint: t.productPendingHint  },
+        { label: t.productMapped,   count: products.mapped,       tone: "bg-emerald-400",hint: t.productMappedHint   },
+        { label: t.productReview,   count: products.needs_review, tone: "bg-amber-400",  hint: t.productReviewHint   },
+        { label: t.productExported, count: products.exported,     tone: "bg-violet-400", hint: t.productExportedHint },
       ]
     : [];
 
   const importRows: StatusRow[] = imports
     ? [
-        {
-          label: "Przetwarzane",
-          count: imports.processing,
-          tone: "bg-sky-400",
-          hint: "Pliki importu jeszcze sie obrabiaja",
-        },
-        {
-          label: "Zakonczone",
-          count: imports.done,
-          tone: "bg-emerald-400",
-          hint: "Importy gotowe i zakonczone",
-        },
-        {
-          label: "Z bledem",
-          count: imports.error,
-          tone: "bg-rose-400",
-          hint: "Importy wymagajace reakcji",
-        },
+        { label: t.importProcessing, count: imports.processing, tone: "bg-sky-400",    hint: t.importProcessingHint },
+        { label: t.importDone,       count: imports.done,       tone: "bg-emerald-400",hint: t.importDoneHint       },
+        { label: t.importError,      count: imports.error,      tone: "bg-rose-400",   hint: t.importErrorHint      },
       ]
     : [];
 
@@ -276,20 +239,21 @@ export default function Dashboard() {
             ? CARD_CONFIG.map(card => <SkeletonCard key={card.key} />)
             : CARD_CONFIG.map(card => {
                 const value = cards?.[card.key] ?? 0;
+                const { label, hint } = CARD_LABELS[card.key];
                 return (
                   <div
                     key={card.key}
                     className={`rounded-2xl border bg-gradient-to-br p-6 shadow-sm backdrop-blur-sm ${card.tone}`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>{card.label}</div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>{label}</div>
                       <span className={`h-2.5 w-2.5 rounded-full ${card.dot}`} />
                     </div>
                     <div className="mt-4 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>
                       {value.toLocaleString("pl-PL")}
                     </div>
                     <div className="mt-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-                      {card.hint}
+                      {hint}
                     </div>
                   </div>
                 );
@@ -299,7 +263,7 @@ export default function Dashboard() {
 
       {error ? (
         <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-5 text-sm text-rose-100">
-          <div className="font-semibold">Nie udalo sie pobrac danych</div>
+          <div className="font-semibold">{t.loadFailed}</div>
           <div className="mt-1 text-rose-200/80">{error}</div>
         </div>
       ) : hasNoData ? (
@@ -309,9 +273,9 @@ export default function Dashboard() {
               <path d="M3 7.5 12 3l9 4.5M3 7.5V16.5L12 21l9-4.5V7.5M12 21V12M3 7.5l9 4.5 9-4.5" />
             </svg>
           </div>
-          <div className="text-lg font-semibold text-slate-100">Brak danych do pokazania</div>
+          <div className="text-lg font-semibold text-slate-100">{t.noData}</div>
           <div className="mt-2 max-w-md text-sm text-slate-400">
-            Nie ma jeszcze produktow ani importow. Gdy pojawi sie pierwszy import, panel od razu pokaze zywe statystyki.
+            {t.noDataHint}
           </div>
         </div>
       ) : (
@@ -319,11 +283,11 @@ export default function Dashboard() {
           <section className="rounded-3xl p-5 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>Produkty</h2>
-                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Status bieżącego katalogu</p>
+                <h2 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>{t.productsSection}</h2>
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{t.productsSectionHint}</p>
               </div>
               <div className="rounded-full px-3 py-1 text-xs font-medium" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
-                {countLabel(products?.total ?? 0)}
+                {countLabel(products?.total ?? 0, t.item, t.items)}
               </div>
             </div>
 
@@ -339,11 +303,11 @@ export default function Dashboard() {
           <section className="rounded-3xl p-5 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>Importy</h2>
-                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Przepływ plików i przetwarzania</p>
+                <h2 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>{t.importsSection}</h2>
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{t.importsSectionHint}</p>
               </div>
               <div className="rounded-full px-3 py-1 text-xs font-medium" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
-                {countLabel((imports?.processing ?? 0) + (imports?.done ?? 0) + (imports?.error ?? 0))}
+                {countLabel((imports?.processing ?? 0) + (imports?.done ?? 0) + (imports?.error ?? 0), t.item, t.items)}
               </div>
             </div>
 
