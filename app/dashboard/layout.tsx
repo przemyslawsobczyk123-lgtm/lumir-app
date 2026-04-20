@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { fetchBillingSummary, formatCredits, type BillingSummary } from "./billing/billing-data";
-import { fetchActiveJobs, formatJobDuration, type SellerJob } from "./jobs/job-client";
+import { fetchActiveJobs, formatJobDuration, jobTypeLabel, jobStepLabel, type SellerJob } from "./jobs/job-client";
 import { LangProvider, useLang } from "./LangContext";
 import { translations } from "./i18n";
 
@@ -400,13 +400,31 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
                         {t.topbar.tasksSubtitle}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setJobsOpen(false)}
-                      className="rounded-lg px-2 py-1 text-xs font-semibold transition"
-                      style={{ background: "var(--bg-input)", color: "var(--text-secondary)" }}
-                    >
-                      {t.topbar.tasksClose}
-                    </button>
+                    <div className="flex gap-2">
+                      {activeJobs.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            const token = localStorage.getItem("token");
+                            await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/jobs/clear-stuck`, {
+                              method: "DELETE",
+                              headers: { Authorization: `Bearer ${token}` },
+                            });
+                            setActiveJobs([]);
+                          }}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold transition"
+                          style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
+                        >
+                          Wyczyść
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setJobsOpen(false)}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold transition"
+                        style={{ background: "var(--bg-input)", color: "var(--text-secondary)" }}
+                      >
+                        {t.topbar.tasksClose}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-3 space-y-3">
@@ -423,18 +441,18 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
                         className="rounded-xl border p-3"
                         style={{ borderColor: "var(--border-default)", background: "var(--bg-body)" }}
                       >
-                        <div className="flex items-center justify-between gap-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
-                          <span>{job.label || job.type}</span>
-                          <span>{job.progressPercent}%</span>
+                        <div className="flex items-center justify-between gap-3 text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                          <span>{jobTypeLabel(job.type)}</span>
+                          <span style={{ color: "var(--text-tertiary)" }}>{job.progressPercent}%</span>
                         </div>
-                        <div className="mt-2 h-2 overflow-hidden rounded-full" style={{ background: "var(--bg-input)" }}>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--bg-input)" }}>
                           <div
-                            className="h-full rounded-full"
+                            className="h-full rounded-full transition-all duration-500"
                             style={{ width: `${job.progressPercent}%`, background: "linear-gradient(90deg, #f59e0b, #f97316)" }}
                           />
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                          <span>{job.currentStep || job.status}</span>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                          <span>{jobStepLabel(job.currentStep, job.currentMessage, job.status)}</span>
                           <span>•</span>
                           <span>{formatJobDuration(job.elapsedSeconds)}</span>
                           {job.etaSeconds != null && (

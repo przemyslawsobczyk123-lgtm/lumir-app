@@ -1256,6 +1256,7 @@ export default function ProductsPage() {
   const [deleting, setDeleting]           = useState(false);
   const [activeInlineJob, setActiveInlineJob] = useState<JobSummary | null>(null);
   const [listingFocus, setListingFocus] = useState<ProductListingFocus>("all");
+  const [activeTab, setActiveTab] = useState<"products" | "exports">("products");
   const [recentExports, setRecentExports] = useState<RecentProductExport[]>([]);
   const [recentExportsLoading, setRecentExportsLoading] = useState(true);
   const [splitSelectionGroups, setSplitSelectionGroups] = useState<ProductExportCategoryGroup[]>([]);
@@ -1709,17 +1710,109 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      <RecentExportsPanel
-        rows={recentExports}
-        loading={recentExportsLoading}
-        exporting={exportBusy}
-        onRetry={(row) => {
-          void handleExport(row.productIds, {
-            marketplaceSlug: row.marketplaceSlug,
-            categoryPath: row.categoryPath,
-          });
-        }}
-      />
+      {/* Tabs */}
+      <div className="mb-4 flex gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 w-fit shadow-sm">
+        <button
+          onClick={() => setActiveTab("products")}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "products"
+              ? "bg-[var(--text-primary)] text-[var(--bg-card)] shadow-sm"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
+          }`}
+        >
+          {lang === "pl" ? "Produkty" : "Products"}
+        </button>
+        <button
+          onClick={() => setActiveTab("exports")}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "exports"
+              ? "bg-[var(--text-primary)] text-[var(--bg-card)] shadow-sm"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
+          }`}
+        >
+          {lang === "pl" ? "Historia eksportów" : "Export history"}
+          {recentExports.length > 0 && (
+            <span className="ml-2 rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-bold text-sky-600">
+              {recentExports.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Exports tab */}
+      {activeTab === "exports" && (
+        <RecentExportsPanel
+          rows={recentExports}
+          loading={recentExportsLoading}
+          exporting={exportBusy}
+          onRetry={(row) => {
+            void handleExport(row.productIds, {
+              marketplaceSlug: row.marketplaceSlug,
+              categoryPath: row.categoryPath,
+            });
+          }}
+        />
+      )}
+
+      {/* Products tab content */}
+      {activeTab === "products" && (<>
+
+      {/* Stats cards */}
+      <div className="mb-3 grid gap-3 md:grid-cols-4">
+        {[
+          {
+            focus: "all" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusAll,
+            value: listingStats.all,
+            hint: PRODUCTS_PAGE_COPY[lang].focusAllHint,
+          },
+          {
+            focus: "ready" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusReady,
+            value: listingStats.ready,
+            hint: PRODUCTS_PAGE_COPY[lang].focusReadyHint,
+          },
+          {
+            focus: "review" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusReview,
+            value: listingStats.review,
+            hint: PRODUCTS_PAGE_COPY[lang].focusReviewHint,
+          },
+          {
+            focus: "blocked" as const,
+            label: PRODUCTS_PAGE_COPY[lang].focusBlocked,
+            value: listingStats.blocked,
+            hint: formatBlockedMixHint(
+              PRODUCTS_PAGE_COPY[lang].blockedMixHint,
+              listingStats.unmapped,
+              listingStats.attributesMissing
+            ),
+          },
+        ].map((card) => {
+          const active = listingFocus === card.focus;
+          return (
+            <button
+              key={card.focus}
+              onClick={() => setListingFocus(card.focus)}
+              className="rounded-2xl p-4 text-left transition"
+              style={active ? {
+                background: "var(--accent-primary-light)",
+                border: "1px solid var(--accent-primary-border)",
+                boxShadow: "0 0 0 1px var(--accent-primary-border) inset",
+              } : {
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-default)",
+              }}
+            >
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: active ? "var(--accent-primary)" : "var(--text-tertiary)" }}>
+                {card.label}
+              </div>
+              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{card.value}</div>
+              <div className="mt-2 text-sm leading-5" style={{ color: "var(--text-secondary)" }}>{card.hint}</div>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Toolbar */}
       <div className={`mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3 shadow-sm sm:p-4 ${
@@ -1986,62 +2079,6 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
-
-      <div className="mb-3 grid gap-3 md:grid-cols-4">
-        {[
-          {
-            focus: "all" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusAll,
-            value: listingStats.all,
-            hint: PRODUCTS_PAGE_COPY[lang].focusAllHint,
-          },
-          {
-            focus: "ready" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusReady,
-            value: listingStats.ready,
-            hint: PRODUCTS_PAGE_COPY[lang].focusReadyHint,
-          },
-          {
-            focus: "review" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusReview,
-            value: listingStats.review,
-            hint: PRODUCTS_PAGE_COPY[lang].focusReviewHint,
-          },
-          {
-            focus: "blocked" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusBlocked,
-            value: listingStats.blocked,
-            hint: formatBlockedMixHint(
-              PRODUCTS_PAGE_COPY[lang].blockedMixHint,
-              listingStats.unmapped,
-              listingStats.attributesMissing
-            ),
-          },
-        ].map((card) => {
-          const active = listingFocus === card.focus;
-          return (
-            <button
-              key={card.focus}
-              onClick={() => setListingFocus(card.focus)}
-              className="rounded-2xl p-4 text-left transition"
-              style={active ? {
-                background: "var(--accent-primary-light)",
-                border: "1px solid var(--accent-primary-border)",
-                boxShadow: "0 0 0 1px var(--accent-primary-border) inset",
-              } : {
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-default)",
-              }}
-            >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: active ? "var(--accent-primary)" : "var(--text-tertiary)" }}>
-                {card.label}
-              </div>
-              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{card.value}</div>
-              <div className="mt-2 text-sm leading-5" style={{ color: "var(--text-secondary)" }}>{card.hint}</div>
-            </button>
-          );
-        })}
-      </div>
 
       {/* Table */}
       <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden shadow-sm border border-[var(--border-default)]">
@@ -2481,6 +2518,8 @@ export default function ProductsPage() {
           </>
         )}
       </div>
+
+      </>)}
     </div>
   );
 }

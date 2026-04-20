@@ -4,10 +4,40 @@ export type SellerJob = {
   status: "queued" | "processing" | "done" | "error";
   progressPercent: number;
   currentStep: string | null;
+  currentMessage: string | null;
   elapsedSeconds: number;
   etaSeconds: number | null;
   label: string | null;
 };
+
+const JOB_TYPE_LABELS: Record<string, string> = {
+  "ai":                      "Wzbogacanie AI",
+  "bulk-generate":           "Generowanie ofert",
+  "products_import_excel":   "Import produktów Excel",
+  "single-ai":               "Uzupełnianie AI",
+};
+
+const JOB_STEP_LABELS: Record<string, string> = {
+  "queued":      "W kolejce",
+  "processing":  "Przetwarzanie",
+  "done":        "Gotowe",
+  "error":       "Błąd",
+  "enrichment":  "Wzbogacanie danych",
+  "description": "Generowanie opisu",
+  "direct":      "Mapowanie kolumn",
+  "allegro":     "Pobieranie z Allegro",
+  "icecat":      "Pobieranie z Icecat",
+};
+
+export function jobTypeLabel(type: string) {
+  return JOB_TYPE_LABELS[type] ?? type;
+}
+
+export function jobStepLabel(step: string | null, message: string | null, status: string) {
+  if (message) return message;
+  if (step) return JOB_STEP_LABELS[step] ?? step;
+  return JOB_STEP_LABELS[status] ?? status;
+}
 
 type JobsResponse = {
   data?: Array<{
@@ -40,6 +70,7 @@ function normalizeJob(raw: RawJob): SellerJob | null {
     status: status as SellerJob["status"],
     progressPercent: Math.max(0, Math.min(100, normalizeNumber(raw.progressPercent, 0))),
     currentStep: typeof raw.currentStep === "string" ? raw.currentStep : null,
+    currentMessage: typeof (raw as Record<string, unknown>).currentMessage === "string" ? (raw as Record<string, unknown>).currentMessage as string : null,
     elapsedSeconds: Math.max(0, normalizeNumber(raw.elapsedSeconds, 0)),
     etaSeconds: raw.etaSeconds == null ? null : Math.max(0, normalizeNumber(raw.etaSeconds, 0)),
     label: typeof raw.scopeLabel === "string" ? raw.scopeLabel : null,
