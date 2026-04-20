@@ -158,81 +158,108 @@ function MarketingPlanCard({
 
   return (
     <article
-      className={`relative flex flex-col overflow-hidden rounded-[2rem] p-6 shadow-sm transition ${
+      className={`relative flex flex-col rounded-[1.75rem] transition ${
         isPopular ? "lg:-translate-y-2" : ""
       }`}
       style={{
-        background: isPopular
-          ? "linear-gradient(160deg, rgba(99,102,241,0.18), rgba(15,23,42,0.98) 48%, rgba(139,92,246,0.18))"
-          : "linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.92))",
-        border: isPopular ? "1px solid rgba(129,140,248,0.5)" : "1px solid rgba(255,255,255,0.12)",
+        background: "linear-gradient(180deg, rgba(15,23,42,0.98), rgba(9,15,35,0.97))",
+        border: isPopular
+          ? "1.5px solid rgba(129,140,248,0.55)"
+          : "1px solid rgba(255,255,255,0.10)",
+        boxShadow: isPopular
+          ? "0 0 40px rgba(99,102,241,0.12), 0 4px 24px rgba(0,0,0,0.4)"
+          : "0 4px 20px rgba(0,0,0,0.3)",
       }}
     >
-      <div
-        className="absolute inset-x-0 top-0 h-24 opacity-70"
-        style={{ background: "radial-gradient(circle at top, rgba(255,255,255,0.16), transparent 70%)" }}
-      />
-
-      <div className="relative flex flex-1 flex-col">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{planTitle}</div>
-            <div className="mt-3 text-5xl font-semibold text-white">{formatCredits(plan.pack.credits)}</div>
-            <div className="mt-2 text-sm text-slate-300">{t.packCredits}</div>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            {isPopular ? (
-              <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-950">
-                {t.planPopular}
-              </span>
-            ) : null}
-            {hasSavings ? (
-              <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-bold text-emerald-300">
-                -{savingsPct}%
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5">
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{t.packPrice}</div>
-          {hasSavings ? (
-            <div className="mt-2 text-sm text-slate-500 line-through">
-              {formatPricePln(fullPriceCents)}
-            </div>
+      {/* Popular badge — pill above card content, inside top */}
+      <div className="flex items-center justify-between px-7 pt-6">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
+          {planTitle}
+        </span>
+        <div className="flex items-center gap-2">
+          {isPopular ? (
+            <span
+              className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+              style={{
+                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                color: "#fff",
+              }}
+            >
+              {t.planPopular}
+            </span>
           ) : null}
-          <div className={`text-4xl font-semibold text-white ${hasSavings ? "mt-1" : "mt-3"}`}>
+          {hasSavings ? (
+            <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-400">
+              -{savingsPct}%
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Credits — big number */}
+      <div className="px-7 pt-5">
+        <div
+          className="text-[56px] font-bold leading-none tracking-tight text-white"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {formatCredits(plan.pack.credits)}
+        </div>
+        <div className="mt-2 text-sm text-slate-400">{t.packCredits}</div>
+      </div>
+
+      {/* Divider */}
+      <div className="mx-7 mt-6 border-t border-white/8" />
+
+      {/* Price block — flat, no inner card */}
+      <div className="px-7 pt-5">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{t.packPrice}</div>
+        <div className="mt-2 flex items-end gap-3">
+          <span className="text-4xl font-bold text-white leading-none">
             {formatPricePln(plan.pack.amountCents)}
-          </div>
-          <div className="mt-2 text-sm text-slate-300">
-            {formatUnitPricePln(plan.pack.pricePerAuction)} {t.packPricePerAuction}
-          </div>
+          </span>
+          {hasSavings ? (
+            <span className="mb-0.5 text-sm text-slate-600 line-through">
+              {formatPricePln(fullPriceCents)}
+            </span>
+          ) : null}
         </div>
-
-        <div className="mt-5 grid gap-3 text-sm text-slate-200">
-          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-            <span className="text-slate-300">{t.packFullAuction}</span>
-            <span className="font-semibold text-white">{fullAuctions}</span>
-          </div>
-          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-            <span className="text-slate-300">{t.packDescriptions}</span>
-            <span className="font-semibold text-white">{formatCredits(descriptions)}</span>
-          </div>
-          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-            <span className="text-slate-300">{t.packAttributes}</span>
-            <span className="font-semibold text-white">{formatCredits(attributes)}</span>
-          </div>
+        <div className="mt-2 text-sm text-slate-400 whitespace-nowrap">
+          {formatUnitPricePln(plan.pack.pricePerAuction)}&nbsp;{t.packPricePerAuction}
         </div>
+      </div>
 
+      {/* Divider */}
+      <div className="mx-7 mt-6 border-t border-white/8" />
+
+      {/* Usage rows — simple, no inner bg */}
+      <div className="px-7 pt-5 space-y-3 text-sm flex-1">
+        {[
+          { label: t.packFullAuction, val: String(fullAuctions) },
+          { label: t.packDescriptions, val: formatCredits(descriptions) },
+          { label: t.packAttributes, val: formatCredits(attributes) },
+        ].map(({ label, val }) => (
+          <div key={label} className="flex items-center justify-between gap-4">
+            <span className="text-slate-400 truncate">{label}</span>
+            <span className="font-semibold text-white tabular-nums shrink-0">{val}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div className="px-7 pb-7 pt-6">
         <button
           onClick={() => onBuy(plan.pack.credits)}
           aria-disabled={loading}
-          className={`mt-auto pt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+          className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${
             loading
-              ? "cursor-wait opacity-60"
-              : "bg-gradient-to-r from-indigo-500 via-indigo-400 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
+              ? "cursor-wait opacity-50"
+              : "text-white hover:opacity-90 hover:scale-[1.01] active:scale-[0.99] hover:shadow-lg hover:shadow-indigo-500/25"
           }`}
-          style={loading ? { background: "rgba(255,255,255,0.08)", color: "#cbd5e1" } : {}}
+          style={
+            loading
+              ? { background: "rgba(255,255,255,0.07)", color: "#64748b" }
+              : { background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }
+          }
         >
           {loading ? t.packRedirecting : t.planBuy}
         </button>
@@ -262,80 +289,96 @@ function PackCard({
 
   return (
     <div
-      className={`flex flex-col rounded-3xl p-5 transition ${pack.featured ? "shadow-[0_0_0_2px_rgba(99,102,241,0.3)]" : ""}`}
+      className="flex flex-col rounded-2xl transition"
       style={{
-        background: pack.featured
-          ? "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.05))"
-          : "var(--bg-card)",
-        border: pack.featured ? "1px solid rgba(99,102,241,0.35)" : "1px solid var(--border-default)",
+        background: "var(--bg-card)",
+        border: pack.featured
+          ? "1.5px solid rgba(99,102,241,0.45)"
+          : "1px solid var(--border-default)",
+        boxShadow: pack.featured
+          ? "0 0 24px rgba(99,102,241,0.10)"
+          : "none",
       }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--text-tertiary)" }}>{t.packLabel}</div>
-          <div className="mt-1 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(pack.credits)}</div>
-          <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{t.packCredits}</div>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--text-tertiary)" }}>
+          {pack.featured ? t.packPopular : t.packPrepaid}
+        </span>
+        {hasSavings ? (
+          <span className="rounded-full px-2.5 py-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/12">
+            -{savingsPct}%
+          </span>
+        ) : null}
+      </div>
+
+      {/* Credits */}
+      <div className="px-5 pt-3">
+        <div
+          className="text-4xl font-bold leading-none text-white"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {formatCredits(pack.credits)}
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--bg-input-alt)", color: "var(--text-secondary)" }}>
-            {pack.featured ? t.packPopular : t.packPrepaid}
+        <div className="mt-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>{t.packCredits}</div>
+      </div>
+
+      {/* Divider */}
+      <div className="mx-5 mt-4 border-t" style={{ borderColor: "var(--border-default)" }} />
+
+      {/* Price — flat, no inner card */}
+      <div className="px-5 pt-4">
+        <div className="flex items-end gap-2">
+          <span className="text-2xl font-bold leading-none" style={{ color: "var(--text-heading)" }}>
+            {formatPricePln(pack.amountCents)}
           </span>
           {hasSavings ? (
-            <span
-              className="rounded-full px-2.5 py-1 text-[11px] font-bold"
-              style={pack.featured ? {
-                background: "rgba(16,185,129,0.2)",
-                color: "#10b981",
-                boxShadow: "0 0 8px rgba(16,185,129,0.25)",
-              } : {
-                background: "rgba(16,185,129,0.12)",
-                color: "#059669",
-              }}
-            >
-              -{savingsPct}%
+            <span className="mb-0.5 text-xs line-through" style={{ color: "var(--text-tertiary)" }}>
+              {formatPricePln(fullPriceCents)}
             </span>
           ) : null}
         </div>
+        <div className="mt-1 text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+          {formatUnitPricePln(pack.pricePerAuction)}&nbsp;{t.packPricePerAuction}
+        </div>
       </div>
 
-      <div className="mt-5 rounded-2xl p-4" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
-        <div className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>{t.packPrice}</div>
-        {hasSavings ? (
-          <div className="mt-2 text-sm line-through opacity-50" style={{ color: "var(--text-tertiary)" }}>
-            {formatPricePln(fullPriceCents)}
+      {/* Divider */}
+      <div className="mx-5 mt-4 border-t" style={{ borderColor: "var(--border-default)" }} />
+
+      {/* Usage rows */}
+      <div className="px-5 pt-4 space-y-2.5 text-xs flex-1">
+        {[
+          { label: t.packFullAuction, val: String(fullAuctions) },
+          { label: t.packDescriptions, val: formatCredits(descriptions) },
+          { label: t.packAttributes, val: formatCredits(attributes) },
+        ].map(({ label, val }) => (
+          <div key={label} className="flex items-center justify-between gap-2">
+            <span className="truncate" style={{ color: "var(--text-secondary)" }}>{label}</span>
+            <span className="font-semibold tabular-nums shrink-0" style={{ color: "var(--text-heading)" }}>{val}</span>
           </div>
-        ) : null}
-        <div className={`font-semibold text-3xl ${hasSavings ? "mt-0.5" : "mt-2"}`} style={{ color: "var(--text-heading)" }}>{formatPricePln(pack.amountCents)}</div>
-        <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>{formatUnitPricePln(pack.pricePerAuction)} {t.packPricePerAuction}</div>
+        ))}
       </div>
 
-      <div className="mt-5 space-y-2 text-sm">
-        <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
-          <span style={{ color: "var(--text-secondary)" }}>{t.packFullAuction}</span>
-          <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{fullAuctions}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
-          <span style={{ color: "var(--text-secondary)" }}>{t.packDescriptions}</span>
-          <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(descriptions)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-input-alt)" }}>
-          <span style={{ color: "var(--text-secondary)" }}>{t.packAttributes}</span>
-          <span className="font-semibold" style={{ color: "var(--text-heading)" }}>{formatCredits(attributes)}</span>
-        </div>
+      {/* CTA */}
+      <div className="px-5 pb-5 pt-5">
+        <button
+          onClick={() => onBuy(pack.credits)}
+          aria-disabled={loading}
+          className={`w-full rounded-xl py-2.5 text-sm font-semibold transition-all ${
+            loading
+              ? "cursor-wait opacity-50"
+              : "text-white hover:opacity-90 hover:scale-[1.01] active:scale-[0.99] hover:shadow-lg hover:shadow-indigo-500/20"
+          }`}
+          style={
+            loading
+              ? { background: "var(--bg-input-alt)", color: "var(--text-tertiary)" }
+              : { background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }
+          }
+        >
+          {loading ? t.packRedirecting : t.packBuy}
+        </button>
       </div>
-
-      <button
-        onClick={() => onBuy(pack.credits)}
-        aria-disabled={loading}
-        className={`mt-auto pt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-          loading
-            ? "cursor-wait opacity-60"
-            : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
-        }`}
-        style={loading ? { background: "var(--bg-input-alt)", color: "var(--text-tertiary)" } : {}}
-      >
-        {loading ? t.packRedirecting : t.packBuy}
-      </button>
     </div>
   );
 }
