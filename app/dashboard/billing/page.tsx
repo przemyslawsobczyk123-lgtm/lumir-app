@@ -28,6 +28,7 @@ import {
   getBillingHistorySourceMeta,
   getBillingHistoryStatusMeta,
 } from "./ui-helpers";
+import { buildBillingPlanCatalog, type BillingRecommendedPlan } from "./plan-helpers";
 import { useLang } from "../LangContext";
 import { translations } from "../i18n";
 
@@ -122,6 +123,124 @@ function SectionTitle({
   );
 }
 
+function getPackUsageStats(credits: number) {
+  return {
+    fullAuctions: Math.floor(credits),
+    descriptions: Math.floor(credits / 0.67),
+    attributes: Math.floor(credits / 0.33),
+  };
+}
+
+function MarketingPlanCard({
+  plan,
+  loading,
+  onBuy,
+}: {
+  plan: BillingRecommendedPlan;
+  loading: boolean;
+  onBuy: (credits: number) => void;
+}) {
+  const { lang } = useLang();
+  const t = translations[lang].billing;
+  const { fullAuctions, descriptions, attributes } = getPackUsageStats(plan.pack.credits);
+  const fullPriceCents = plan.pack.credits * 550;
+  const savingsCents = fullPriceCents - plan.pack.amountCents;
+  const savingsPct = Math.round((savingsCents / fullPriceCents) * 100);
+  const hasSavings = savingsPct > 0;
+  const isPopular = plan.badge === "popular";
+
+  const planTitle =
+    plan.key === "starter"
+      ? t.planStarter
+      : plan.key === "pro"
+        ? t.planPro
+        : t.planBusiness;
+
+  return (
+    <article
+      className={`relative overflow-hidden rounded-[2rem] p-6 shadow-sm transition ${
+        isPopular ? "lg:-translate-y-2" : ""
+      }`}
+      style={{
+        background: isPopular
+          ? "linear-gradient(160deg, rgba(99,102,241,0.18), rgba(15,23,42,0.98) 48%, rgba(139,92,246,0.18))"
+          : "linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.92))",
+        border: isPopular ? "1px solid rgba(129,140,248,0.5)" : "1px solid rgba(255,255,255,0.12)",
+      }}
+    >
+      <div
+        className="absolute inset-x-0 top-0 h-24 opacity-70"
+        style={{ background: "radial-gradient(circle at top, rgba(255,255,255,0.16), transparent 70%)" }}
+      />
+
+      <div className="relative flex h-full flex-col">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{planTitle}</div>
+            <div className="mt-3 text-5xl font-semibold text-white">{formatCredits(plan.pack.credits)}</div>
+            <div className="mt-2 text-sm text-slate-300">{t.packCredits}</div>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            {isPopular ? (
+              <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-950">
+                {t.planPopular}
+              </span>
+            ) : null}
+            {hasSavings ? (
+              <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-bold text-emerald-300">
+                -{savingsPct}%
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5">
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{t.packPrice}</div>
+          {hasSavings ? (
+            <div className="mt-2 text-sm text-slate-500 line-through">
+              {formatPricePln(fullPriceCents)}
+            </div>
+          ) : null}
+          <div className={`text-4xl font-semibold text-white ${hasSavings ? "mt-1" : "mt-3"}`}>
+            {formatPricePln(plan.pack.amountCents)}
+          </div>
+          <div className="mt-2 text-sm text-slate-300">
+            {formatUnitPricePln(plan.pack.pricePerAuction)} {t.packPricePerAuction}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 text-sm text-slate-200">
+          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
+            <span className="text-slate-300">{t.packFullAuction}</span>
+            <span className="font-semibold text-white">{fullAuctions}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
+            <span className="text-slate-300">{t.packDescriptions}</span>
+            <span className="font-semibold text-white">{formatCredits(descriptions)}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
+            <span className="text-slate-300">{t.packAttributes}</span>
+            <span className="font-semibold text-white">{formatCredits(attributes)}</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => onBuy(plan.pack.credits)}
+          aria-disabled={loading}
+          className={`mt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+            loading
+              ? "cursor-wait opacity-60"
+              : "bg-gradient-to-r from-indigo-500 via-indigo-400 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
+          }`}
+          style={loading ? { background: "rgba(255,255,255,0.08)", color: "#cbd5e1" } : {}}
+        >
+          {loading ? t.packRedirecting : t.planBuy}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function PackCard({
   pack,
   loading,
@@ -134,9 +253,7 @@ function PackCard({
   const { lang } = useLang();
   const t = translations[lang].billing;
 
-  const fullAuctions = Math.floor(pack.credits);
-  const descriptions = Math.floor(pack.credits / 0.67);
-  const attributes = Math.floor(pack.credits / 0.33);
+  const { fullAuctions, descriptions, attributes } = getPackUsageStats(pack.credits);
 
   const fullPriceCents = pack.credits * 550;
   const savingsCents = fullPriceCents - pack.amountCents;
@@ -356,6 +473,7 @@ export default function BillingPage() {
   const [checkoutLoadingCredits, setCheckoutLoadingCredits] = useState<number | null>(null);
   const [checkoutResult, setCheckoutResult] = useState<CheckoutResult>(null);
   const [activeFilter, setActiveFilter] = useState<BillingHistoryFilter>("all");
+  const [showAllPacks, setShowAllPacks] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -417,6 +535,8 @@ export default function BillingPage() {
   const totalGranted = billing?.usage.limit ?? 0;
   const totalUsed = billing?.usage.used ?? 0;
   const starterCredits = billing?.starterCredits ?? 3;
+  const planCatalog = buildBillingPlanCatalog(billing?.packs || []);
+  const showRecommendedPlans = loading || planCatalog.recommendedPlans.length > 0;
   const sourceMeta = getBillingHistorySourceMeta(history.source, lang);
   const filterCounts = getBillingHistoryFilterCounts(history.items);
   const filteredHistory = filterBillingHistoryItems(history.items, activeFilter);
@@ -568,17 +688,69 @@ export default function BillingPage() {
 
       <section className="rounded-[2rem] p-6 shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
         <SectionTitle
-          eyebrow={t.packsEyebrow}
-          title={t.packsTitle}
-          description={t.packsDesc}
+          eyebrow={showRecommendedPlans ? t.plansEyebrow : t.packsEyebrow}
+          title={showRecommendedPlans ? t.plansTitle : t.packsTitle}
+          description={showRecommendedPlans ? t.plansDesc : t.packsDesc}
         />
 
         {loading ? (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 8 }, (_, index) => (
-              <div key={index} className="h-72 animate-pulse rounded-3xl bg-white/5" />
+          <div className="mt-6 grid gap-4 xl:grid-cols-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="h-[430px] animate-pulse rounded-[2rem] bg-slate-900/70" />
             ))}
           </div>
+        ) : showRecommendedPlans ? (
+          <>
+            <div className="mt-6 grid gap-4 xl:grid-cols-3">
+              {planCatalog.recommendedPlans.map((plan) => (
+                <MarketingPlanCard
+                  key={plan.key}
+                  plan={plan}
+                  loading={checkoutLoadingCredits === plan.pack.credits}
+                  onBuy={startCheckout}
+                />
+              ))}
+            </div>
+
+            {planCatalog.remainingPacks.length ? (
+              <div className="mt-6">
+                <button
+                  onClick={() => setShowAllPacks((current) => !current)}
+                  className="rounded-full border px-4 py-2 text-sm font-semibold transition hover:opacity-90"
+                  style={{
+                    background: "var(--bg-input-alt)",
+                    borderColor: "var(--border-default)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {showAllPacks ? t.plansHideAll : t.plansShowAll}
+                </button>
+              </div>
+            ) : null}
+
+            {showAllPacks && planCatalog.remainingPacks.length ? (
+              <div className="mt-6 rounded-[1.75rem] p-5" style={{ background: "var(--bg-input-alt)", border: "1px solid var(--border-default)" }}>
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.28em]" style={{ color: "var(--text-tertiary)" }}>
+                    {t.packsEyebrow}
+                  </div>
+                  <h3 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>{t.plansMoreTitle}</h3>
+                  <p className="max-w-3xl text-sm leading-6" style={{ color: "var(--text-secondary)" }}>{t.plansMoreDesc}</p>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {planCatalog.remainingPacks.map((pack) => (
+                    <PackCard
+                      key={pack.code}
+                      pack={pack}
+                      loading={checkoutLoadingCredits === pack.credits}
+                      onBuy={startCheckout}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {(billing?.packs || []).map((pack) => (
