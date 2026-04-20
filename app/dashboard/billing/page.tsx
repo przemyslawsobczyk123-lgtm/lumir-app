@@ -158,7 +158,7 @@ function MarketingPlanCard({
 
   return (
     <article
-      className={`relative overflow-hidden rounded-[2rem] p-6 shadow-sm transition ${
+      className={`relative flex flex-col overflow-hidden rounded-[2rem] p-6 shadow-sm transition ${
         isPopular ? "lg:-translate-y-2" : ""
       }`}
       style={{
@@ -173,7 +173,7 @@ function MarketingPlanCard({
         style={{ background: "radial-gradient(circle at top, rgba(255,255,255,0.16), transparent 70%)" }}
       />
 
-      <div className="relative flex h-full flex-col">
+      <div className="relative flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{planTitle}</div>
@@ -227,7 +227,7 @@ function MarketingPlanCard({
         <button
           onClick={() => onBuy(plan.pack.credits)}
           aria-disabled={loading}
-          className={`mt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+          className={`mt-auto pt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
             loading
               ? "cursor-wait opacity-60"
               : "bg-gradient-to-r from-indigo-500 via-indigo-400 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
@@ -262,7 +262,7 @@ function PackCard({
 
   return (
     <div
-      className={`rounded-3xl p-5 transition ${pack.featured ? "shadow-[0_0_0_2px_rgba(99,102,241,0.3)]" : ""}`}
+      className={`flex flex-col rounded-3xl p-5 transition ${pack.featured ? "shadow-[0_0_0_2px_rgba(99,102,241,0.3)]" : ""}`}
       style={{
         background: pack.featured
           ? "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.05))"
@@ -327,7 +327,7 @@ function PackCard({
       <button
         onClick={() => onBuy(pack.credits)}
         aria-disabled={loading}
-        className={`mt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+        className={`mt-auto pt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
           loading
             ? "cursor-wait opacity-60"
             : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg hover:shadow-indigo-500/20"
