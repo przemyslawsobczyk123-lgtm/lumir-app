@@ -130,6 +130,7 @@ type JobItemSummary = {
   id: number | null;
   itemOrder?: number | null;
   productId: number | null;
+  sourceItem?: unknown;
   marketplaceSlug?: string | null;
   mode?: string | null;
   status: string | null;
@@ -255,6 +256,30 @@ const PRODUCTS_PAGE_COPY = {
     recentExportsProducts: "produktow",
     recentExportsCategory: "Kategoria",
     recentExportsFile: "Plik",
+    importHistoryTab: "Historia Importow",
+    importHistoryTitle: "Historia importow",
+    importHistoryDesc: "Importy z Allegro i Amazon startuja z listy produktow. Tu widzisz status, duplikaty i ostatnie wyniki.",
+    importHistoryActiveTitle: "Import w tle",
+    importHistoryActiveDesc: "Importuje zaznaczone pozycje z marketplace.",
+    importHistoryLatestTitle: "Ostatni wynik",
+    importHistoryRecentTitle: "Ostatnie importy",
+    importHistoryEmpty: "Brak historii importow. Pierwszy import pojawi sie tutaj.",
+    importHistoryLoading: "Laduje historie importow...",
+    importHistoryRefresh: "Odswiez",
+    importHistoryClose: "Zamknij raport",
+    importHistorySelected: "zaznaczone",
+    importHistoryRows: "wierszy",
+    importHistoryModeAi: "Import + AI",
+    importHistoryModeOnly: "Import only",
+    importHistoryImported: "Zaimportowane",
+    importHistoryDuplicates: "Duplikaty",
+    importHistoryFailed: "Bledy",
+    importHistoryTotal: "Razem",
+    importHistoryDuplicateSkips: "Pominiete duplikaty",
+    importHistoryExistingProduct: "Istniejacy produkt",
+    importHistoryOpen: "Otworz",
+    importHistoryNoItems: "Brak szczegolow pozycji.",
+    listLoadError: "Nie udalo sie zaladowac listy produktow.",
   },
   en: {
     focusAll: "Visible",
@@ -311,6 +336,30 @@ const PRODUCTS_PAGE_COPY = {
     recentExportsProducts: "products",
     recentExportsCategory: "Category",
     recentExportsFile: "File",
+    importHistoryTab: "Import history",
+    importHistoryTitle: "Import history",
+    importHistoryDesc: "Allegro and Amazon imports start from the product list. Status, duplicates, and latest results live here.",
+    importHistoryActiveTitle: "Import in background",
+    importHistoryActiveDesc: "Importing selected marketplace rows.",
+    importHistoryLatestTitle: "Latest result",
+    importHistoryRecentTitle: "Recent imports",
+    importHistoryEmpty: "No import history yet. The first import will appear here.",
+    importHistoryLoading: "Loading import history...",
+    importHistoryRefresh: "Refresh",
+    importHistoryClose: "Close report",
+    importHistorySelected: "selected",
+    importHistoryRows: "rows",
+    importHistoryModeAi: "Import + AI",
+    importHistoryModeOnly: "Import only",
+    importHistoryImported: "Imported",
+    importHistoryDuplicates: "Duplicates",
+    importHistoryFailed: "Failed",
+    importHistoryTotal: "Total",
+    importHistoryDuplicateSkips: "Duplicate skips",
+    importHistoryExistingProduct: "Existing product",
+    importHistoryOpen: "Open",
+    importHistoryNoItems: "No item details.",
+    listLoadError: "Could not load product list.",
   },
 } as const;
 
@@ -542,6 +591,7 @@ function normalizeJobItemSummary(raw: Partial<JobItemSummary> | null | undefined
     id: typeof raw.id === "number" ? raw.id : null,
     itemOrder: raw.itemOrder ?? null,
     productId,
+    sourceItem: raw.sourceItem ?? null,
     marketplaceSlug: raw.marketplaceSlug ?? null,
     mode: raw.mode ?? null,
     status: raw.status ?? null,
@@ -630,6 +680,75 @@ function formatDurationLabel(seconds: number | null | undefined) {
   const rem = total % 60;
   if (!minutes) return `${rem}s`;
   return `${minutes}m ${String(rem).padStart(2, "0")}s`;
+}
+
+function normalizeImportProvider(value: unknown): MarketplaceImportProvider | null {
+  const provider = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return provider === "allegro" || provider === "amazon" ? provider : null;
+}
+
+function normalizeImportMode(value: unknown): MarketplaceImportMode | null {
+  const mode = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (mode === "import_only") return "import_only";
+  if (mode === "import_and_ai" || mode === "import_with_ai") return "import_and_ai";
+  return null;
+}
+
+function buildImportReportFromJob(
+  job: JobSummary,
+  items: JobItemSummary[],
+  fallback?: {
+    provider?: MarketplaceImportProvider | null;
+    mode?: MarketplaceImportMode | null;
+    selectedCount?: number | null;
+  }
+): CompletedImportReport {
+  return {
+    job,
+    items,
+    summary: summarizeImportJobItems(items),
+    provider: fallback?.provider ?? normalizeImportProvider(job.marketplaceSlug),
+    mode: fallback?.mode ?? normalizeImportMode(job.mode),
+    selectedCount: fallback?.selectedCount ?? job.requestedItems ?? items.length,
+  };
+}
+
+function getImportHistoryStatusClass(status: string | null) {
+  if (status === "imported" || status === "done") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "duplicate") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "error") return "border-rose-200 bg-rose-50 text-rose-700";
+  return "border-slate-200 bg-white text-slate-600";
+}
+
+function readImportSourceString(sourceItem: unknown, key: string) {
+  if (!sourceItem || typeof sourceItem !== "object" || Array.isArray(sourceItem)) return "";
+  const value = (sourceItem as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getImportHistoryItemLabel(
+  item: JobItemSummary,
+  result: ReturnType<typeof normalizeImportJobResult>,
+  index: number
+) {
+  return result.existingProductTitle
+    || result.message
+    || item.errorMessage
+    || item.currentMessage
+    || readImportSourceString(item.sourceItem, "title")
+    || `row-${index + 1}`;
+}
+
+function getImportHistoryRemoteLabel(
+  item: JobItemSummary,
+  result: ReturnType<typeof normalizeImportJobResult>,
+  index: number
+) {
+  return result.remoteId
+    || readImportSourceString(item.sourceItem, "remoteId")
+    || readImportSourceString(item.sourceItem, "asin")
+    || readImportSourceString(item.sourceItem, "ean")
+    || `row-${index + 1}`;
 }
 
 // ── Import modal ──────────────────────────────────────────────────
@@ -884,6 +1003,262 @@ function formatRecentExportDate(value: string, lang: keyof typeof PRODUCTS_PAGE_
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function ImportJobProgressCard({
+  job,
+  lastLaunch,
+}: {
+  job: JobSummary;
+  lastLaunch: { selectedCount: number } | null;
+}) {
+  const { lang } = useLang();
+  const copy = PRODUCTS_PAGE_COPY[lang];
+  const progress = Math.max(0, Math.min(100, job.progressPercent ?? 0));
+
+  return (
+    <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-sky-900">{copy.importHistoryActiveTitle}</div>
+          <div className="text-xs text-sky-700">
+            {job.currentMessage || copy.importHistoryActiveDesc}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {lastLaunch && (
+            <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
+              {lastLaunch.selectedCount} {copy.importHistoryRows}
+            </span>
+          )}
+          <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
+            {progress}%
+          </span>
+          <span className="rounded-full bg-white/80 px-2 py-1 text-sky-700">
+            {formatDurationLabel(job.elapsedSeconds)}
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-100">
+        <div
+          className="h-full rounded-full bg-sky-500 transition-all"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ImportReportCard({
+  report,
+  latest,
+  onClose,
+  onOpenProduct,
+}: {
+  report: CompletedImportReport;
+  latest?: boolean;
+  onClose?: () => void;
+  onOpenProduct: (productId: number) => void;
+}) {
+  const { lang } = useLang();
+  const copy = PRODUCTS_PAGE_COPY[lang];
+  const modeLabel = report.mode
+    ? (isImportModeWithAi(report.mode) ? copy.importHistoryModeAi : copy.importHistoryModeOnly)
+    : null;
+  const reportDate = report.job.finishedAt || report.job.updatedAt || report.job.createdAt || "";
+
+  return (
+    <div className="rounded-2xl border border-indigo-200 bg-white px-4 py-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">
+            {latest ? copy.importHistoryLatestTitle : copy.importHistoryRecentTitle}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>{report.selectedCount} {copy.importHistorySelected}</span>
+            {report.provider && <span>{report.provider}</span>}
+            {modeLabel && <span>{modeLabel}</span>}
+            {reportDate && <span>{formatRecentExportDate(reportDate, lang)}</span>}
+          </div>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+          >
+            {copy.importHistoryClose}
+          </button>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        {[
+          [copy.importHistoryImported, report.summary.importedCount, "border-emerald-200 bg-emerald-50 text-emerald-700"],
+          [copy.importHistoryDuplicates, report.summary.duplicateCount, "border-amber-200 bg-amber-50 text-amber-700"],
+          [copy.importHistoryFailed, report.summary.failedCount, "border-rose-200 bg-rose-50 text-rose-700"],
+          [copy.importHistoryTotal, report.summary.totalCount, "border-slate-200 bg-slate-50 text-slate-700"],
+        ].map(([label, value, className]) => (
+          <div key={String(label)} className={`rounded-2xl border px-4 py-3 ${className}`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em]">{label}</div>
+            <div className="mt-2 text-2xl font-semibold">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {report.summary.duplicates.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-sm font-semibold text-amber-900">{copy.importHistoryDuplicateSkips}</div>
+          <div className="mt-2 space-y-2">
+            {report.summary.duplicates.slice(0, 5).map((item, index) => (
+              <div key={`${item.remoteId || "duplicate"}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-amber-900">
+                <span className="rounded-full bg-white px-2 py-1 font-mono">{item.remoteId || "remote"}</span>
+                <span>{item.existingProductTitle || copy.importHistoryExistingProduct}</span>
+                {item.existingProductId ? (
+                  <button
+                    onClick={() => onOpenProduct(item.existingProductId as number)}
+                    className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-700 transition hover:bg-amber-100"
+                  >
+                    {copy.importHistoryOpen} #{item.existingProductId}
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 space-y-2">
+        {report.items.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            {copy.importHistoryNoItems}
+          </div>
+        ) : (
+          report.items.slice(0, latest ? 6 : 4).map((item, index) => {
+            const result = normalizeImportJobResult(item.resultJson);
+            const statusLabel = result.status || item.status || "queued";
+            const productId = result.productId ?? item.productId;
+
+            return (
+              <div
+                key={`${item.id ?? index}-${getImportHistoryRemoteLabel(item, result, index)}-${statusLabel}`}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-mono text-slate-600">
+                    {getImportHistoryRemoteLabel(item, result, index)}
+                  </span>
+                  <span className="text-slate-700">
+                    {getImportHistoryItemLabel(item, result, index)}
+                  </span>
+                  {productId ? (
+                    <button
+                      onClick={() => onOpenProduct(productId)}
+                      className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
+                    >
+                      {copy.importHistoryOpen} #{productId}
+                    </button>
+                  ) : null}
+                </div>
+                <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] ${getImportHistoryStatusClass(statusLabel)}`}>
+                  {statusLabel}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ImportHistoryPanel({
+  activeJob,
+  lastLaunch,
+  completedReport,
+  reports,
+  loading,
+  onCloseCompleted,
+  onOpenProduct,
+  onRefresh,
+}: {
+  activeJob: JobSummary | null;
+  lastLaunch: { selectedCount: number } | null;
+  completedReport: CompletedImportReport | null;
+  reports: CompletedImportReport[];
+  loading: boolean;
+  onCloseCompleted: () => void;
+  onOpenProduct: (productId: number) => void;
+  onRefresh: () => void;
+}) {
+  const { lang } = useLang();
+  const copy = PRODUCTS_PAGE_COPY[lang];
+  const recentReports = completedReport
+    ? reports.filter((report) => report.job.id !== completedReport.job.id)
+    : reports;
+
+  return (
+    <div className="mb-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+            {copy.importHistoryTitle}
+          </div>
+          <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
+            {copy.importHistoryDesc}
+          </p>
+        </div>
+        <button
+          onClick={() => { if (!loading) onRefresh(); }}
+          aria-disabled={loading}
+          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            loading
+              ? "bg-slate-200 text-slate-500"
+              : "bg-[var(--text-primary)] text-[var(--bg-card)] hover:opacity-90"
+          }`}
+        >
+          {copy.importHistoryRefresh}
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-4">
+        {activeJob && (
+          <ImportJobProgressCard job={activeJob} lastLaunch={lastLaunch} />
+        )}
+
+        {completedReport && (
+          <ImportReportCard
+            report={completedReport}
+            latest
+            onClose={onCloseCompleted}
+            onOpenProduct={onOpenProduct}
+          />
+        )}
+
+        <div className="space-y-3">
+          <div className="text-sm font-semibold text-[var(--text-primary)]">
+            {copy.importHistoryRecentTitle}
+          </div>
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
+              {copy.importHistoryLoading}
+            </div>
+          ) : recentReports.length === 0 && !activeJob && !completedReport ? (
+            <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
+              {copy.importHistoryEmpty}
+            </div>
+          ) : (
+            recentReports.map((report) => (
+              <ImportReportCard
+                key={report.job.id}
+                report={report}
+                onOpenProduct={onOpenProduct}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function RecentExportsPanel({
@@ -1531,6 +1906,7 @@ export default function ProductsPage() {
   const [products, setProducts]           = useState<Product[]>([]);
   const [total, setTotal]                 = useState(0);
   const [loading, setLoading]             = useState(true);
+  const [listError, setListError]         = useState<string | null>(null);
   const [search, setSearch]               = useState("");
   const [statusFilter, setStatusFilter]   = useState("");
   const [mpFilter, setMpFilter]           = useState("");
@@ -1556,7 +1932,9 @@ export default function ProductsPage() {
   } | null>(null);
   const [retryingFailedBulk, setRetryingFailedBulk] = useState(false);
   const [listingFocus, setListingFocus] = useState<ProductListingFocus>("all");
-  const [activeTab, setActiveTab] = useState<"products" | "exports">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "imports" | "exports">("products");
+  const [recentImportReports, setRecentImportReports] = useState<CompletedImportReport[]>([]);
+  const [recentImportReportsLoading, setRecentImportReportsLoading] = useState(true);
   const [recentExports, setRecentExports] = useState<RecentProductExport[]>([]);
   const [recentExportsLoading, setRecentExportsLoading] = useState(true);
   const [splitSelectionGroups, setSplitSelectionGroups] = useState<ProductExportCategoryGroup[]>([]);
@@ -1577,9 +1955,12 @@ export default function ProductsPage() {
       if (requestSeq.current !== requestId) return;
       setProducts(json.data || []);
       setTotal(json.total || 0);
-    } catch {
+      setListError(null);
+    } catch (err: unknown) {
       if (requestSeq.current !== requestId) return;
       setProducts([]);
+      setTotal(0);
+      setListError(getErrorMessage(err, PRODUCTS_PAGE_COPY.pl.listLoadError));
     } finally {
       if (requestSeq.current === requestId) setLoading(false);
     }
@@ -1640,6 +2021,42 @@ export default function ProductsPage() {
     }
   }, [loadJobItems]);
 
+  const loadRecentImportReports = useCallback(async () => {
+    setRecentImportReportsLoading(true);
+    try {
+      const res = await fetch(`${API}/api/jobs?scope=recent`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac historii importow");
+
+      const importJobs = Array.isArray(json.data)
+        ? json.data
+            .map((item: Partial<JobSummary>) => normalizeJobSummary(item))
+            .filter((job: JobSummary | null): job is JobSummary => Boolean(job))
+            .filter((job: JobSummary) => String(job.type || "").trim() === "products_import_marketplace")
+            .slice(0, 8)
+        : [];
+
+      const reports = await Promise.all(
+        importJobs.map(async (job: JobSummary) => {
+          let items: JobItemSummary[] = [];
+          try {
+            items = await loadJobItems(job.id);
+          } catch {}
+          return buildImportReportFromJob(job, items);
+        })
+      );
+
+      setRecentImportReports(reports);
+    } catch {
+      setRecentImportReports([]);
+    } finally {
+      setRecentImportReportsLoading(false);
+    }
+  }, [loadJobItems]);
+
   const finalizeImportJob = useCallback(async (job: JobSummary) => {
     let items: JobItemSummary[] = [];
 
@@ -1649,21 +2066,20 @@ export default function ProductsPage() {
       console.error("Import report load failed:", getErrorMessage(err, "Nie udalo sie pobrac itemow joba"));
     }
 
-    setCompletedImportReport({
-      job,
-      items,
-      summary: summarizeImportJobItems(items),
+    setCompletedImportReport(buildImportReportFromJob(job, items, {
       provider: lastImportLaunch?.provider ?? null,
       mode: lastImportLaunch?.mode ?? null,
       selectedCount: lastImportLaunch?.selectedCount ?? items.length,
-    });
+    }));
     setActiveImportJob(null);
+    setActiveTab("imports");
 
     await Promise.all([
       loadProducts(search, page, statusFilter, mpFilter),
       loadActiveBackgroundJobs(),
+      loadRecentImportReports(),
     ]);
-  }, [lastImportLaunch, loadActiveBackgroundJobs, loadJobItems, loadProducts, mpFilter, page, search, statusFilter]);
+  }, [lastImportLaunch, loadActiveBackgroundJobs, loadJobItems, loadProducts, loadRecentImportReports, mpFilter, page, search, statusFilter]);
 
   const handleBulkJobChange = useCallback((job: JobSummary | null) => {
     setActiveInlineJob(job);
@@ -1703,6 +2119,10 @@ export default function ProductsPage() {
   useEffect(() => {
     void loadRecentExports();
   }, [loadRecentExports]);
+
+  useEffect(() => {
+    void loadRecentImportReports();
+  }, [loadRecentImportReports]);
 
   useEffect(() => {
     void loadActiveBackgroundJobs();
@@ -2136,7 +2556,9 @@ export default function ProductsPage() {
   const selectedOverBulkLimit = selected.size > 10;
   const exportBusy = exporting || batchExporting;
   const inlineJobActive = !!activeInlineJob && activeInlineJob.status !== "done" && activeInlineJob.status !== "error";
-  const importJobActive = !!activeImportJob && activeImportJob.status !== "done" && activeImportJob.status !== "error";
+  const backgroundImportJob = activeBackgroundJobs.find((entry) => entry.job.type === "products_import_marketplace")?.job ?? null;
+  const visibleImportJob = activeImportJob ?? backgroundImportJob;
+  const importJobActive = !!visibleImportJob && visibleImportJob.status !== "done" && visibleImportJob.status !== "error";
   const productJobEntries = activeBackgroundJobs;
 
   return (
@@ -2149,6 +2571,7 @@ export default function ProductsPage() {
             setLastImportLaunch({ provider, mode, selectedCount });
             setCompletedImportReport(null);
             setShowImport(false);
+            setActiveTab("imports");
             if (nextJob) setActiveImportJob(nextJob);
             void loadActiveBackgroundJobs();
           }}
@@ -2228,6 +2651,21 @@ export default function ProductsPage() {
           {lang === "pl" ? "Produkty" : "Products"}
         </button>
         <button
+          onClick={() => setActiveTab("imports")}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "imports"
+              ? "bg-[var(--text-primary)] text-[var(--bg-card)] shadow-sm"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
+          }`}
+        >
+          {PRODUCTS_PAGE_COPY[lang].importHistoryTab}
+          {(importJobActive || recentImportReports.length > 0) && (
+            <span className="ml-2 rounded-full bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-600">
+              {importJobActive ? "live" : recentImportReports.length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setActiveTab("exports")}
           className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
             activeTab === "exports"
@@ -2243,6 +2681,20 @@ export default function ProductsPage() {
           )}
         </button>
       </div>
+
+      {/* Imports tab */}
+      {activeTab === "imports" && (
+        <ImportHistoryPanel
+          activeJob={importJobActive ? visibleImportJob : null}
+          lastLaunch={lastImportLaunch}
+          completedReport={completedImportReport}
+          reports={recentImportReports}
+          loading={recentImportReportsLoading}
+          onCloseCompleted={() => setCompletedImportReport(null)}
+          onOpenProduct={(productId) => router.push(`/dashboard/products/${productId}`)}
+          onRefresh={() => { void loadRecentImportReports(); }}
+        />
+      )}
 
       {/* Exports tab */}
       {activeTab === "exports" && (
@@ -2261,6 +2713,12 @@ export default function ProductsPage() {
 
       {/* Products tab content */}
       {activeTab === "products" && (<>
+
+      {listError && (
+        <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          {listError}
+        </div>
+      )}
 
       {/* Stats cards */}
       <div className="mb-3 grid gap-3 md:grid-cols-4">
@@ -2562,88 +3020,6 @@ export default function ProductsPage() {
         onOpenGroup={focusExportBatchGroup}
       />
 
-      {completedImportReport && (
-        <div className="mb-3 rounded-2xl border border-indigo-200 bg-white px-4 py-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Import report</div>
-              <div className="mt-1 text-xs text-slate-500">
-                {completedImportReport.selectedCount} selected
-                {completedImportReport.provider ? ` · ${completedImportReport.provider}` : ""}
-                {completedImportReport.mode ? ` · ${isImportModeWithAi(completedImportReport.mode) ? "Import + AI" : "Import only"}` : ""}
-              </div>
-            </div>
-            <button
-              onClick={() => setCompletedImportReport(null)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            {[
-              ["Imported", completedImportReport.summary.importedCount, "border-emerald-200 bg-emerald-50 text-emerald-700"],
-              ["Duplicates", completedImportReport.summary.duplicateCount, "border-amber-200 bg-amber-50 text-amber-700"],
-              ["Failed", completedImportReport.summary.failedCount, "border-rose-200 bg-rose-50 text-rose-700"],
-              ["Total", completedImportReport.summary.totalCount, "border-slate-200 bg-slate-50 text-slate-700"],
-            ].map(([label, value, className]) => (
-              <div key={String(label)} className={`rounded-2xl border px-4 py-3 ${className}`}>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em]">{label}</div>
-                <div className="mt-2 text-2xl font-semibold">{value}</div>
-              </div>
-            ))}
-          </div>
-
-          {completedImportReport.summary.duplicates.length > 0 && (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <div className="text-sm font-semibold text-amber-900">Duplicate skips</div>
-              <div className="mt-2 space-y-2">
-                {completedImportReport.summary.duplicates.slice(0, 5).map((item, index) => (
-                  <div key={`${item.remoteId || "duplicate"}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-amber-900">
-                    <span className="rounded-full bg-white px-2 py-1 font-mono">{item.remoteId || "remote"}</span>
-                    <span>{item.existingProductTitle || "Existing product"}</span>
-                    {item.existingProductId ? (
-                      <button
-                        onClick={() => router.push(`/dashboard/products/${item.existingProductId}`)}
-                        className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-700 transition hover:bg-amber-100"
-                      >
-                        Open #{item.existingProductId}
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 space-y-2">
-            {completedImportReport.items.slice(0, 6).map((item, index) => {
-              const result = normalizeImportJobResult(item.resultJson);
-              const statusLabel = result.status || item.status || "queued";
-              return (
-                <div
-                  key={`${item.id ?? index}-${result.remoteId || statusLabel}`}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-                >
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white px-2 py-1 text-[11px] font-mono text-slate-600">
-                      {result.remoteId || `row-${index + 1}`}
-                    </span>
-                    <span className="text-slate-700">
-                      {result.existingProductTitle || result.message || item.currentMessage || "-"}
-                    </span>
-                  </div>
-                  <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-600">
-                    {statusLabel}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {completedBulkReport && (
         <BulkAIReportPanel
           report={completedBulkReport}
@@ -2654,38 +3030,6 @@ export default function ProductsPage() {
           onClose={() => setCompletedBulkReport(null)}
           getProductLabel={getBulkReportProductLabel}
         />
-      )}
-
-      {importJobActive && activeImportJob && (
-        <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-sky-900">Import in background</div>
-              <div className="text-xs text-sky-700">
-                {activeImportJob.currentMessage || "Importing selected source rows..."}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {lastImportLaunch && (
-                <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
-                  {lastImportLaunch.selectedCount} rows
-                </span>
-              )}
-              <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
-                {Math.max(0, Math.min(100, activeImportJob.progressPercent ?? 0))}%
-              </span>
-              <span className="rounded-full bg-white/80 px-2 py-1 text-sky-700">
-                {formatDurationLabel(activeImportJob.elapsedSeconds)}
-              </span>
-            </div>
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-100">
-            <div
-              className="h-full rounded-full bg-sky-500 transition-all"
-              style={{ width: `${Math.max(0, Math.min(100, activeImportJob.progressPercent ?? 0))}%` }}
-            />
-          </div>
-        </div>
       )}
 
       {inlineJobActive && activeInlineJob && (
