@@ -8,6 +8,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const MP_LABELS: Record<string, string> = {
   mediaexpert: "Media Expert",
   allegro:     "Allegro",
+  amazon:      "Amazon",
   empik:       "Empik",
 };
 
@@ -39,12 +40,74 @@ type ImportSummary = {
   fieldCount?: number;
 };
 
+type AmazonStatus = {
+  configured: boolean;
+  ready: boolean;
+  hasRefreshToken: boolean;
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  marketplaceId: string;
+  endpoint: string;
+  message: string;
+  clientIdSource?: string | null;
+  clientSecretSource?: string | null;
+  refreshTokenSource?: string | null;
+  rotationDeadline?: string | null;
+  rotationDaysLeft?: number | null;
+  rotationDueSoon?: boolean;
+  rotationExpired?: boolean;
+};
+
+type AmazonCatalogItem = {
+  asin?: string;
+  title?: string;
+  brand?: string;
+  ean?: string;
+  images?: string[];
+  descriptionHtml?: string;
+  featureBullets?: string[];
+  parameters?: Record<string, string>;
+  classifications?: string[];
+  productTypes?: string[];
+  marketplaceId?: string;
+};
+
+type AmazonSellerAccount = {
+  id: number;
+  seller_id: number;
+  region: string;
+  selling_partner_id: string;
+  seller_name: string;
+  marketplace_id: string;
+  marketplace_country_code: string | null;
+  expires_at: string;
+  created_at: string;
+  status: string;
+  minutesLeft: number;
+};
+
+type AmazonSellerListing = {
+  sku?: string;
+  asin?: string;
+  title?: string;
+  status?: string;
+  condition?: string;
+  productType?: string;
+  issuesCount?: number;
+};
+
+type AmazonSellerListingsResponse = {
+  items?: AmazonSellerListing[];
+  nextToken?: string | null;
+};
+
 type Favorite = {
   id: number; category_id: number; category_path: string;
   category_name: string; is_pinned: number; use_count: number; last_used_at: string | null;
 };
 
 type Tab = "categories" | "favorites" | "import";
+type AmazonTab = "catalog" | "seller";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function authHeaders() {
@@ -58,6 +121,26 @@ function authHeadersForm() {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function formatAmazonDateTime(value?: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("pl-PL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+function formatMinutesLeft(minutes?: number | null) {
+  if (!Number.isFinite(minutes ?? Number.NaN)) return "—";
+  if ((minutes ?? 0) <= 0) return "wygasło";
+  const safeMinutes = Math.max(0, Math.floor(minutes ?? 0));
+  const hours = Math.floor(safeMinutes / 60);
+  const rest = safeMinutes % 60;
+  if (hours > 0) return `${hours}h ${rest} min`;
+  return `${safeMinutes} min`;
 }
 
 // ── Icons ────────────────────────────────────────────────────────────
@@ -533,28 +616,40 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
           Przetwarzanie...
         </div>
       )}
+
       {state === "success" && result && (
-        <div className="mt-4 bg-green-50 border border-green-200 rounded-2xl p-5">
-          <div className="flex items-center gap-2 text-green-700 font-semibold mb-3">
-            <div className="w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-xs">✓</div>
-            Import zakończony pomyślnie!
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Kategorie",   value: result.catCount   ?? "—" },
-              { label: "Pola",        value: result.fieldCount ?? "—" },
-              { label: "Marketplace", value: label },
-            ].map(({ label: l, value }) => (
-              <div key={l} className="rounded-xl border border-green-100 p-3 text-center" style={{ background: "var(--bg-card)" }}>
-                <div className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{value}</div>
-                <div className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>{l}</div>
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-2xl p-4">
+          <div className="flex gap-3">
+            <div className="text-green-600 mt-0.5">
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10"/><path d="m8 12 2.5 2.5L16 9"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-green-700">Import zakonczony</div>
+              <div className="text-sm text-green-600 mt-0.5">
+                Szablon zostal zapisany i aktywowany dla marketplace {label}.
               </div>
-            ))}
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {[
+                  { label: "Kategorie", value: result.catCount ?? "—" },
+                  { label: "Pola", value: result.fieldCount ?? "—" },
+                  { label: "Marketplace", value: label },
+                ].map(({ label: l, value }) => (
+                  <div key={l} className="rounded-xl border border-green-100 p-3 text-center" style={{ background: "var(--bg-card)" }}>
+                    <div className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{value}</div>
+                    <div className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => { setState("idle"); setResult(null); }}
+                className="mt-3 text-xs text-green-600 hover:text-green-800 underline"
+              >
+                Importuj kolejny plik
+              </button>
+            </div>
           </div>
-          <button onClick={() => { setState("idle"); setResult(null); }}
-            className="mt-3 text-xs text-green-600 hover:text-green-800 underline">
-            Importuj kolejny plik
-          </button>
         </div>
       )}
       {state === "error" && errorMsg && (
@@ -576,10 +671,881 @@ function ImportTab({ slug, label }: { slug: string; label: string }) {
 // ══════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════
+const AMAZON_IMPORT_KEY = "lumir.amazon-import";
+
+function AmazonSourcePage() {
+  const router = useRouter();
+  const [amazonTab, setAmazonTab] = useState<AmazonTab>("catalog");
+  const [status, setStatus] = useState<AmazonStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [query, setQuery] = useState("");
+  const [asin, setAsin] = useState("");
+  const [ean, setEan] = useState("");
+  const [searchResults, setSearchResults] = useState<AmazonCatalogItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [directLoading, setDirectLoading] = useState<"asin" | "ean" | "">("");
+  const [error, setError] = useState("");
+  const [accounts, setAccounts] = useState<AmazonSellerAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState("");
+  const [connectingAmazon, setConnectingAmazon] = useState(false);
+  const [disconnectingAccountId, setDisconnectingAccountId] = useState<number | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [listings, setListings] = useState<AmazonSellerListing[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(false);
+  const [listingsError, setListingsError] = useState("");
+  const [listingsNextToken, setListingsNextToken] = useState<string | null>(null);
+  const [loadingMoreListings, setLoadingMoreListings] = useState(false);
+  const [importingListingKey, setImportingListingKey] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadStatus = async () => {
+      setLoadingStatus(true);
+      try {
+        const res = await fetch(`${API}/api/amazon/status`, { headers: authHeaders() });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udało się pobrać statusu Amazon");
+        if (!cancelled) setStatus(json.data ?? null);
+      } catch (err: unknown) {
+        if (!cancelled) setError(getErrorMessage(err, "Nie udało się pobrać statusu Amazon"));
+      } finally {
+        if (!cancelled) setLoadingStatus(false);
+      }
+    };
+
+    void loadStatus();
+    return () => { cancelled = true; };
+  }, []);
+
+  const loadAccounts = useCallback(async (triggerRefresh = false) => {
+    setAccountsLoading(true);
+    setAccountsError("");
+    try {
+      if (triggerRefresh) {
+        await fetch(`${API}/api/seller/amazon/accounts/refresh`, {
+          method: "POST",
+          headers: authHeaders(),
+        });
+      }
+
+      const res = await fetch(`${API}/api/seller/amazon/accounts`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać kont Amazon");
+
+      const rows = Array.isArray(json.data) ? json.data as AmazonSellerAccount[] : [];
+      setAccounts(rows);
+      setSelectedAccountId((current) => {
+        if (!rows.length) return null;
+        if (current && rows.some((account) => account.id === current)) return current;
+        const validAccount = rows.find((account) => account.status === "valid");
+        return validAccount?.id ?? rows[0].id;
+      });
+    } catch (err: unknown) {
+      setAccounts([]);
+      setSelectedAccountId(null);
+      setAccountsError(getErrorMessage(err, "Nie udało się pobrać kont Amazon"));
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAccounts();
+  }, [loadAccounts]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== "amazon-auth") return;
+      setConnectingAmazon(false);
+      if (event.data.success) {
+        setAmazonTab("seller");
+        setAccountsError("");
+        void loadAccounts(true);
+        return;
+      }
+      setAccountsError(String(event.data.error || "Nie udało się połączyć konta Amazon"));
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [loadAccounts]);
+
+  const missingConfig = status
+    ? [
+        !status.hasClientId && "Brak AMAZON_CLIENT_ID",
+        !status.hasClientSecret && "Brak AMAZON_CLIENT_SECRET",
+        !status.hasRefreshToken && "Brak tokenu odświeżania",
+      ].filter((item): item is string => Boolean(item))
+    : [];
+
+  const importItem = useCallback((item: AmazonCatalogItem) => {
+    localStorage.setItem(AMAZON_IMPORT_KEY, JSON.stringify(item));
+    router.push("/dashboard/new-product");
+  }, [router]);
+
+  const searchAmazon = useCallback(async () => {
+    if (!query.trim() || !status?.ready) return;
+    setSearching(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/api/amazon/catalog/search?q=${encodeURIComponent(query.trim())}`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się wyszukać katalogu Amazon");
+      setSearchResults(Array.isArray(json.data?.items) ? json.data.items : []);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Nie udało się wyszukać katalogu Amazon"));
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [query, status?.ready]);
+
+  const fetchDirectItem = useCallback(async (kind: "asin" | "ean", value: string) => {
+    if (!value.trim() || !status?.ready) return;
+    setDirectLoading(kind);
+    setError("");
+    try {
+      const res = await fetch(`${API}/api/amazon/catalog/item?${kind}=${encodeURIComponent(value.trim())}`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać pozycji Amazon");
+      const item = (json.data ?? null) as AmazonCatalogItem | null;
+      if (!item) throw new Error("Brak danych produktu Amazon");
+      importItem(item);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Nie udało się pobrać pozycji Amazon"));
+    } finally {
+      setDirectLoading("");
+    }
+  }, [status?.ready, importItem]);
+
+  const importSellerListing = useCallback(async (listing: AmazonSellerListing) => {
+    const listingKey = listing.sku || listing.asin || "";
+    if (!listing.asin) {
+      setListingsError("Ten listing nie ma ASIN. Nie mozna pobrac danych katalogowych do draftu.");
+      return;
+    }
+    if (!status?.ready) {
+      setListingsError("Import do draftu wymaga gotowej konfiguracji katalogu Amazon.");
+      return;
+    }
+
+    setImportingListingKey(listingKey);
+    setListingsError("");
+    try {
+      const res = await fetch(`${API}/api/amazon/catalog/item?asin=${encodeURIComponent(listing.asin)}`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac danych katalogowych Amazon");
+
+      const item = (json.data ?? null) as AmazonCatalogItem | null;
+      if (!item) throw new Error("Brak danych katalogowych Amazon dla tego ASIN");
+      importItem(item);
+    } catch (err: unknown) {
+      setListingsError(getErrorMessage(err, "Nie udalo sie pobrac danych katalogowych Amazon"));
+    } finally {
+      setImportingListingKey("");
+    }
+  }, [status?.ready, importItem]);
+
+  const connectSellerAmazon = useCallback(async () => {
+    setConnectingAmazon(true);
+    setAccountsError("");
+    try {
+      const res = await fetch(`${API}/api/seller/amazon/auth/start`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) throw new Error(json.error || "Nie udało się rozpocząć autoryzacji Amazon");
+
+      const popup = window.open(
+        json.url,
+        "amazon-auth",
+        "width=720,height=820,top=80,left=160,toolbar=no,location=yes,status=no,menubar=no"
+      );
+
+      if (!popup) {
+        window.location.assign(json.url);
+        return;
+      }
+    } catch (err: unknown) {
+      setAccountsError(getErrorMessage(err, "Nie udało się rozpocząć autoryzacji Amazon"));
+      setConnectingAmazon(false);
+    }
+  }, []);
+
+  const disconnectSellerAccount = useCallback(async (accountId: number) => {
+    if (!window.confirm("Odłączyć konto Amazon od LuMir?")) return;
+    setDisconnectingAccountId(accountId);
+    setAccountsError("");
+    try {
+      const res = await fetch(`${API}/api/seller/amazon/accounts/${accountId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Nie udało się odłączyć konta Amazon");
+      if (selectedAccountId === accountId) {
+        setListings([]);
+        setListingsNextToken(null);
+      }
+      await loadAccounts();
+    } catch (err: unknown) {
+      setAccountsError(getErrorMessage(err, "Nie udało się odłączyć konta Amazon"));
+    } finally {
+      setDisconnectingAccountId(null);
+    }
+  }, [loadAccounts, selectedAccountId]);
+
+  const loadListings = useCallback(async (pageToken: string | null = null, append = false) => {
+    if (!selectedAccountId) {
+      setListings([]);
+      setListingsNextToken(null);
+      return;
+    }
+
+    if (append) setLoadingMoreListings(true);
+    else setListingsLoading(true);
+
+    setListingsError("");
+    try {
+      const params = new URLSearchParams({
+        accountId: String(selectedAccountId),
+        pageSize: "10",
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+
+      const res = await fetch(`${API}/api/seller/amazon/listings?${params.toString()}`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać listingów Amazon");
+
+      const payload = (json.data ?? {}) as AmazonSellerListingsResponse;
+      const nextItems = Array.isArray(payload.items) ? payload.items : [];
+      setListings((current) => append ? [...current, ...nextItems] : nextItems);
+      setListingsNextToken(payload.nextToken || null);
+    } catch (err: unknown) {
+      if (!append) setListings([]);
+      setListingsError(getErrorMessage(err, "Nie udało się pobrać listingów Amazon"));
+      setListingsNextToken(null);
+    } finally {
+      setListingsLoading(false);
+      setLoadingMoreListings(false);
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (amazonTab !== "seller" || !selectedAccountId) return;
+    void loadListings();
+  }, [amazonTab, selectedAccountId, loadListings]);
+
+  const ready = !!status?.ready;
+  const configured = !!status?.configured;
+  const hasSellerAccounts = accounts.length > 0;
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === selectedAccountId) || null,
+    [accounts, selectedAccountId]
+  );
+  const rotationBadgeLabel = status?.rotationDeadline
+    ? status.rotationExpired
+      ? "Rotacja wygasła"
+      : status.rotationDueSoon
+        ? `Rotacja za ${status.rotationDaysLeft ?? "?"} dni`
+        : `Rotacja do ${formatAmazonDateTime(status.rotationDeadline)}`
+    : "";
+
+  return (
+    <div className="max-w-6xl">
+      <div className="mb-4">
+        <div className="text-xs text-slate-400 mb-1">
+          <span className="cursor-pointer hover:text-slate-600" onClick={() => router.push("/dashboard")}>Dashboard</span>
+          {" / "}Amazon
+        </div>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Amazon</h1>
+          <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
+            Katalog + Seller
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+        Katalog Amazon działa jako źródło do draftu produktu. Konto sprzedawcy służy teraz tylko do podglądu własnych listingów.
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-2 rounded-2xl border p-1" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+        <button
+          onClick={() => setAmazonTab("catalog")}
+          className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+            amazonTab === "catalog"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+          }`}
+        >
+          Katalog Amazon
+        </button>
+        <button
+          onClick={() => setAmazonTab("seller")}
+          className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+            amazonTab === "seller"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+          }`}
+        >
+          Moje listingi Amazon
+        </button>
+      </div>
+
+      {amazonTab === "catalog" && (
+      <div className="space-y-6">
+      <div className="rounded-2xl border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+              Status integracji Amazon
+            </div>
+            <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+              {loadingStatus ? "Ładowanie statusu..." : status?.message || "Sprawdź konfigurację źródła Amazon."}
+            </div>
+            {status && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${configured ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"}`}>
+                  {configured ? "Configured" : "Not configured"}
+                </span>
+                <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                  {ready ? "Ready" : "Not ready"}
+                </span>
+                <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${status.hasRefreshToken ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                  Refresh token {status.hasRefreshToken ? "OK" : "missing"}
+                </span>
+                <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${status.hasClientId ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                  Client ID {status.hasClientId ? "OK" : "missing"}
+                </span>
+                <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${status.hasClientSecret ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                  Client secret {status.hasClientSecret ? "OK" : "missing"}
+                </span>
+                {rotationBadgeLabel && (
+                  <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${
+                    status.rotationExpired
+                      ? "bg-rose-50 text-rose-700 border-rose-200"
+                      : status.rotationDueSoon
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-sky-50 text-sky-700 border-sky-200"
+                  }`}>
+                    {rotationBadgeLabel}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          {status && (
+            <div className="rounded-2xl border px-4 py-3 text-xs min-w-[280px]" style={{ background: "var(--bg-body)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
+              <div className="flex items-center justify-between gap-3">
+                <span>Marketplace ID</span>
+                <span className="font-mono">{status.marketplaceId || "—"}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span>Endpoint</span>
+                <span className="font-mono truncate max-w-[160px]" title={status.endpoint}>{status.endpoint || "—"}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span>Client ID env</span>
+                <span className="font-mono">{status.clientIdSource || "—"}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span>Client secret env</span>
+                <span className="font-mono">{status.clientSecretSource || "—"}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span>Refresh env</span>
+                <span className="font-mono">{status.refreshTokenSource || "—"}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {!loadingStatus && (!status || !ready) ? (
+        <div className="rounded-2xl border p-6" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">!</div>
+            <div className="min-w-0">
+              <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                Amazon nie jest jeszcze gotowy
+              </div>
+              <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                {status?.message || "Brak wymaganej konfiguracji źródła."}
+              </div>
+              {missingConfig.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {missingConfig.map((item) => (
+                    <span key={item} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mt-4 text-sm text-slate-500">
+                Ustaw konfigurację Amazon, potem wróć tutaj do wyszukiwania i importu po ASIN, EAN albo frazie.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="rounded-2xl border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+              <div>
+                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Szukaj w Amazon Catalog
+                </div>
+                <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                  Fraza, ASIN albo EAN. Wynik kliknij, potem wyślij do nowego produktu.
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void searchAmazon(); }}
+                    placeholder="ASIN, EAN lub keyword"
+                    className="w-full rounded-xl border-2 px-3 py-2.5 text-sm outline-none"
+                    style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                  />
+                  <button
+                    onClick={() => void searchAmazon()}
+                    disabled={!query.trim() || searching}
+                    className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                  >
+                    {searching ? "Szukam..." : "Szukaj"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border px-4 py-3" style={{ background: "var(--bg-body)", borderColor: "var(--border-default)" }}>
+                <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
+                  Szybkie pobranie
+                </div>
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
+                      ASIN
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        value={asin}
+                        onChange={(e) => setAsin(e.target.value)}
+                        placeholder="B0..."
+                        className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none"
+                        style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                      />
+                      <button
+                        onClick={() => void fetchDirectItem("asin", asin)}
+                        disabled={!asin.trim() || directLoading !== ""}
+                        className="rounded-xl border border-[var(--border-default)] px-3 py-2 text-xs font-semibold transition disabled:opacity-60"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        {directLoading === "asin" ? "..." : "Pobierz"}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
+                      EAN
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        value={ean}
+                        onChange={(e) => setEan(e.target.value)}
+                        placeholder="590..."
+                        className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none"
+                        style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                      />
+                      <button
+                        onClick={() => void fetchDirectItem("ean", ean)}
+                        disabled={!ean.trim() || directLoading !== ""}
+                        className="rounded-xl border border-[var(--border-default)] px-3 py-2 text-xs font-semibold transition disabled:opacity-60"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        {directLoading === "ean" ? "..." : "Pobierz"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {searchResults.length > 0 && (
+            <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+              <div className="border-b px-5 py-3 text-sm font-semibold" style={{ background: "var(--bg-body)", borderColor: "var(--border-light)", color: "var(--text-primary)" }}>
+                Wyniki katalogu
+              </div>
+              <div className="divide-y" style={{ borderColor: "var(--border-light)" }}>
+                {searchResults.map((item, index) => (
+                  <div key={`${item.asin || item.ean || index}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                        {item.title || "Brak tytułu"}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        {item.brand && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">{item.brand}</span>}
+                        {item.asin && <span className="font-mono">ASIN {item.asin}</span>}
+                        {item.ean && <span className="font-mono">EAN {item.ean}</span>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (item.asin) {
+                          void fetchDirectItem("asin", item.asin);
+                          return;
+                        }
+                        if (item.ean) {
+                          void fetchDirectItem("ean", item.ean);
+                          return;
+                        }
+                        importItem(item);
+                      }}
+                      className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      Użyj w nowym produkcie
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {query.trim() && !searching && searchResults.length === 0 && (
+            <div className="rounded-2xl border px-5 py-6 text-center text-sm" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
+              Brak wyników. Spróbuj ASIN, EAN albo inną frazę.
+            </div>
+          )}
+        </div>
+      )}
+      </div>
+      )}
+
+      {amazonTab === "seller" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Konto sprzedawcy Amazon
+                </div>
+                <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                  Podlacz konto seller, przegladaj listingi, potem jednym kliknieciem sciagaj dane katalogowe do draftu produktu.
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${
+                    hasSellerAccounts
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-slate-100 text-slate-600 border-slate-200"
+                  }`}>
+                    {hasSellerAccounts ? `${accounts.length} konto(a)` : "Brak kont"}
+                  </span>
+                  <span className={`text-[11px] px-2 py-1 rounded-full font-semibold border ${
+                    ready
+                      ? "bg-sky-50 text-sky-700 border-sky-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                  }`}>
+                    {ready ? "Katalog gotowy do importu" : "Katalog niegotowy do importu"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => void loadAccounts(true)}
+                  disabled={accountsLoading || connectingAmazon}
+                  className="rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-60"
+                  style={{ borderColor: "var(--border-default)", color: "var(--text-secondary)" }}
+                >
+                  {accountsLoading ? "Odswiezam..." : "Odswiez konta"}
+                </button>
+                <button
+                  onClick={() => void connectSellerAmazon()}
+                  disabled={connectingAmazon}
+                  className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                >
+                  {connectingAmazon ? "Lacze..." : "Polacz konto Amazon"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {accountsError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {accountsError}
+            </div>
+          )}
+
+          {accountsLoading ? (
+            <div className="rounded-2xl border px-5 py-8 text-center text-sm" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
+              Ladowanie kont Amazon...
+            </div>
+          ) : !hasSellerAccounts ? (
+            <div className="rounded-2xl border p-6" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                  A
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Brak podlaczonego konta Amazon
+                  </div>
+                  <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Kliknij &quot;Polacz konto Amazon&quot;, zaloguj sie w popupie, potem LuMir sam odswiezy liste kont i listingow.
+                  </div>
+                  <div className="mt-4 text-sm text-slate-500">
+                    Jesli popup blokuje sie w przegladarce, flow przejdzie fallbackiem w tym samym oknie.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
+                <div className="rounded-2xl border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                  <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Podlaczone konta
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {accounts.map((account) => {
+                      const isSelected = account.id === selectedAccountId;
+                      const isValid = account.status === "valid";
+                      return (
+                        <div
+                          key={account.id}
+                          className={`rounded-2xl border p-4 transition ${
+                            isSelected ? "border-indigo-300 bg-indigo-50/60" : ""
+                          }`}
+                          style={{ borderColor: isSelected ? undefined : "var(--border-default)", background: isSelected ? undefined : "var(--bg-body)" }}
+                        >
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                                  {account.seller_name || account.selling_partner_id}
+                                </span>
+                                <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${
+                                  isValid
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-rose-50 text-rose-700 border-rose-200"
+                                }`}>
+                                  {isValid ? "Valid" : "Expired"}
+                                </span>
+                                <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold border border-slate-200 bg-slate-50 text-slate-600">
+                                  {account.region.toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="mt-2 grid gap-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                                <div>Seller ID: <span className="font-mono">{account.selling_partner_id}</span></div>
+                                <div>Marketplace: <span className="font-mono">{account.marketplace_id}</span></div>
+                                <div>Kraj: <span className="font-mono">{account.marketplace_country_code || "—"}</span></div>
+                                <div>Wygasa: <span className="font-medium">{formatAmazonDateTime(account.expires_at)}</span></div>
+                                <div>Pozostalo: <span className="font-medium">{formatMinutesLeft(account.minutesLeft)}</span></div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => setSelectedAccountId(account.id)}
+                                className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                                  isSelected
+                                    ? "bg-indigo-600 text-white"
+                                    : "border border-[var(--border-default)]"
+                                }`}
+                                style={isSelected ? undefined : { color: "var(--text-secondary)" }}
+                              >
+                                {isSelected ? "Wybrane" : "Wybierz"}
+                              </button>
+                              <button
+                                onClick={() => void disconnectSellerAccount(account.id)}
+                                disabled={disconnectingAccountId === account.id}
+                                className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition disabled:opacity-60"
+                              >
+                                {disconnectingAccountId === account.id ? "Odlaczam..." : "Odlacz"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                    <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      Aktywne konto do listingow
+                    </div>
+                    <div className="mt-3">
+                      <select
+                        value={selectedAccountId ?? ""}
+                        onChange={(e) => setSelectedAccountId(Number(e.target.value) || null)}
+                        className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                        style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                      >
+                        {accounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {(account.seller_name || account.selling_partner_id)} ({account.region.toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+                      {selectedAccount
+                        ? `LuMir pobiera listingi dla ${selectedAccount.seller_name || selectedAccount.selling_partner_id}.`
+                        : "Wybierz konto, aby zobaczyc listingi."}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                    <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      Import do draftu produktu
+                    </div>
+                    <div className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                      Przycisk przy liscie seller bierze ASIN, pobiera pelne dane z katalogu Amazon, potem przenosi je do /dashboard/new-product pod AI opis i atrybuty.
+                    </div>
+                    {!ready && (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        Katalog Amazon nie jest gotowy. Listingi zobaczysz, ale import do draftu ruszy dopiero po poprawnej konfiguracji source credentials.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                <div className="border-b px-5 py-3" style={{ background: "var(--bg-body)", borderColor: "var(--border-light)" }}>
+                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                        Listingi Amazon
+                      </div>
+                      <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                        {selectedAccount
+                          ? `Konto: ${selectedAccount.seller_name || selectedAccount.selling_partner_id}`
+                          : "Brak wybranego konta"}
+                      </div>
+                    </div>
+                    {selectedAccount && (
+                      <button
+                        onClick={() => void loadListings()}
+                        disabled={listingsLoading || loadingMoreListings}
+                        className="rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:opacity-60"
+                        style={{ borderColor: "var(--border-default)", color: "var(--text-secondary)" }}
+                      >
+                        {listingsLoading ? "Laduje..." : "Odswiez listingi"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {listingsError && (
+                  <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+                    {listingsError}
+                  </div>
+                )}
+
+                {!selectedAccount ? (
+                  <div className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Wybierz konto, aby zobaczyc listingi.
+                  </div>
+                ) : listingsLoading ? (
+                  <div className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Ladowanie listingow Amazon...
+                  </div>
+                ) : listings.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Amazon nie zwrocil jeszcze listingow dla tego konta.
+                  </div>
+                ) : (
+                  <>
+                    <div className="divide-y" style={{ borderColor: "var(--border-light)" }}>
+                      {listings.map((listing, index) => {
+                        const listingKey = listing.sku || listing.asin || `listing-${index}`;
+                        const canImportListing = Boolean(listing.asin) && ready;
+                        const isImporting = importingListingKey === listingKey;
+
+                        return (
+                          <div key={listingKey} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                                {listing.title || listing.sku || listing.asin || "Listing Amazon"}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                                {listing.status && <span className="rounded-full bg-slate-100 px-2 py-0.5">{listing.status}</span>}
+                                {listing.condition && <span className="rounded-full bg-slate-100 px-2 py-0.5">{listing.condition}</span>}
+                                {listing.productType && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">{listing.productType}</span>}
+                                {listing.issuesCount ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">Issues {listing.issuesCount}</span> : null}
+                              </div>
+                              <div className="mt-2 grid gap-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                                <div>SKU: <span className="font-mono">{listing.sku || "—"}</span></div>
+                                <div>ASIN: <span className="font-mono">{listing.asin || "—"}</span></div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => void importSellerListing(listing)}
+                                disabled={!canImportListing || isImporting}
+                                className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                                title={!listing.asin ? "Brak ASIN w liscie seller" : !ready ? "Katalog Amazon niegotowy" : "Importuj do draftu produktu"}
+                              >
+                                {isImporting ? "Import..." : "Uzyj w nowym produkcie"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {listingsNextToken && (
+                      <div className="border-t px-5 py-4 text-center" style={{ borderColor: "var(--border-light)" }}>
+                        <button
+                          onClick={() => void loadListings(listingsNextToken, true)}
+                          disabled={loadingMoreListings}
+                          className="rounded-xl border px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
+                          style={{ borderColor: "var(--border-default)", color: "var(--text-secondary)" }}
+                        >
+                          {loadingMoreListings ? "Laduje wiecej..." : "Pokaz wiecej"}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MarketplaceCategoriesPage() {
   const params = useParams();
+  const slug = params.slug as string;
+  if (slug === "amazon") return <AmazonSourcePage />;
+  return <MarketplaceCategoriesPageInner slug={slug} />;
+}
+
+function MarketplaceCategoriesPageInner({ slug }: { slug: string }) {
   const router = useRouter();
-  const slug   = params.slug as string;
   const label  = MP_LABELS[slug] || slug;
   const isAllegro  = slug === ALLEGRO_SLUG;
   const canImport  = IMPORT_ENABLED.includes(slug);

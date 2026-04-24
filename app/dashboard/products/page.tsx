@@ -25,6 +25,27 @@ import {
   type ProductListingFocus,
   type ProductExportPreflightRow,
 } from "./ui-helpers";
+import { buildExportApiHref } from "../export-api/export-api-helpers";
+import {
+  extractBulkReportItemState,
+  normalizeListAIDraftBadge,
+  type AIDraftStatus,
+  type BulkReportItemState,
+} from "./ai-draft-helpers";
+import { MarketplaceSourceImportModal } from "./MarketplaceSourceImportModal";
+import {
+  getProductImportBadgeState,
+  hasReportableImportJobItem,
+  isImportHubBackgroundJobType,
+  isImportModeWithAi,
+  normalizeImportJobResult,
+  summarizeImportJobItems,
+  type JobWithItems,
+} from "./import-job-helpers";
+import type {
+  MarketplaceImportMode,
+  MarketplaceImportProvider,
+} from "./import-hub-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -72,6 +93,10 @@ type Product = {
   price?: number | null;
   stock?: number | null;
   integrations: string | null;
+  aiDraftsCompact?: unknown[] | null;
+  rawData?: unknown;
+  raw_data?: unknown;
+  importMeta?: unknown;
 };
 type MarketplaceOption = { slug: string; name: string };
 type JobSummary = {
@@ -80,6 +105,9 @@ type JobSummary = {
   status: string;
   marketplaceSlug?: string | null;
   mode?: string | null;
+  useAllegro?: boolean | null;
+  useIcecat?: boolean | null;
+  useAmazon?: boolean | null;
   requestedItems?: number | null;
   processedItems?: number | null;
   successCount?: number | null;
@@ -89,10 +117,59 @@ type JobSummary = {
   currentMessage?: string | null;
   elapsedSeconds?: number | null;
   etaSeconds?: number | null;
+  creditsRequested?: number | null;
+  creditsConsumed?: number | null;
+  idempotencyKey?: string | null;
+  lastError?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
+};
+type JobItemSummary = {
+  id: number | null;
+  itemOrder?: number | null;
+  productId: number | null;
+  marketplaceSlug?: string | null;
+  mode?: string | null;
+  status: string | null;
+  progressPercent?: number | null;
+  currentStep?: string | null;
+  currentMessage?: string | null;
+  attemptCount?: number | null;
+  maxAttempts?: number | null;
+  resultRefId?: number | null;
+  resultJson?: unknown;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  elapsedSeconds?: number | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+type BulkAttentionItem = {
+  item: JobItemSummary;
+  status: "error" | AIDraftStatus;
+  reason: string;
+  resultState: BulkReportItemState | null;
+};
+type CompletedBulkReport = {
+  job: JobSummary;
+  items: JobItemSummary[];
+  failedItems: JobItemSummary[];
+  attentionItems: BulkAttentionItem[];
+  reviewItemCount: number;
+  failedProductIds: number[];
+  successfulProductIds: number[];
+};
+type CompletedImportReport = {
+  job: JobSummary;
+  items: JobItemSummary[];
+  summary: ReturnType<typeof summarizeImportJobItems>;
+  provider: MarketplaceImportProvider | null;
+  mode: MarketplaceImportMode | null;
+  selectedCount: number;
 };
 type RecentProductExport = {
   id: number;
@@ -237,6 +314,37 @@ const PRODUCTS_PAGE_COPY = {
   },
 } as const;
 
+const PRODUCTS_AI_COPY = {
+  pl: {
+    queued: "AI queued",
+    processing: "AI processing",
+    ready: "AI ready",
+    review: "AI review",
+    blocked: "AI blocked",
+    attentionTitle: "Pozycje do sprawdzenia",
+    attentionEmpty: "Brak pozycji wymagajacych uwagi.",
+    reviewCount: "Do review",
+    failedBadge: "Fail",
+    reviewBadge: "Review",
+    blockedBadge: "Blocked",
+    reviewHint: "Pozycje z review zostaly zapisane, ale wymagaja sprawdzenia przed publikacja.",
+  },
+  en: {
+    queued: "AI queued",
+    processing: "AI processing",
+    ready: "AI ready",
+    review: "AI review",
+    blocked: "AI blocked",
+    attentionTitle: "Items needing attention",
+    attentionEmpty: "No items need attention.",
+    reviewCount: "Review",
+    failedBadge: "Failed",
+    reviewBadge: "Review",
+    blockedBadge: "Blocked",
+    reviewHint: "Review items were saved, but still need a manual check before publish.",
+  },
+} as const;
+
 function formatBlockedMixHint(template: string, unmapped: number, attributes: number) {
   return template
     .replace("{unmapped}", String(unmapped))
@@ -262,6 +370,97 @@ function getListingIssueMeta(
     return { label: copy.issuePartial, className: "border-sky-200 bg-sky-50 text-sky-700" };
   }
   return { label: copy.issueReady, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+}
+
+function getAIDraftBadgeMeta(
+  lang: keyof typeof PRODUCTS_AI_COPY,
+  status: AIDraftStatus | "queued" | "processing"
+) {
+  const copy = PRODUCTS_AI_COPY[lang];
+
+  if (status === "queued") {
+    return {
+      label: copy.queued,
+      className: "border-sky-200 bg-sky-50 text-sky-700",
+    };
+  }
+
+  if (status === "processing") {
+    return {
+      label: copy.processing,
+      className: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    };
+  }
+
+  if (status === "ready") {
+    return {
+      label: copy.ready,
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  }
+
+  if (status === "review") {
+    return {
+      label: copy.review,
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    label: copy.blocked,
+    className: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+}
+
+function getImportedBadgeMeta(provider: string | null) {
+  if (provider === "amazon") {
+    return {
+      label: "Imported",
+      className: "border-orange-200 bg-orange-50 text-orange-700",
+    };
+  }
+
+  if (provider === "allegro") {
+    return {
+      label: "Imported",
+      className: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    };
+  }
+
+  return {
+    label: "Imported",
+    className: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+}
+
+function getBulkAttentionMeta(lang: keyof typeof PRODUCTS_AI_COPY, status: "error" | AIDraftStatus) {
+  const copy = PRODUCTS_AI_COPY[lang];
+
+  if (status === "error") {
+    return {
+      label: copy.failedBadge,
+      className: "border-rose-200 bg-rose-50 text-rose-700",
+    };
+  }
+
+  if (status === "review") {
+    return {
+      label: copy.reviewBadge,
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  if (status === "blocked") {
+    return {
+      label: copy.blockedBadge,
+      className: "border-slate-200 bg-slate-100 text-slate-700",
+    };
+  }
+
+  return {
+    label: copy.ready,
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  };
 }
 
 // ── Icons ──────────────────────────────────────────────────────────
@@ -303,6 +502,9 @@ function normalizeJobSummary(raw: Partial<JobSummary> | null | undefined): JobSu
     status: raw.status ?? "queued",
     marketplaceSlug: raw.marketplaceSlug ?? null,
     mode: raw.mode ?? null,
+    useAllegro: raw.useAllegro ?? null,
+    useIcecat: raw.useIcecat ?? null,
+    useAmazon: raw.useAmazon ?? null,
     requestedItems: raw.requestedItems ?? null,
     processedItems: raw.processedItems ?? null,
     successCount: raw.successCount ?? null,
@@ -312,11 +514,113 @@ function normalizeJobSummary(raw: Partial<JobSummary> | null | undefined): JobSu
     currentMessage: raw.currentMessage ?? null,
     elapsedSeconds: raw.elapsedSeconds ?? null,
     etaSeconds: raw.etaSeconds ?? null,
+    creditsRequested: raw.creditsRequested ?? null,
+    creditsConsumed: raw.creditsConsumed ?? null,
+    idempotencyKey: raw.idempotencyKey ?? null,
+    lastError: raw.lastError ?? null,
     createdAt: raw.createdAt ?? null,
     updatedAt: raw.updatedAt ?? null,
     startedAt: raw.startedAt ?? null,
     finishedAt: raw.finishedAt ?? null,
   };
+}
+
+function normalizeJobItemSummary(raw: Partial<JobItemSummary> | null | undefined): JobItemSummary | null {
+  if (!raw) return null;
+  let resultJson: unknown = raw.resultJson ?? null;
+  if (typeof resultJson === "string") {
+    try {
+      resultJson = JSON.parse(resultJson);
+    } catch {
+      resultJson = null;
+    }
+  }
+  const productId = normalizeJobItemProductId(raw.productId);
+  if (!hasReportableImportJobItem({ productId, status: raw.status ?? null, resultJson })) return null;
+
+  return {
+    id: typeof raw.id === "number" ? raw.id : null,
+    itemOrder: raw.itemOrder ?? null,
+    productId,
+    marketplaceSlug: raw.marketplaceSlug ?? null,
+    mode: raw.mode ?? null,
+    status: raw.status ?? null,
+    progressPercent: raw.progressPercent ?? null,
+    currentStep: raw.currentStep ?? null,
+    currentMessage: raw.currentMessage ?? null,
+    attemptCount: raw.attemptCount ?? null,
+    maxAttempts: raw.maxAttempts ?? null,
+    resultRefId: raw.resultRefId ?? null,
+    resultJson,
+    errorCode: raw.errorCode ?? null,
+    errorMessage: raw.errorMessage ?? null,
+    elapsedSeconds: raw.elapsedSeconds ?? null,
+    startedAt: raw.startedAt ?? null,
+    finishedAt: raw.finishedAt ?? null,
+    createdAt: raw.createdAt ?? null,
+    updatedAt: raw.updatedAt ?? null,
+  };
+}
+
+function normalizeJobItemProductId(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function buildCompletedBulkReport(job: JobSummary, items: JobItemSummary[]): CompletedBulkReport {
+  const failedItems = items.filter((item) => item.status === "error" && Number.isInteger(item.productId));
+  const failedProductIds = failedItems
+    .map((item) => item.productId)
+    .filter((productId): productId is number => Number.isInteger(productId));
+  const attentionItems = items.reduce<BulkAttentionItem[]>((acc, item) => {
+    if (item.status === "error") {
+      acc.push({
+        item,
+        status: "error",
+        reason: item.errorMessage || item.currentMessage || job.lastError || "-",
+        resultState: null,
+      });
+      return acc;
+    }
+
+    const resultState = extractBulkReportItemState(item.resultJson);
+    if (!resultState || resultState.status === "ready") return acc;
+
+    acc.push({
+      item,
+      status: resultState.status,
+      reason: resultState.reason || item.currentMessage || job.lastError || "-",
+      resultState,
+    });
+    return acc;
+  }, []);
+  const successfulProductIds = items
+    .filter((item) => {
+      if (item.status !== "done" || !Number.isInteger(item.productId)) return false;
+      const resultState = extractBulkReportItemState(item.resultJson);
+      return !resultState || resultState.status === "ready";
+    })
+    .map((item) => item.productId)
+    .filter((productId): productId is number => Number.isInteger(productId));
+
+  return {
+    job,
+    items,
+    failedItems,
+    attentionItems,
+    reviewItemCount: attentionItems.filter((item) => item.status === "review" || item.status === "blocked").length,
+    failedProductIds,
+    successfulProductIds,
+  };
+}
+
+function formatCreditsLabel(value: number | null | undefined) {
+  if (!Number.isFinite(value ?? NaN) || value == null) return "0.00";
+  return Number(value).toFixed(2);
 }
 
 function formatDurationLabel(seconds: number | null | undefined) {
@@ -329,208 +633,30 @@ function formatDurationLabel(seconds: number | null | undefined) {
 }
 
 // ── Import modal ──────────────────────────────────────────────────
-type ImportState = "idle" | "uploading" | "processing" | "success" | "error";
-
-const MP_LABELS: Record<string, string> = {
-  mediaexpert: "Media Expert",
-  allegro:     "Allegro",
-  empik:       "Empik",
-  decathlon:   "Decathlon",
-  xkom:        "X-Kom",
-};
-
 const LIMIT = 50;
 
-function ImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const { lang } = useLang();
-  const t = translations[lang].products.importModal;
-
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [file, setFile]               = useState<File | null>(null);
-  const [dragging, setDragging]       = useState(false);
-  const [state, setState]             = useState<ImportState>("idle");
-  const [errorMsg, setErrorMsg]       = useState("");
-  const [importId, setImportId]       = useState<number | null>(null);
-  const [detectedMp, setDetectedMp]   = useState<string | null>(null);
-  const [missingCats, setMissingCats] = useState<string[]>([]);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const pickFile = (f: File) => {
-    if (!f.name.match(/\.(xlsx|xls|csv)$/i)) {
-      setErrorMsg(t.acceptedFormats);
-      setState("error"); return;
-    }
-    setFile(f); setState("idle"); setErrorMsg(""); setDetectedMp(null); setMissingCats([]);
-  };
-
-  useEffect(() => {
-    if (!importId) return;
-    const poll = async () => {
-      try {
-        const res  = await fetch(`${API}/api/products/import-status/${importId}`, { headers: authHeaders() });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac statusu importu");
-        const d    = json.data;
-        if (!d) return;
-        if (d.status === "done") {
-          clearInterval(pollRef.current!);
-          if (d.error_message) {
-            try {
-              const parsed = JSON.parse(d.error_message);
-              if (parsed.missingCategories?.length) {
-                setMissingCats(parsed.missingCategories);
-              }
-            } catch {}
-          }
-          setState("success");
-          onSuccess();
-        }
-        if (d.status === "error") {
-          clearInterval(pollRef.current!);
-          setState("error");
-          let msg = d.error_message || "Blad importu";
-          try { const p = JSON.parse(msg); msg = p.hint || msg; } catch {}
-          setErrorMsg(msg);
-        }
-      } catch (err: unknown) {
-        clearInterval(pollRef.current!);
-        setState("error");
-        setErrorMsg(getErrorMessage(err, "Nie udalo sie pobrac statusu importu"));
-      }
+function ImportModal({
+  onClose,
+  onQueued,
+}: {
+  onClose: () => void;
+  onQueued: (payload: {
+    job: {
+      id: string;
+      type?: string | null;
+      status: string;
+      progressPercent?: number | null;
+      currentMessage?: string | null;
+      requestedItems?: number | null;
+      createdAt?: string | null;
     };
-
-    void poll();
-    pollRef.current = setInterval(() => {
-      void poll();
-    }, 1500);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [importId, onSuccess]);
-
-  const doUpload = async () => {
-    if (!file) return;
-    setState("uploading"); setErrorMsg(""); setDetectedMp(null); setMissingCats([]);
-    const fd = new FormData();
-    fd.append("products", file);
-    try {
-      const res  = await fetch(`${API}/api/products/import`, { method: "POST", headers: authHeaders(), body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Blad importu");
-      setImportId(json.importId);
-      setDetectedMp(json.detectedMarketplace || null);
-      setState("processing");
-    } catch (err: unknown) {
-      setState("error");
-      setErrorMsg(getErrorMessage(err));
-    }
-  };
-
-  const mpLabel = detectedMp ? (MP_LABELS[detectedMp] || detectedMp) : null;
-
+    provider: MarketplaceImportProvider;
+    mode: MarketplaceImportMode;
+    selectedCount: number;
+  }) => void;
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-light)]">
-          <h2 className="font-bold text-[var(--text-primary)] text-lg">{t.title}</h2>
-          <button onClick={onClose} className="p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-lg transition">
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          {/* Auto-detect info */}
-          <div className="flex items-start gap-3 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm text-indigo-700">
-            <svg viewBox="0 0 24 24" className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
-              <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
-            </svg>
-            <span>{t.autoDetect}</span>
-          </div>
-
-          {mpLabel && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              {t.detected} {mpLabel}
-            </div>
-          )}
-
-          {missingCats.length > 0 && (
-            <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              <div className="font-semibold mb-1">{t.missingCats}</div>
-              <ul className="list-disc pl-4 space-y-0.5">
-                {missingCats.slice(0, 5).map(c => <li key={c} className="font-mono text-xs">{c}</li>)}
-                {missingCats.length > 5 && <li className="text-xs">...{t.missingCatsMore && `i ${missingCats.length - 5} ${t.missingCatsMore}`}</li>}
-              </ul>
-              <div className="mt-2 text-xs text-amber-700">
-                {t.missingCatsHint}
-              </div>
-            </div>
-          )}
-
-          {/* Drop zone */}
-          <div
-            onDragOver={e => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) pickFile(f); }}
-            onClick={() => fileRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-              dragging ? "border-indigo-400 bg-indigo-500/10"
-              : file   ? "border-green-400 bg-green-500/10"
-              :          "border-[var(--border-default)] hover:border-indigo-300 hover:bg-[var(--bg-body)]"
-            }`}>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
-              onChange={e => { if (e.target.files?.[0]) pickFile(e.target.files[0]); }} />
-            {file ? (
-              <div className="text-sm font-semibold text-green-600">
-                {file.name} &middot; {(file.size / 1024).toFixed(0)} KB
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
-                <UploadIcon />
-                <div className="text-sm">{t.dragOrClick}</div>
-                <div className="text-xs">.xlsx &middot; .xls &middot; .csv</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="px-6 py-4 border-t border-[var(--border-light)] bg-[var(--bg-body)]">
-          {state === "idle" && (
-            <button onClick={doUpload} disabled={!file}
-              className="w-full py-3 rounded-xl font-semibold text-white text-sm
-                bg-gradient-to-r from-indigo-500 to-purple-500
-                disabled:opacity-40 shadow-md hover:shadow-lg transition-all">
-              {t.importBtn}
-            </button>
-          )}
-          {(state === "uploading" || state === "processing") && (
-            <div className="w-full py-3 text-center text-sm text-indigo-600 font-medium flex items-center justify-center gap-2">
-              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-              {state === "processing" ? `${t.processing}${mpLabel ? ` (${mpLabel})` : ""}...` : t.uploading}
-            </div>
-          )}
-          {state === "success" && (
-            <button onClick={onClose}
-              className="w-full py-3 rounded-xl font-semibold text-white text-sm bg-green-500 hover:bg-green-600 transition">
-              {t.doneBtn}
-            </button>
-          )}
-          {state === "error" && (
-            <div className="space-y-2">
-              <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/25 rounded-xl p-3">{errorMsg}</div>
-              <button onClick={() => { setState("idle"); setFile(null); setErrorMsg(""); setDetectedMp(null); }}
-                className="w-full py-2 rounded-xl text-[var(--text-secondary)] text-sm bg-[var(--bg-input)] hover:bg-[var(--bg-input-alt)] transition">
-                {t.retry}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <MarketplaceSourceImportModal onClose={onClose} onQueued={onQueued} />
   );
 }
 
@@ -974,6 +1100,157 @@ function ExportBatchReportPanel({
   );
 }
 
+function BulkAIReportPanel({
+  report,
+  retrying,
+  onRetryFailed,
+  onOpenProduct,
+  onClearSelection,
+  onClose,
+  getProductLabel,
+}: {
+  report: CompletedBulkReport;
+  retrying: boolean;
+  onRetryFailed: () => void;
+  onOpenProduct: (productId: number) => void;
+  onClearSelection: () => void;
+  onClose: () => void;
+  getProductLabel: (productId: number) => string;
+}) {
+  const { lang } = useLang();
+  const t = translations[lang].products.bulkReport;
+  const aiCopy = PRODUCTS_AI_COPY[lang];
+  const attentionPreview = report.attentionItems.slice(0, 5);
+  const hiddenAttentionCount = Math.max(0, report.attentionItems.length - attentionPreview.length);
+
+  return (
+    <div className="mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+            {t.title}
+          </div>
+          <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
+            {t.desc}
+          </p>
+          {report.failedProductIds.length > 0 && (
+            <p className="mt-2 text-xs text-amber-700">
+              {t.failedReady}
+            </p>
+          )}
+          {report.reviewItemCount > 0 && (
+            <p className="mt-2 text-xs text-amber-700">
+              {aiCopy.reviewHint}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {report.failedProductIds.length > 0 && (
+            <button
+              onClick={onRetryFailed}
+              disabled={retrying}
+              className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                retrying
+                  ? "cursor-not-allowed bg-indigo-200 text-indigo-600"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              }`}
+            >
+              {retrying ? t.retrying : `${t.retryFailed} (${report.failedProductIds.length})`}
+            </button>
+          )}
+          <button
+            onClick={onClearSelection}
+            className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+          >
+            {t.clearSelection}
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+          >
+            {t.hide}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">{t.success}</div>
+          <div className="mt-2 text-3xl font-semibold text-emerald-800">{report.job.successCount ?? report.successfulProductIds.length}</div>
+        </div>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-700">{t.failed}</div>
+          <div className="mt-2 text-3xl font-semibold text-rose-800">{report.job.errorCount ?? report.failedProductIds.length}</div>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">{aiCopy.reviewCount}</div>
+          <div className="mt-2 text-3xl font-semibold text-amber-800">{report.reviewItemCount}</div>
+        </div>
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">{t.credits}</div>
+          <div className="mt-2 text-2xl font-semibold text-sky-800">
+            {formatCreditsLabel(report.job.creditsConsumed)} / {formatCreditsLabel(report.job.creditsRequested)}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+          {aiCopy.attentionTitle}
+        </div>
+
+        {report.attentionItems.length === 0 ? (
+          <div className="mt-3 text-sm text-[var(--text-secondary)]">{aiCopy.attentionEmpty}</div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {attentionPreview.map((entry) => {
+              const item = entry.item;
+              const badge = getBulkAttentionMeta(lang, entry.status);
+
+              return (
+              <div
+                key={`${item.productId}-${item.itemOrder ?? "x"}`}
+                className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-white p-4 lg:flex-row lg:items-start lg:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-[var(--text-primary)]">
+                      {getProductLabel(item.productId || 0)}
+                    </div>
+                    <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-mono text-[var(--text-tertiary)]">
+                    <span>#{item.productId}</span>
+                    {item.marketplaceSlug && <span>{item.marketplaceSlug}</span>}
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-rose-700">
+                    {entry.reason}
+                  </div>
+                </div>
+                {item.productId != null && (
+                  <button
+                    onClick={() => onOpenProduct(item.productId as number)}
+                    className="shrink-0 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+                  >
+                    {t.openProduct}
+                  </button>
+                )}
+              </div>
+            )})}
+            {hiddenAttentionCount > 0 && (
+              <div className="text-xs text-[var(--text-tertiary)]">
+                +{hiddenAttentionCount} {t.moreFailed}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BulkAIModal({
   count,
   selectedIds,
@@ -996,6 +1273,7 @@ function BulkAIModal({
   const [mode, setMode] = useState<"all" | "description" | "attributes">("all");
   const [useAllegro, setUseAllegro] = useState(true);
   const [useIcecat, setUseIcecat] = useState(true);
+  const [useAmazon, setUseAmazon] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [job, setJob] = useState<JobSummary | null>(null);
@@ -1021,6 +1299,7 @@ function BulkAIModal({
         if (nextJob.status === "done" || nextJob.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
+          onClose();
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -1041,7 +1320,7 @@ function BulkAIModal({
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [job?.id, onJobChange]);
+  }, [job?.id, onClose, onJobChange]);
 
   const jobActive = !!job && job.status !== "done" && job.status !== "error";
   const submitBlocked = submitting || jobActive || !marketplaceSlug || selectedIds.length === 0 || selectedIds.length > 10;
@@ -1056,12 +1335,13 @@ function BulkAIModal({
       const res = await fetch(`${API}/api/products/generate-ai-bulk`, {
         method: "POST",
         headers: authHeadersJSON(),
-        body: JSON.stringify({
+          body: JSON.stringify({
           productIds: selectedIds,
           marketplaceSlug,
           mode,
           useAllegro,
           useIcecat,
+          useAmazon,
         }),
       });
       if (!res.ok) throw new Error(await getResponseErrorMessage(res, "Nie udalo sie wygenerowac draftow AI"));
@@ -1143,6 +1423,16 @@ function BulkAIModal({
                 }`}
               >
                 Allegro {useAllegro ? "ON" : "OFF"}
+              </button>
+              <button
+                onClick={() => setUseAmazon(v => !v)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+                  useAmazon
+                    ? "bg-orange-100 border-orange-300 text-orange-700"
+                    : "border-[var(--border-default)] text-[var(--text-secondary)]"
+                }`}
+              >
+                Amazon {useAmazon ? "ON" : "OFF"}
               </button>
               <button
                 onClick={() => setUseIcecat(v => !v)}
@@ -1255,6 +1545,16 @@ export default function ProductsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting]           = useState(false);
   const [activeInlineJob, setActiveInlineJob] = useState<JobSummary | null>(null);
+  const [completedBulkReport, setCompletedBulkReport] = useState<CompletedBulkReport | null>(null);
+  const [activeImportJob, setActiveImportJob] = useState<JobSummary | null>(null);
+  const [completedImportReport, setCompletedImportReport] = useState<CompletedImportReport | null>(null);
+  const [activeBackgroundJobs, setActiveBackgroundJobs] = useState<JobWithItems[]>([]);
+  const [lastImportLaunch, setLastImportLaunch] = useState<{
+    provider: MarketplaceImportProvider;
+    mode: MarketplaceImportMode;
+    selectedCount: number;
+  } | null>(null);
+  const [retryingFailedBulk, setRetryingFailedBulk] = useState(false);
   const [listingFocus, setListingFocus] = useState<ProductListingFocus>("all");
   const [activeTab, setActiveTab] = useState<"products" | "exports">("products");
   const [recentExports, setRecentExports] = useState<RecentProductExport[]>([]);
@@ -1263,6 +1563,7 @@ export default function ProductsPage() {
   const [exportBatchGroups, setExportBatchGroups] = useState<ProductExportBatchGroup[]>([]);
   const [batchExporting, setBatchExporting] = useState(false);
   const inlineJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const importJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestSeq = useRef(0);
 
   const loadProducts = useCallback(async (s: string, p: number, st: string, mp: string) => {
@@ -1298,6 +1599,102 @@ export default function ProductsPage() {
     }
   }, []);
 
+  const loadJobItems = useCallback(async (jobId: string) => {
+    const res = await fetch(`${API}/api/jobs/${jobId}/items`, {
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac itemow joba");
+    return Array.isArray(json.data)
+      ? json.data.map((item: Partial<JobItemSummary>) => normalizeJobItemSummary(item)).filter(Boolean) as JobItemSummary[]
+      : [];
+  }, []);
+
+  const loadActiveBackgroundJobs = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/jobs?scope=active`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac aktywnych jobow");
+
+      const relevantJobs = Array.isArray(json.data)
+        ? json.data
+            .map((item: Partial<JobSummary>) => normalizeJobSummary(item))
+            .filter((job: JobSummary | null): job is JobSummary => Boolean(job))
+            .filter((job: JobSummary) => isImportHubBackgroundJobType(job.type))
+        : [];
+
+      const entries = await Promise.all(
+        relevantJobs.map(async (job: JobSummary) => ({
+          job,
+          items: await loadJobItems(job.id),
+        }))
+      );
+
+      setActiveBackgroundJobs(entries);
+    } catch {
+      setActiveBackgroundJobs([]);
+    }
+  }, [loadJobItems]);
+
+  const finalizeImportJob = useCallback(async (job: JobSummary) => {
+    let items: JobItemSummary[] = [];
+
+    try {
+      items = await loadJobItems(job.id);
+    } catch (err: unknown) {
+      console.error("Import report load failed:", getErrorMessage(err, "Nie udalo sie pobrac itemow joba"));
+    }
+
+    setCompletedImportReport({
+      job,
+      items,
+      summary: summarizeImportJobItems(items),
+      provider: lastImportLaunch?.provider ?? null,
+      mode: lastImportLaunch?.mode ?? null,
+      selectedCount: lastImportLaunch?.selectedCount ?? items.length,
+    });
+    setActiveImportJob(null);
+
+    await Promise.all([
+      loadProducts(search, page, statusFilter, mpFilter),
+      loadActiveBackgroundJobs(),
+    ]);
+  }, [lastImportLaunch, loadActiveBackgroundJobs, loadJobItems, loadProducts, mpFilter, page, search, statusFilter]);
+
+  const handleBulkJobChange = useCallback((job: JobSummary | null) => {
+    setActiveInlineJob(job);
+    if (!job) {
+      setCompletedBulkReport(null);
+      return;
+    }
+
+    if (job.status === "queued" || job.status === "processing") {
+      setCompletedBulkReport(null);
+      return;
+    }
+
+    if (job.type !== "ai_generate_bulk") return;
+
+    void (async () => {
+      let items: JobItemSummary[] = [];
+      try {
+        items = await loadJobItems(job.id);
+      } catch (err: unknown) {
+        console.error("Bulk AI report load failed:", getErrorMessage(err, "Nie udalo sie pobrac itemow joba"));
+      }
+
+      const report = buildCompletedBulkReport(job, items);
+      setCompletedBulkReport(report);
+      setShowBulkAI(false);
+      await loadProducts(search, page, statusFilter, mpFilter);
+      setSelected(new Set(report.failedProductIds));
+    })();
+  }, [loadJobItems, loadProducts, mpFilter, page, search, statusFilter]);
+
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json()).then(j => { if (j.data) setMarketplaces(j.data); }).catch(() => {});
@@ -1306,6 +1703,16 @@ export default function ProductsPage() {
   useEffect(() => {
     void loadRecentExports();
   }, [loadRecentExports]);
+
+  useEffect(() => {
+    void loadActiveBackgroundJobs();
+
+    const poll = setInterval(() => {
+      void loadActiveBackgroundJobs();
+    }, 4000);
+
+    return () => clearInterval(poll);
+  }, [loadActiveBackgroundJobs]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -1357,10 +1764,9 @@ export default function ProductsPage() {
         if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac statusu joba");
         const nextJob = normalizeJobSummary(json.data);
         if (!nextJob || cancelled) return;
-        setActiveInlineJob(nextJob);
+        handleBulkJobChange(nextJob);
         if (nextJob.status === "done" || nextJob.status === "error") {
           stopPolling();
-          await loadProducts(search, page, statusFilter, mpFilter);
         }
       } catch (err: unknown) {
         if (cancelled) return;
@@ -1382,7 +1788,54 @@ export default function ProductsPage() {
       cancelled = true;
       stopPolling();
     };
-  }, [activeInlineJob?.id, activeInlineJob?.status, loadProducts, mpFilter, page, search, statusFilter]);
+  }, [activeInlineJob?.id, activeInlineJob?.status, handleBulkJobChange]);
+
+  useEffect(() => {
+    if (!activeImportJob?.id) return;
+
+    let cancelled = false;
+    const stopPolling = () => {
+      if (importJobPollRef.current) clearInterval(importJobPollRef.current);
+      importJobPollRef.current = null;
+    };
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/jobs/${activeImportJob.id}`, { headers: authHeaders(), cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac statusu joba importu");
+        const nextJob = normalizeJobSummary(json.data);
+        if (!nextJob || cancelled) return;
+
+        if (nextJob.status === "done" || nextJob.status === "error") {
+          stopPolling();
+          await finalizeImportJob(nextJob);
+          return;
+        }
+
+        setActiveImportJob(nextJob);
+        await loadActiveBackgroundJobs();
+      } catch (err: unknown) {
+        if (cancelled) return;
+        stopPolling();
+        setActiveImportJob((current) => current ? {
+          ...current,
+          status: "error",
+          currentMessage: getErrorMessage(err, "Nie udalo sie pobrac statusu joba importu"),
+        } : current);
+      }
+    };
+
+    void poll();
+    importJobPollRef.current = setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
+  }, [activeImportJob?.id, finalizeImportJob, loadActiveBackgroundJobs]);
 
   const handleDelete = async (id: number) => {
     if (!confirm(t.deleteProduct + "?")) return;
@@ -1615,12 +2068,54 @@ export default function ProductsPage() {
     setOpenMenu(null);
   }, [batchExporting]);
 
+  const retryFailedBulkReport = useCallback(async () => {
+    if (!completedBulkReport || completedBulkReport.failedProductIds.length === 0 || retryingFailedBulk) {
+      return;
+    }
+
+    const marketplaceSlug = String(completedBulkReport.job.marketplaceSlug || "").trim();
+    if (!marketplaceSlug) {
+      alert("Brak marketplace do retry bulk AI");
+      return;
+    }
+
+    setRetryingFailedBulk(true);
+    try {
+      const res = await fetch(`${API}/api/products/generate-ai-bulk`, {
+        method: "POST",
+        headers: authHeadersJSON(),
+          body: JSON.stringify({
+          productIds: completedBulkReport.failedProductIds,
+          marketplaceSlug,
+          mode: completedBulkReport.job.mode || "all",
+          useAllegro: completedBulkReport.job.useAllegro ?? true,
+          useIcecat: completedBulkReport.job.useIcecat ?? true,
+          useAmazon: completedBulkReport.job.useAmazon ?? false,
+        }),
+      });
+      if (!res.ok) throw new Error(await getResponseErrorMessage(res, "Nie udalo sie powtorzyc bulk AI"));
+      const json = await res.json();
+      const nextJob = normalizeJobSummary(json.data?.job);
+      setSelected(new Set(completedBulkReport.failedProductIds));
+      handleBulkJobChange(nextJob);
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, "Nie udalo sie powtorzyc bulk AI"));
+    } finally {
+      setRetryingFailedBulk(false);
+    }
+  }, [completedBulkReport, handleBulkJobChange, retryingFailedBulk]);
+
+  const getBulkReportProductLabel = useCallback((productId: number) => {
+    const match = products.find((product) => product.id === productId);
+    const title = String(match?.title || "").trim();
+    return title || `${t.bulkReport.unnamedProduct} #${productId}`;
+  }, [products, t.bulkReport.unnamedProduct]);
+
   const visibleProducts = filterProductsByListingFocus(products, listingFocus);
   const listingStats = getProductListingStats(products);
   const totalPages  = Math.ceil(total / LIMIT);
   const allChecked  = visibleProducts.length > 0 && visibleProducts.every((product) => selected.has(product.id));
   const someChecked = visibleProducts.some((product) => selected.has(product.id)) && !allChecked;
-  const inlineJobActive = !!activeInlineJob && activeInlineJob.status !== "done" && activeInlineJob.status !== "error";
   const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter);
   const focusLabels: Record<ProductListingFocus, string> = {
     all: PRODUCTS_PAGE_COPY[lang].focusAll,
@@ -1640,13 +2135,23 @@ export default function ProductsPage() {
   const selectedReadyCount = exportSummary.ready;
   const selectedOverBulkLimit = selected.size > 10;
   const exportBusy = exporting || batchExporting;
+  const inlineJobActive = !!activeInlineJob && activeInlineJob.status !== "done" && activeInlineJob.status !== "error";
+  const importJobActive = !!activeImportJob && activeImportJob.status !== "done" && activeImportJob.status !== "error";
+  const productJobEntries = activeBackgroundJobs;
 
   return (
     <div>
       {showImport && (
         <ImportModal
           onClose={() => setShowImport(false)}
-          onSuccess={() => { setShowImport(false); loadProducts(search, page, statusFilter, mpFilter); }}
+          onQueued={({ job, provider, mode, selectedCount }) => {
+            const nextJob = normalizeJobSummary(job);
+            setLastImportLaunch({ provider, mode, selectedCount });
+            setCompletedImportReport(null);
+            setShowImport(false);
+            if (nextJob) setActiveImportJob(nextJob);
+            void loadActiveBackgroundJobs();
+          }}
         />
       )}
 
@@ -1685,7 +2190,7 @@ export default function ProductsPage() {
           selectedIds={[...selected]}
           marketplaces={marketplaces}
           defaultMarketplace={mpFilter}
-          onJobChange={setActiveInlineJob}
+          onJobChange={(job) => { handleBulkJobChange(job); }}
           onClose={() => setShowBulkAI(false)}
         />
       )}
@@ -1928,6 +2433,15 @@ export default function ProductsPage() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {mpFilter && (
+                <button
+                  onClick={() => router.push(buildExportApiHref({ marketplaceSlug: mpFilter, productIds: [...selected] }))}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
+                >
+                  Otworz w Export API
+                </button>
+              )}
+
               {mpFilter && selectedCategoryGroups.length > 1 && splitSelectionGroups.length === 0 && (
                 <button
                   onClick={() => startSplitSelection(selectedCategoryGroups)}
@@ -2047,6 +2561,132 @@ export default function ProductsPage() {
         onClose={clearExportBatchReport}
         onOpenGroup={focusExportBatchGroup}
       />
+
+      {completedImportReport && (
+        <div className="mb-3 rounded-2xl border border-indigo-200 bg-white px-4 py-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Import report</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {completedImportReport.selectedCount} selected
+                {completedImportReport.provider ? ` · ${completedImportReport.provider}` : ""}
+                {completedImportReport.mode ? ` · ${isImportModeWithAi(completedImportReport.mode) ? "Import + AI" : "Import only"}` : ""}
+              </div>
+            </div>
+            <button
+              onClick={() => setCompletedImportReport(null)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            {[
+              ["Imported", completedImportReport.summary.importedCount, "border-emerald-200 bg-emerald-50 text-emerald-700"],
+              ["Duplicates", completedImportReport.summary.duplicateCount, "border-amber-200 bg-amber-50 text-amber-700"],
+              ["Failed", completedImportReport.summary.failedCount, "border-rose-200 bg-rose-50 text-rose-700"],
+              ["Total", completedImportReport.summary.totalCount, "border-slate-200 bg-slate-50 text-slate-700"],
+            ].map(([label, value, className]) => (
+              <div key={String(label)} className={`rounded-2xl border px-4 py-3 ${className}`}>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em]">{label}</div>
+                <div className="mt-2 text-2xl font-semibold">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {completedImportReport.summary.duplicates.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="text-sm font-semibold text-amber-900">Duplicate skips</div>
+              <div className="mt-2 space-y-2">
+                {completedImportReport.summary.duplicates.slice(0, 5).map((item, index) => (
+                  <div key={`${item.remoteId || "duplicate"}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-amber-900">
+                    <span className="rounded-full bg-white px-2 py-1 font-mono">{item.remoteId || "remote"}</span>
+                    <span>{item.existingProductTitle || "Existing product"}</span>
+                    {item.existingProductId ? (
+                      <button
+                        onClick={() => router.push(`/dashboard/products/${item.existingProductId}`)}
+                        className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-700 transition hover:bg-amber-100"
+                      >
+                        Open #{item.existingProductId}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 space-y-2">
+            {completedImportReport.items.slice(0, 6).map((item, index) => {
+              const result = normalizeImportJobResult(item.resultJson);
+              const statusLabel = result.status || item.status || "queued";
+              return (
+                <div
+                  key={`${item.id ?? index}-${result.remoteId || statusLabel}`}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                >
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-white px-2 py-1 text-[11px] font-mono text-slate-600">
+                      {result.remoteId || `row-${index + 1}`}
+                    </span>
+                    <span className="text-slate-700">
+                      {result.existingProductTitle || result.message || item.currentMessage || "-"}
+                    </span>
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-600">
+                    {statusLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {completedBulkReport && (
+        <BulkAIReportPanel
+          report={completedBulkReport}
+          retrying={retryingFailedBulk}
+          onRetryFailed={() => { void retryFailedBulkReport(); }}
+          onOpenProduct={(productId) => router.push(`/dashboard/products/${productId}`)}
+          onClearSelection={() => setSelected(new Set())}
+          onClose={() => setCompletedBulkReport(null)}
+          getProductLabel={getBulkReportProductLabel}
+        />
+      )}
+
+      {importJobActive && activeImportJob && (
+        <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-sky-900">Import in background</div>
+              <div className="text-xs text-sky-700">
+                {activeImportJob.currentMessage || "Importing selected source rows..."}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {lastImportLaunch && (
+                <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
+                  {lastImportLaunch.selectedCount} rows
+                </span>
+              )}
+              <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
+                {Math.max(0, Math.min(100, activeImportJob.progressPercent ?? 0))}%
+              </span>
+              <span className="rounded-full bg-white/80 px-2 py-1 text-sky-700">
+                {formatDurationLabel(activeImportJob.elapsedSeconds)}
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-100">
+            <div
+              className="h-full rounded-full bg-sky-500 transition-all"
+              style={{ width: `${Math.max(0, Math.min(100, activeImportJob.progressPercent ?? 0))}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {inlineJobActive && activeInlineJob && (
         <div className="mb-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
@@ -2232,6 +2872,14 @@ export default function ProductsPage() {
                 const statusLabel = getStatusLabel(t, p.status);
                 const listingState = getProductListingState(p);
                 const listingIssue = getListingIssueMeta(lang, listingState);
+                const importState = getProductImportBadgeState({
+                  id: p.id,
+                  rawData: p.rawData ?? p.raw_data ?? null,
+                  importMeta: p.importMeta ?? null,
+                }, productJobEntries);
+                const aiBadge = normalizeListAIDraftBadge(p.aiDraftsCompact, mpFilter || undefined);
+                const aiBadgeMeta = getAIDraftBadgeMeta(lang, importState.aiStatus ?? aiBadge?.status ?? "blocked");
+                const importedBadgeMeta = importState.isImported ? getImportedBadgeMeta(importState.provider) : null;
 
                 return (
                   <div
@@ -2286,6 +2934,14 @@ export default function ProductsPage() {
                               {p.brand}
                             </span>
                           )}
+                          {importedBadgeMeta && (
+                            <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${importedBadgeMeta.className}`}>
+                              {importedBadgeMeta.label}
+                            </span>
+                          )}
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${aiBadgeMeta.className}`}>
+                            {aiBadgeMeta.label}
+                          </span>
                           <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${listingIssue.className}`}>
                             {listingIssue.label}
                           </span>
@@ -2356,6 +3012,14 @@ export default function ProductsPage() {
                 const statusLabel = getStatusLabel(t, p.status);
                 const listingState = getProductListingState(p);
                 const listingIssue = getListingIssueMeta(lang, listingState);
+                const importState = getProductImportBadgeState({
+                  id: p.id,
+                  rawData: p.rawData ?? p.raw_data ?? null,
+                  importMeta: p.importMeta ?? null,
+                }, productJobEntries);
+                const aiBadge = normalizeListAIDraftBadge(p.aiDraftsCompact, mpFilter || undefined);
+                const aiBadgeMeta = getAIDraftBadgeMeta(lang, importState.aiStatus ?? aiBadge?.status ?? "blocked");
+                const importedBadgeMeta = importState.isImported ? getImportedBadgeMeta(importState.provider) : null;
 
                 return (
                   <div key={p.id}
@@ -2415,6 +3079,14 @@ export default function ProductsPage() {
                             {p.brand}
                           </span>
                         )}
+                        {importedBadgeMeta && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${importedBadgeMeta.className}`}>
+                            {importedBadgeMeta.label}
+                          </span>
+                        )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${aiBadgeMeta.className}`}>
+                          {aiBadgeMeta.label}
+                        </span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${listingIssue.className}`}>
                           {listingIssue.label}
                         </span>

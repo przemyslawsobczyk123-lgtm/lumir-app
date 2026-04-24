@@ -3,9 +3,49 @@
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { UnoptimizedRemoteImage } from "../../_components/UnoptimizedRemoteImage";
+import { AmazonImportModal } from "../../_components/AmazonImportModal";
 import { canAutoAssignCategory, getDraftCategoryHint } from "../ui-helpers";
+import {
+  normalizeDraftQualitySummary,
+  type AIDraftStatus,
+  type DraftQualitySummary,
+} from "../ai-draft-helpers";
+import { ProductAiReviewCard } from "./ProductAiReviewCard";
+import { ProductPublicationChecklistCard } from "./ProductPublicationChecklistCard";
+import { AllegroOfferUpdateCard } from "./AllegroOfferUpdateCard";
+import { AmazonFoundationCard } from "./AmazonFoundationCard";
+import {
+  normalizeProductAiReview,
+  normalizePublicationChecklist,
+  type ProductAiReview,
+  type PublicationChecklist,
+} from "./review-checklist-helpers";
+import {
+  ALLEGRO_PUBLISH_GATE_REASON,
+  getAllegroPublishDisabledReason,
+  isAllegroPublishEnabled,
+  pickInitialAllegroSelection,
+  resolveInitialAllegroSelection,
+  normalizeAllegroOfferUpdatePreview,
+  normalizeSavedAllegroMarketplaceLink,
+  type AllegroOfferUpdatePreview,
+  type ProductMarketplaceLink,
+  type SavedAllegroMarketplaceLink,
+} from "./allegro-export-helpers";
+import {
+  normalizeAmazonProductTypeDefinition,
+  normalizeAmazonValidationHistory,
+  normalizeAmazonValidationPreview,
+  type AmazonProductTypeDefinition,
+  type AmazonValidationPreview,
+} from "./amazon-foundation-helpers";
+import {
+  applyAmazonCatalogItemToProductForm,
+  type AmazonCatalogItem,
+} from "../../_lib/amazon-import";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const ALLEGRO_PUBLISH_ENABLED = isAllegroPublishEnabled();
 
 function getToken() {
   return typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
@@ -47,6 +87,7 @@ type AIDraft = {
   selectedSourcesJson: string[];
   attributesJson: Record<string, string>;
   attributeConfidenceJson: Record<string, DraftAttributeConfidence>;
+  qualitySummary: DraftQualitySummary;
 };
 type RawAIDraft = Partial<AIDraft> & {
   marketplace_slug?: string;
@@ -57,6 +98,12 @@ type RawAIDraft = Partial<AIDraft> & {
   selected_sources_json?: string[];
   attributes_json?: Record<string, string>;
   attribute_confidence_json?: Record<string, DraftAttributeConfidence>;
+  qualityJson?: unknown;
+  quality_json?: unknown;
+  reviewReasonsJson?: unknown;
+  review_reasons_json?: unknown;
+  readinessJson?: unknown;
+  readiness_json?: unknown;
 };
 type JobSummary = {
   id: string;
@@ -73,10 +120,40 @@ type JobSummary = {
   currentMessage?: string | null;
   elapsedSeconds?: number | null;
   etaSeconds?: number | null;
+  useAllegro?: boolean | null;
+  useIcecat?: boolean | null;
+  useAmazon?: boolean | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
+};
+type SellerAllegroAccount = {
+  id: number;
+  environment: string;
+  allegro_login?: string | null;
+  status?: string | null;
+};
+type SellerAmazonAccount = {
+  id: number;
+  seller_name?: string | null;
+  marketplace_id?: string | null;
+  marketplace_country_code?: string | null;
+  status?: string | null;
+};
+type SellerOfferOption = {
+  id: string;
+  name: string;
+};
+type AllegroHistoryRow = {
+  id: number;
+  mode: string;
+  status: string;
+  createdAt?: string | null;
+};
+type AmazonSuggestion = {
+  productType: string;
+  displayName?: string;
 };
 type ProductMarketplaceCategoryRow = {
   marketplace_id: number;
@@ -90,6 +167,13 @@ type ProductMarketplaceCategoryRow = {
 type ProductAttributeRow = {
   field_code: string;
   value: string;
+};
+type ProductMarketplaceLinkRow = {
+  marketplace_slug?: string | null;
+  account_id?: number | null;
+  remote_offer_id?: string | null;
+  remote_offer_title?: string | null;
+  remote_external_id?: string | null;
 };
 type ProductDetails = {
   title?: string | null;
@@ -107,6 +191,7 @@ type ProductDetails = {
   description?: string | null;
   images?: string[] | null;
   marketplaceCategories?: ProductMarketplaceCategoryRow[] | null;
+  marketplaceLinks?: ProductMarketplaceLinkRow[] | null;
   attributes?: ProductAttributeRow[] | null;
 };
 type ProductDetailsResponse = {
@@ -141,20 +226,31 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function normalizeAIDraft(raw: RawAIDraft | null | undefined): AIDraft {
+  const marketplaceSlug = raw?.marketplaceSlug ?? raw?.marketplace_slug ?? "";
+  const selectedSourcesJson = Array.isArray(raw?.selectedSourcesJson)
+    ? raw.selectedSourcesJson
+    : Array.isArray(raw?.selected_sources_json)
+      ? raw.selected_sources_json
+      : [];
+
   return {
     id: raw?.id,
-    marketplaceSlug: raw?.marketplaceSlug ?? raw?.marketplace_slug ?? "",
+    marketplaceSlug,
     marketplaceName: raw?.marketplaceName ?? raw?.marketplace_name ?? "",
     descriptionHtml: raw?.descriptionHtml ?? raw?.description_html ?? "",
     descriptionConfidence: raw?.descriptionConfidence ?? raw?.description_confidence ?? null,
     overallConfidence: raw?.overallConfidence ?? raw?.overall_confidence ?? null,
-    selectedSourcesJson: Array.isArray(raw?.selectedSourcesJson)
-      ? raw.selectedSourcesJson
-      : Array.isArray(raw?.selected_sources_json)
-        ? raw.selected_sources_json
-        : [],
+    selectedSourcesJson,
     attributesJson: raw?.attributesJson ?? raw?.attributes_json ?? {},
     attributeConfidenceJson: raw?.attributeConfidenceJson ?? raw?.attribute_confidence_json ?? {},
+    qualitySummary: normalizeDraftQualitySummary({
+      marketplaceSlug,
+      overallConfidence: raw?.overallConfidence ?? raw?.overall_confidence ?? null,
+      selectedSourcesJson,
+      qualityJson: raw?.qualityJson ?? raw?.quality_json ?? null,
+      reviewReasonsJson: raw?.reviewReasonsJson ?? raw?.review_reasons_json ?? [],
+      readinessJson: raw?.readinessJson ?? raw?.readiness_json ?? null,
+    }),
   };
 }
 
@@ -191,6 +287,27 @@ function formatDurationLabel(seconds: number | null | undefined) {
   return `${minutes}m ${String(rem).padStart(2, "0")}s`;
 }
 
+function getDraftQualityMeta(status: AIDraftStatus) {
+  if (status === "ready") {
+    return {
+      label: "Gotowe do publikacji",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  }
+
+  if (status === "review") {
+    return {
+      label: "Wymaga review",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    label: "Zablokowane",
+    className: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+}
+
 // ── Tabs ─────────────────────────────────────────────────────────
 const TABS = [
   { id: "produkt",    label: "Produkt"      },
@@ -198,6 +315,8 @@ const TABS = [
   { id: "marketplace",label: "Marketplace"  },
   { id: "atrybuty",   label: "Atrybuty"    },
   { id: "media",      label: "Media"        },
+  { id: "recenzja",   label: "Recenzja AI"  },
+  { id: "checklista", label: "Checklista"   },
 ];
 
 // ── Small UI ─────────────────────────────────────────────────────
@@ -242,6 +361,7 @@ export default function EditProductPage() {
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState("");
+  const [showAmazonImport, setShowAmazonImport] = useState(false);
 
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
 
@@ -281,11 +401,46 @@ export default function EditProductPage() {
   const [aiMp, setAiMp] = useState("");
   const [aiUseAllegro, setAiUseAllegro] = useState(true);
   const [aiUseIcecat, setAiUseIcecat] = useState(true);
+  const [aiUseAmazon, setAiUseAmazon] = useState(false);
   const [aiDrafts, setAiDrafts] = useState<Record<string, AIDraft>>({});
   const [aiBusyMode, setAiBusyMode] = useState<"" | "description" | "attributes" | "all">("");
   const [aiError, setAiError] = useState("");
   const [aiJob, setAiJob] = useState<JobSummary | null>(null);
   const aiJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [allegroReview, setAllegroReview] = useState<ProductAiReview | null>(null);
+  const [allegroChecklist, setAllegroChecklist] = useState<PublicationChecklist | null>(null);
+  const [checklistToggleBusyKey, setChecklistToggleBusyKey] = useState<string | null>(null);
+  const [allegroAccounts, setAllegroAccounts] = useState<SellerAllegroAccount[]>([]);
+  const [allegroOffers, setAllegroOffers] = useState<SellerOfferOption[]>([]);
+  const [allegroOffersLoading, setAllegroOffersLoading] = useState(false);
+  const [allegroAccountId, setAllegroAccountId] = useState<number | null>(null);
+  const [allegroOfferId, setAllegroOfferId] = useState("");
+  const [productMarketplaceLinks, setProductMarketplaceLinks] = useState<ProductMarketplaceLink[]>([]);
+  const [savedAllegroLink, setSavedAllegroLink] = useState<SavedAllegroMarketplaceLink | null>(null);
+  const allegroSavedSelectionHydratedRef = useRef(false);
+  const [allegroPreview, setAllegroPreview] = useState<AllegroOfferUpdatePreview | null>(null);
+  const [allegroPreviewBusy, setAllegroPreviewBusy] = useState(false);
+  const [allegroPublishBusy, setAllegroPublishBusy] = useState(false);
+  const [allegroConfirmNeedsReview, setAllegroConfirmNeedsReview] = useState(false);
+  const [allegroHistory, setAllegroHistory] = useState<AllegroHistoryRow[]>([]);
+  const [allegroFields, setAllegroFields] = useState({
+    title: true,
+    description: true,
+    price: false,
+    stock: false,
+  });
+  const [amazonAccounts, setAmazonAccounts] = useState<SellerAmazonAccount[]>([]);
+  const [amazonAccountId, setAmazonAccountId] = useState<number | null>(null);
+  const [amazonMarketplaceId, setAmazonMarketplaceId] = useState("");
+  const [amazonSuggestions, setAmazonSuggestions] = useState<AmazonSuggestion[]>([]);
+  const [amazonProductType, setAmazonProductType] = useState("");
+  const [amazonDefinition, setAmazonDefinition] = useState<AmazonProductTypeDefinition | null>(null);
+  const [amazonHistory, setAmazonHistory] = useState<AmazonValidationPreview[]>([]);
+  const [amazonPreview, setAmazonPreview] = useState<AmazonValidationPreview | null>(null);
+  const [amazonSuggestBusy, setAmazonSuggestBusy] = useState(false);
+  const [amazonDefinitionBusy, setAmazonDefinitionBusy] = useState(false);
+  const [amazonHistoryBusy, setAmazonHistoryBusy] = useState(false);
+  const [amazonPreviewBusy, setAmazonPreviewBusy] = useState(false);
 
   // Media
   const emptySlots = (): (string | null)[] => Array(SLOTS).fill(null);
@@ -378,6 +533,34 @@ export default function EditProductPage() {
     setAiMp(mp.slug);
   };
 
+  const applyAmazonImport = useCallback((data: AmazonCatalogItem) => {
+    const next = applyAmazonCatalogItemToProductForm({
+      title,
+      brand,
+      asin,
+      ean,
+      desc,
+      descHtml,
+      globalSlots,
+    }, data, SLOTS);
+
+    setTitle(next.title);
+    setBrand(next.brand);
+    setAsin(next.asin);
+    setEan(next.ean);
+    setDesc(next.desc);
+    setDescHtml(next.descHtml);
+    setGlobalSlots(next.globalSlots);
+    setSaved(false);
+    setError("");
+  }, [asin, brand, desc, descHtml, ean, globalSlots, title]);
+
+  const handleAmazonImport = useCallback((data: AmazonCatalogItem) => {
+    setShowAmazonImport(false);
+    applyAmazonImport(data);
+    setTab("produkt");
+  }, [applyAmazonImport]);
+
   const loadProduct = useCallback(async (silent = false) => {
     if (!silent) setLoadingProduct(true);
     try {
@@ -400,6 +583,20 @@ export default function EditProductPage() {
           setLengthCm(p.length_cm != null ? String(p.length_cm) : "");
           setDesc(p.description || "");
           setDescHtml(p.description || "");
+          const nextMarketplaceLinks = Array.isArray(p.marketplaceLinks)
+            ? p.marketplaceLinks.map((entry) => ({
+                marketplaceSlug: String(entry.marketplace_slug || ""),
+                accountId: Number(entry.account_id || 0),
+                remoteOfferId: String(entry.remote_offer_id || ""),
+                remoteOfferTitle: entry.remote_offer_title ? String(entry.remote_offer_title) : null,
+                remoteExternalId: entry.remote_external_id ? String(entry.remote_external_id) : null,
+              })).filter((entry) => entry.marketplaceSlug && entry.accountId && entry.remoteOfferId)
+            : [];
+          setProductMarketplaceLinks(nextMarketplaceLinks);
+          const nextSavedAllegroLink = normalizeSavedAllegroMarketplaceLink(p.marketplaceLinks);
+          setSavedAllegroLink(nextSavedAllegroLink);
+          setAllegroAccountId((current) => current ?? nextSavedAllegroLink?.accountId ?? null);
+          setAllegroOfferId((current) => current || nextSavedAllegroLink?.offerId || "");
         } catch (e) { console.error("Error loading basic fields:", e); }
 
         try {
@@ -471,6 +668,437 @@ export default function EditProductPage() {
     }
   }, [id]);
 
+  const loadAllegroReview = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/review?productId=${id}`, { headers: authHeaders(), cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać recenzji AI");
+      setAllegroReview(normalizeProductAiReview(json.data));
+    } catch {
+      setAllegroReview(null);
+    }
+  }, [id]);
+
+  const loadAllegroChecklist = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/checklist?productId=${id}`, { headers: authHeaders(), cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać checklisty");
+      setAllegroChecklist(normalizePublicationChecklist(json.data));
+    } catch {
+      setAllegroChecklist(null);
+    }
+  }, [id]);
+
+  const loadAllegroHistory = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/offer-updates/history?productId=${id}`, { headers: authHeaders(), cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać historii Allegro");
+      const history = Array.isArray(json.data)
+        ? json.data.map((value: unknown) => {
+            const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
+            return {
+              id: Number(row.id || 0),
+              mode: String(row.mode || ""),
+              status: String(row.status || ""),
+              createdAt: row.createdAt ? String(row.createdAt) : null,
+            };
+          })
+        : [];
+      setAllegroHistory(history);
+    } catch {
+      setAllegroHistory([]);
+    }
+  }, [id]);
+
+  const loadAllegroAccounts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/accounts`, { headers: authHeaders(), cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać kont Allegro");
+      const accounts: SellerAllegroAccount[] = Array.isArray(json.data)
+        ? json.data.map((value: unknown) => {
+            const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
+            return {
+              id: Number(row.id || 0),
+              environment: String(row.environment || "production"),
+              allegro_login: row.allegro_login ? String(row.allegro_login) : null,
+              status: row.status ? String(row.status) : null,
+            };
+          })
+        : [];
+      setAllegroAccounts(accounts);
+      const initialSelection = pickInitialAllegroSelection({
+        marketplaceLinks: productMarketplaceLinks,
+        accounts,
+      });
+      setAllegroAccountId((current) => {
+        if (current && accounts.some((entry) => entry.id === current)) {
+          return current;
+        }
+        if (initialSelection.accountId) {
+          return initialSelection.accountId;
+        }
+        if (savedAllegroLink && accounts.some((entry) => entry.id === savedAllegroLink.accountId)) {
+          return savedAllegroLink.accountId;
+        }
+        return accounts[0]?.id ?? null;
+      });
+    } catch {
+      setAllegroAccounts([]);
+    }
+  }, [productMarketplaceLinks, savedAllegroLink]);
+
+  useEffect(() => {
+    allegroSavedSelectionHydratedRef.current = false;
+  }, [id]);
+
+  useEffect(() => {
+    const resolved = resolveInitialAllegroSelection({
+      marketplaceLinks: productMarketplaceLinks,
+      accounts: allegroAccounts,
+      currentAccountId: allegroAccountId,
+      currentOfferId: allegroOfferId,
+      hasHydratedSavedSelection: allegroSavedSelectionHydratedRef.current,
+    });
+
+    if (!resolved.accountId || !resolved.offerId) {
+      return;
+    }
+
+    if (resolved.shouldHydrate) {
+      setAllegroAccountId(resolved.accountId);
+      setAllegroOfferId(resolved.offerId);
+    }
+
+    allegroSavedSelectionHydratedRef.current = true;
+  }, [allegroAccountId, allegroAccounts, allegroOfferId, id, productMarketplaceLinks]);
+
+  const loadAmazonAccounts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/seller/amazon/accounts`, { headers: authHeaders(), cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać kont Amazon");
+      const accounts = Array.isArray(json.data)
+        ? json.data.map((value: unknown) => {
+            const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
+            return {
+              id: Number(row.id || 0),
+              seller_name: row.seller_name ? String(row.seller_name) : null,
+              marketplace_id: row.marketplace_id ? String(row.marketplace_id) : null,
+              marketplace_country_code: row.marketplace_country_code ? String(row.marketplace_country_code) : null,
+              status: row.status ? String(row.status) : null,
+            };
+          })
+        : [];
+      setAmazonAccounts(accounts);
+      setAmazonAccountId((current) => current ?? accounts[0]?.id ?? null);
+    } catch {
+      setAmazonAccounts([]);
+    }
+  }, []);
+
+  const loadAllegroOffers = useCallback(async (accountId: number | null) => {
+    if (!accountId) {
+      setAllegroOffers([]);
+      return;
+    }
+
+    const account = allegroAccounts.find((entry) => entry.id === accountId);
+    if (!account) return;
+
+    setAllegroOffersLoading(true);
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/offers?env=${account.environment}&limit=20&offset=0`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać ofert Allegro");
+      const offers: SellerOfferOption[] = Array.isArray(json.offers)
+        ? json.offers.map((value: unknown) => {
+            const offer = value && typeof value === "object" ? value as Record<string, unknown> : {};
+            return {
+              id: String(offer.id || ""),
+              name: String(offer.name || offer.title || offer.id || ""),
+            };
+          }).filter((offer: SellerOfferOption) => offer.id)
+        : [];
+      const savedOffer = savedAllegroLink?.accountId === accountId
+        ? {
+            id: savedAllegroLink.offerId,
+            name: savedAllegroLink.offerTitle || `Zapisana oferta (${savedAllegroLink.offerId})`,
+          }
+        : null;
+      const initialSelection = pickInitialAllegroSelection({
+        marketplaceLinks: productMarketplaceLinks,
+        accounts: allegroAccounts,
+      });
+      const nextOffers = savedOffer && !offers.some((offer) => offer.id === savedOffer.id)
+        ? [savedOffer, ...offers]
+        : offers;
+      setAllegroOffers(nextOffers);
+      setAllegroOfferId((current) => {
+        if (current) return current;
+        if (initialSelection.accountId === accountId && initialSelection.offerId) {
+          return initialSelection.offerId;
+        }
+        return savedOffer?.id || nextOffers[0]?.id || "";
+      });
+    } catch {
+      setAllegroOffers([]);
+    } finally {
+      setAllegroOffersLoading(false);
+    }
+  }, [allegroAccounts, productMarketplaceLinks, savedAllegroLink]);
+
+  const toggleChecklistItem = useCallback(async (itemKey: string, checked: boolean) => {
+    setChecklistToggleBusyKey(itemKey);
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/checklist/items/${itemKey}/toggle`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({ productId: Number(id), checked }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się zapisać checklisty");
+      await loadAllegroChecklist();
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się zapisać checklisty"));
+    } finally {
+      setChecklistToggleBusyKey(null);
+    }
+  }, [id, loadAllegroChecklist]);
+
+  const handleAllegroPreview = useCallback(async () => {
+    if (!allegroAccountId || !allegroOfferId) {
+      setError("Wybierz konto Allegro i ofertę do preview");
+      return;
+    }
+
+    setAllegroPreviewBusy(true);
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/offer-updates/preview`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          productId: Number(id),
+          accountId: allegroAccountId,
+          offerId: allegroOfferId,
+          fields: allegroFields,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać preview Allegro");
+      setAllegroPreview(normalizeAllegroOfferUpdatePreview(json.data));
+      if (json.data?.review) setAllegroReview(normalizeProductAiReview(json.data.review));
+      if (json.data?.checklist) setAllegroChecklist(normalizePublicationChecklist(json.data.checklist));
+      await loadAllegroHistory();
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się pobrać preview Allegro"));
+    } finally {
+      setAllegroPreviewBusy(false);
+    }
+  }, [allegroAccountId, allegroFields, allegroOfferId, id, loadAllegroHistory]);
+
+  const handleAllegroPublish = useCallback(async () => {
+    if (!ALLEGRO_PUBLISH_ENABLED) {
+      setError(ALLEGRO_PUBLISH_GATE_REASON);
+      return;
+    }
+
+    if (!allegroAccountId || !allegroOfferId) {
+      setError("Wybierz konto Allegro i ofertę do publikacji");
+      return;
+    }
+
+    setAllegroPublishBusy(true);
+    try {
+      const res = await fetch(`${API}/api/seller/allegro/offer-updates/publish`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          productId: Number(id),
+          accountId: allegroAccountId,
+          offerId: allegroOfferId,
+          fields: allegroFields,
+          confirmNeedsReview: allegroConfirmNeedsReview,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się opublikować zmian w Allegro");
+      await loadAllegroHistory();
+      await loadAllegroChecklist();
+      setError("");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się opublikować zmian w Allegro"));
+    } finally {
+      setAllegroPublishBusy(false);
+    }
+  }, [allegroAccountId, allegroConfirmNeedsReview, allegroFields, allegroOfferId, id, loadAllegroChecklist, loadAllegroHistory]);
+
+  const handleAmazonSuggest = useCallback(async () => {
+    if (!amazonAccountId || !amazonMarketplaceId) {
+      setError("Wybierz konto Amazon i marketplace do sugestii product type");
+      return;
+    }
+
+    setAmazonSuggestBusy(true);
+    try {
+      const res = await fetch(`${API}/api/seller/amazon/product-types/suggest?productId=${id}&accountId=${amazonAccountId}&marketplaceId=${encodeURIComponent(amazonMarketplaceId)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać sugestii product type");
+      const suggestions = Array.isArray(json.data?.suggestions)
+        ? json.data.suggestions.map((value: unknown) => {
+            const entry = value && typeof value === "object" ? value as Record<string, unknown> : {};
+            return {
+              productType: String(entry.productType || ""),
+              displayName: entry.displayName ? String(entry.displayName) : undefined,
+            };
+          }).filter((entry: AmazonSuggestion) => entry.productType)
+        : [];
+      setAmazonSuggestions(suggestions);
+      setAmazonProductType((current) => current || suggestions[0]?.productType || "");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się pobrać sugestii product type"));
+    } finally {
+      setAmazonSuggestBusy(false);
+    }
+  }, [amazonAccountId, amazonMarketplaceId, id]);
+
+  const loadAmazonHistory = useCallback(async () => {
+    if (!amazonAccountId || !amazonMarketplaceId) {
+      setAmazonHistory([]);
+      return;
+    }
+
+    setAmazonHistoryBusy(true);
+    try {
+      const res = await fetch(
+        `${API}/api/seller/amazon/validation/history?productId=${id}&accountId=${amazonAccountId}&marketplaceId=${encodeURIComponent(amazonMarketplaceId)}&limit=6`,
+        {
+          headers: authHeaders(),
+          cache: "no-store",
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać historii walidacji Amazon");
+      setAmazonHistory(normalizeAmazonValidationHistory(json.data));
+    } catch (e: unknown) {
+      setAmazonHistory([]);
+      setError(getErrorMessage(e, "Nie udało się pobrać historii walidacji Amazon"));
+    } finally {
+      setAmazonHistoryBusy(false);
+    }
+  }, [amazonAccountId, amazonMarketplaceId, id]);
+
+  useEffect(() => {
+    if (!amazonAccountId || !amazonMarketplaceId || !amazonProductType) {
+      setAmazonDefinition(null);
+      setAmazonDefinitionBusy(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAmazonDefinitionBusy(true);
+
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `${API}/api/seller/amazon/product-types/definition?accountId=${amazonAccountId}&marketplaceId=${encodeURIComponent(amazonMarketplaceId)}&productType=${encodeURIComponent(amazonProductType)}`,
+          {
+            headers: authHeaders(),
+            cache: "no-store",
+          }
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udało się pobrać definicji product type");
+        if (!cancelled) {
+          setAmazonDefinition(normalizeAmazonProductTypeDefinition(json.data));
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setAmazonDefinition(null);
+          setError(getErrorMessage(e, "Nie udało się pobrać definicji product type"));
+        }
+      } finally {
+        if (!cancelled) setAmazonDefinitionBusy(false);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [amazonAccountId, amazonMarketplaceId, amazonProductType]);
+
+  const handleAmazonPreview = useCallback(async () => {
+    if (!amazonAccountId || !amazonMarketplaceId || !amazonProductType) {
+      setError("Wybierz konto Amazon, marketplace i product type");
+      return;
+    }
+
+    setAmazonPreviewBusy(true);
+    try {
+      const res = await fetch(`${API}/api/seller/amazon/validation/preview`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          productId: Number(id),
+          accountId: amazonAccountId,
+          marketplaceId: amazonMarketplaceId,
+          productType: amazonProductType,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się uruchomić walidacji Amazon");
+      const preview = normalizeAmazonValidationPreview(json.data);
+      setAmazonPreview(preview);
+      if (preview.productType) setAmazonProductType(preview.productType);
+      await loadAmazonHistory();
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się uruchomić walidacji Amazon"));
+    } finally {
+      setAmazonPreviewBusy(false);
+    }
+  }, [amazonAccountId, amazonMarketplaceId, amazonProductType, id, loadAmazonHistory]);
+
+  const handleAmazonLoadLatest = useCallback(async () => {
+    if (!amazonAccountId || !amazonMarketplaceId) return;
+
+    try {
+      const res = await fetch(`${API}/api/seller/amazon/validation/latest?productId=${id}&accountId=${amazonAccountId}&marketplaceId=${encodeURIComponent(amazonMarketplaceId)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać ostatniego snapshotu Amazon");
+      const preview = json.data ? normalizeAmazonValidationPreview(json.data) : null;
+      setAmazonPreview(preview ? {
+        ...preview,
+        requiredFields: preview.requiredFields.length
+          ? preview.requiredFields
+          : preview.productType === amazonDefinition?.productType
+            ? amazonDefinition.requiredFields
+            : [],
+        propertyGroups: preview.propertyGroups.length
+          ? preview.propertyGroups
+          : preview.productType === amazonDefinition?.productType
+            ? amazonDefinition.propertyGroups
+            : [],
+      } : null);
+      if (preview?.productType) setAmazonProductType(preview.productType);
+      await loadAmazonHistory();
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Nie udało się pobrać ostatniego snapshotu Amazon"));
+    }
+  }, [amazonAccountId, amazonDefinition, amazonMarketplaceId, id, loadAmazonHistory]);
+
   useEffect(() => {
     if (!aiJob?.id) return;
 
@@ -486,6 +1114,8 @@ export default function EditProductPage() {
         if (nextJob.status === "done") {
           await loadProduct(true);
           await loadAIDrafts();
+          await loadAllegroReview();
+          await loadAllegroChecklist();
           if (aiMp) setAttrMp(aiMp);
           if (!cancelled) setAiJob(null);
         } else if (nextJob.status === "error") {
@@ -510,11 +1140,37 @@ export default function EditProductPage() {
       if (aiJobPollRef.current) clearInterval(aiJobPollRef.current);
       aiJobPollRef.current = null;
     };
-  }, [aiJob?.id, aiMp, loadAIDrafts, loadProduct]);
+  }, [aiJob?.id, aiMp, loadAIDrafts, loadAllegroChecklist, loadAllegroReview, loadProduct]);
 
   useEffect(() => {
     loadAIDrafts();
   }, [loadAIDrafts]);
+
+  useEffect(() => {
+    void loadAllegroReview();
+    void loadAllegroChecklist();
+    void loadAllegroHistory();
+    void loadAllegroAccounts();
+    void loadAmazonAccounts();
+  }, [loadAllegroAccounts, loadAllegroChecklist, loadAllegroHistory, loadAllegroReview, loadAmazonAccounts]);
+
+  useEffect(() => {
+    void loadAllegroOffers(allegroAccountId);
+  }, [allegroAccountId, loadAllegroOffers]);
+
+  useEffect(() => {
+    const account = amazonAccounts.find((entry) => entry.id === amazonAccountId);
+    if (!account) return;
+    setAmazonMarketplaceId((current) => current || account.marketplace_id || "");
+  }, [amazonAccountId, amazonAccounts]);
+
+  useEffect(() => {
+    if (!amazonAccountId || !amazonMarketplaceId) {
+      setAmazonHistory([]);
+      return;
+    }
+    void loadAmazonHistory();
+  }, [amazonAccountId, amazonMarketplaceId, loadAmazonHistory]);
 
   useEffect(() => {
     if (aiMp) return;
@@ -557,6 +1213,7 @@ export default function EditProductPage() {
           mode,
           useAllegro: aiUseAllegro,
           useIcecat: aiUseIcecat,
+          useAmazon: aiUseAmazon,
         }),
       });
       const json = await res.json();
@@ -589,6 +1246,8 @@ export default function EditProductPage() {
 
   const totalImages = globalSlots.filter(Boolean).length;
   const assignedCount = Object.values(mktCats).filter(c => c.categoryPath || c.allegroName).length;
+  const allegroDisabledReason = allegroPreview ? getAllegroPublishDisabledReason(allegroPreview) : null;
+  const allegroPublishGateReason = ALLEGRO_PUBLISH_ENABLED ? null : ALLEGRO_PUBLISH_GATE_REASON;
 
   if (loadingProduct) {
     return (
@@ -671,7 +1330,22 @@ export default function EditProductPage() {
           <h1 className="text-2xl font-bold truncate" style={{ color: "var(--text-primary)" }}>{title || "Edycja produktu"}</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>Zaktualizuj dane i przypisz do marketplace</p>
         </div>
+
+        <button
+          onClick={() => setShowAmazonImport(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition hover:shadow-md hover:scale-105 flex-shrink-0"
+          style={{ background: "linear-gradient(135deg,#f97316,#f59e0b)" }}
+        >
+          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+          </svg>
+          Import z Amazon
+        </button>
       </div>
+
+      {showAmazonImport && (
+        <AmazonImportModal onClose={() => setShowAmazonImport(false)} onImport={handleAmazonImport} />
+      )}
 
       {error && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
@@ -691,6 +1365,8 @@ export default function EditProductPage() {
             if (t.id === "media" && totalImages) badge = String(totalImages);
             if (t.id === "marketplace" && assignedCount) badge = String(assignedCount);
             if (t.id === "atrybuty" && attrFields.length) badge = String(attrFields.length);
+            if (t.id === "recenzja" && allegroReview) badge = String(allegroReview.score);
+            if (t.id === "checklista" && allegroChecklist) badge = allegroChecklist.progressLabel;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition ${
@@ -783,28 +1459,33 @@ export default function EditProductPage() {
         {/* ── Tab: Opis produktu ──────────────────────────────────── */}
         {tab === "opis" && (
           <div className="p-6 space-y-4">
-            <AIDraftPanel
-              title="AI dla opisu"
-              description="Generuj draft opisu pod wybrany marketplace. Draft zapisuje się osobno i nie nadpisuje formularza, dopóki go nie zastosujesz."
-              marketplaces={marketplaces}
-              selectedMarketplace={aiMp}
-              onSelectMarketplace={setAiMp}
-              selectedCategory={aiCurrentCategory}
-              useAllegro={aiUseAllegro}
-              onToggleAllegro={() => setAiUseAllegro(v => !v)}
-              useIcecat={aiUseIcecat}
-              onToggleIcecat={() => setAiUseIcecat(v => !v)}
-              busyMode={aiBusyMode}
-              canGenerate={aiCanGenerate}
-              onGenerateDescription={() => handleGenerateAI("description")}
-              onGenerateAttributes={() => handleGenerateAI("attributes")}
-              onGenerateAll={() => handleGenerateAI("all")}
-              error={aiError}
-              draft={aiCurrentDraft}
-              job={aiJob}
-              previewKind="description"
-              onApply={applyDescriptionDraft}
-            />
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]">
+              <AIDraftPanel
+                title="AI dla opisu"
+                description="Generuj draft opisu pod wybrany marketplace. Draft zapisuje się osobno i nie nadpisuje formularza, dopóki go nie zastosujesz."
+                marketplaces={marketplaces}
+                selectedMarketplace={aiMp}
+                onSelectMarketplace={setAiMp}
+                selectedCategory={aiCurrentCategory}
+                useAllegro={aiUseAllegro}
+                onToggleAllegro={() => setAiUseAllegro(v => !v)}
+                useAmazon={aiUseAmazon}
+                onToggleAmazon={() => setAiUseAmazon(v => !v)}
+                useIcecat={aiUseIcecat}
+                onToggleIcecat={() => setAiUseIcecat(v => !v)}
+                busyMode={aiBusyMode}
+                canGenerate={aiCanGenerate}
+                onGenerateDescription={() => handleGenerateAI("description")}
+                onGenerateAttributes={() => handleGenerateAI("attributes")}
+                onGenerateAll={() => handleGenerateAI("all")}
+                error={aiError}
+                draft={aiCurrentDraft}
+                job={aiJob}
+                previewKind="description"
+                onApply={applyDescriptionDraft}
+              />
+              <AIDraftQualityCard draft={aiCurrentDraft} />
+            </div>
 
             <DescriptionBlock
               label="Opis"
@@ -832,34 +1513,121 @@ export default function EditProductPage() {
                 dbCategories={dbCats[mp.slug] || []} allegroTree={allegroTree}
                 onChange={val => setMktCat(mp, val)} />
             ))}
+
+            <div className="pt-4 space-y-4 border-t" style={{ borderColor: "var(--border-default)" }}>
+              <AllegroOfferUpdateCard
+                accounts={allegroAccounts}
+                offers={allegroOffers}
+                selectedAccountId={allegroAccountId}
+                selectedOfferId={allegroOfferId}
+                fields={allegroFields}
+                preview={allegroPreview}
+                history={allegroHistory}
+                loadingOffers={allegroOffersLoading}
+                previewBusy={allegroPreviewBusy}
+                publishBusy={allegroPublishBusy}
+                publishEnabled={ALLEGRO_PUBLISH_ENABLED}
+                publishGateReason={allegroPublishGateReason}
+                confirmNeedsReview={allegroConfirmNeedsReview}
+                onSelectAccount={(accountId) => {
+                  setAllegroAccountId(accountId);
+                  setAllegroOfferId("");
+                  setAllegroPreview(null);
+                  setAllegroConfirmNeedsReview(false);
+                }}
+                onSelectOffer={(offerId) => {
+                  setAllegroOfferId(offerId);
+                  setAllegroPreview(null);
+                }}
+                onToggleField={(field) => {
+                  setAllegroFields((current) => ({ ...current, [field]: !current[field] }));
+                  setAllegroPreview(null);
+                }}
+                onToggleConfirmNeedsReview={setAllegroConfirmNeedsReview}
+                onPreview={handleAllegroPreview}
+                onPublish={handleAllegroPublish}
+              />
+
+              {allegroDisabledReason && allegroPreview && !allegroPreview.publishEligible ? (
+                <div className="rounded-2xl border border-amber-300/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                  {allegroDisabledReason}
+                </div>
+              ) : null}
+
+              <AmazonFoundationCard
+                accounts={amazonAccounts}
+                selectedAccountId={amazonAccountId}
+                selectedMarketplaceId={amazonMarketplaceId}
+                selectedProductType={amazonProductType}
+                suggestions={amazonSuggestions}
+                definition={amazonDefinition}
+                history={amazonHistory}
+                preview={amazonPreview}
+                suggestBusy={amazonSuggestBusy}
+                definitionBusy={amazonDefinitionBusy}
+                historyBusy={amazonHistoryBusy}
+                previewBusy={amazonPreviewBusy}
+                onSelectAccount={(accountId) => {
+                  setAmazonAccountId(accountId);
+                  const account = amazonAccounts.find((entry) => entry.id === accountId);
+                  setAmazonMarketplaceId(account?.marketplace_id || "");
+                  setAmazonSuggestions([]);
+                  setAmazonProductType("");
+                  setAmazonDefinition(null);
+                  setAmazonHistory([]);
+                  setAmazonPreview(null);
+                }}
+                onSelectMarketplace={(marketplaceId) => {
+                  setAmazonMarketplaceId(marketplaceId);
+                  setAmazonSuggestions([]);
+                  setAmazonProductType("");
+                  setAmazonDefinition(null);
+                  setAmazonHistory([]);
+                  setAmazonPreview(null);
+                }}
+                onSelectProductType={(productType) => {
+                  setAmazonProductType(productType);
+                  setAmazonDefinition(null);
+                  setAmazonPreview(null);
+                }}
+                onSuggest={handleAmazonSuggest}
+                onPreview={handleAmazonPreview}
+                onReloadLatest={handleAmazonLoadLatest}
+              />
+            </div>
           </div>
         )}
 
         {/* ── Tab: Atrybuty ───────────────────────────────────────── */}
         {tab === "atrybuty" && (
           <div className="p-6">
-            <AIDraftPanel
-              title="AI dla atrybutów"
-              description="AI mapuje pola pod kategorię i marketplace. Po podglądzie możesz jednym kliknięciem przenieść draft do formularza."
-              marketplaces={marketplaces}
-              selectedMarketplace={aiMp}
-              onSelectMarketplace={setAiMp}
-              selectedCategory={aiCurrentCategory}
-              useAllegro={aiUseAllegro}
-              onToggleAllegro={() => setAiUseAllegro(v => !v)}
-              useIcecat={aiUseIcecat}
-              onToggleIcecat={() => setAiUseIcecat(v => !v)}
-              busyMode={aiBusyMode}
-              canGenerate={aiCanGenerate}
-              onGenerateDescription={() => handleGenerateAI("description")}
-              onGenerateAttributes={() => handleGenerateAI("attributes")}
-              onGenerateAll={() => handleGenerateAI("all")}
-              error={aiError}
-              draft={aiCurrentDraft}
-              job={aiJob}
-              previewKind="attributes"
-              onApply={applyAttributesDraft}
-            />
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]">
+              <AIDraftPanel
+                title="AI dla atrybutów"
+                description="AI mapuje pola pod kategorię i marketplace. Po podglądzie możesz jednym kliknięciem przenieść draft do formularza."
+                marketplaces={marketplaces}
+                selectedMarketplace={aiMp}
+                onSelectMarketplace={setAiMp}
+                selectedCategory={aiCurrentCategory}
+                useAllegro={aiUseAllegro}
+                onToggleAllegro={() => setAiUseAllegro(v => !v)}
+                useAmazon={aiUseAmazon}
+                onToggleAmazon={() => setAiUseAmazon(v => !v)}
+                useIcecat={aiUseIcecat}
+                onToggleIcecat={() => setAiUseIcecat(v => !v)}
+                busyMode={aiBusyMode}
+                canGenerate={aiCanGenerate}
+                onGenerateDescription={() => handleGenerateAI("description")}
+                onGenerateAttributes={() => handleGenerateAI("attributes")}
+                onGenerateAll={() => handleGenerateAI("all")}
+                error={aiError}
+                draft={aiCurrentDraft}
+                job={aiJob}
+                previewKind="attributes"
+                onApply={applyAttributesDraft}
+              />
+              <AIDraftQualityCard draft={aiCurrentDraft} />
+            </div>
 
             {/* Marketplace selector */}
             <div className="flex gap-2 mb-5 flex-wrap">
@@ -966,6 +1734,22 @@ export default function EditProductPage() {
             mediaViewMp={mediaViewMp} setMediaViewMp={setMediaViewMp}
           />
         )}
+
+        {tab === "recenzja" && (
+          <div className="p-6">
+            <ProductAiReviewCard review={allegroReview} />
+          </div>
+        )}
+
+        {tab === "checklista" && (
+          <div className="p-6">
+            <ProductPublicationChecklistCard
+              checklist={allegroChecklist}
+              togglingKey={checklistToggleBusyKey}
+              onToggleManual={toggleChecklistItem}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Fixed bottom action bar ─────────────────────────────── */}
@@ -1008,6 +1792,8 @@ function AIDraftPanel({
   selectedCategory,
   useAllegro,
   onToggleAllegro,
+  useAmazon,
+  onToggleAmazon,
   useIcecat,
   onToggleIcecat,
   busyMode,
@@ -1029,6 +1815,8 @@ function AIDraftPanel({
   selectedCategory: string;
   useAllegro: boolean;
   onToggleAllegro: () => void;
+  useAmazon: boolean;
+  onToggleAmazon: () => void;
   useIcecat: boolean;
   onToggleIcecat: () => void;
   busyMode: "" | "description" | "attributes" | "all";
@@ -1107,6 +1895,15 @@ function AIDraftPanel({
           } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-indigo-300"}`}
         >
           Allegro {useAllegro ? "ON" : "OFF"}
+        </button>
+        <button
+          onClick={() => { if (!generateBlocked) onToggleAmazon(); }}
+          aria-disabled={generateBlocked}
+          className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition ${
+            useAmazon ? "border-orange-300 bg-orange-100 text-orange-700" : "border-slate-200 bg-white text-slate-500"
+          } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-orange-300"}`}
+        >
+          Amazon {useAmazon ? "ON" : "OFF"}
         </button>
         <button
           onClick={() => { if (!generateBlocked) onToggleIcecat(); }}
@@ -1242,6 +2039,105 @@ function AIDraftPanel({
             <div className="text-sm text-slate-400">Brak draftu atrybutów dla tego marketplace.</div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function AIDraftQualityCard({ draft }: { draft?: AIDraft }) {
+  const summary = draft?.qualitySummary;
+  const sources = summary
+    ? (summary.selectedSources.length > 0 ? summary.selectedSources : summary.enabledSources)
+    : [];
+  const meta = getDraftQualityMeta(summary?.status ?? "blocked");
+
+  return (
+    <div
+      className="rounded-2xl p-4 space-y-4"
+      style={{ background: "var(--bg-body)", border: "1px solid var(--border-default)" }}
+    >
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-slate-800">Jakosc draftu</h3>
+          {summary?.overallConfidence != null && (
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+              {summary.overallConfidence}%
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-slate-500">
+          Szybki sygnal publish/review dla wybranego marketplace.
+        </p>
+      </div>
+
+      {!draft || !summary ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-400">
+          Brak oceny draftu dla wybranego marketplace.
+        </div>
+      ) : (
+        <>
+          <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${meta.className}`}>
+            {meta.label}
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+              Zrodla
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {sources.length > 0 ? sources.map((source) => (
+                <span
+                  key={source}
+                  className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600"
+                >
+                  {source}
+                </span>
+              )) : (
+                <span className="text-sm text-slate-400">Brak danych o zrodlach.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+              Powody review
+            </div>
+            <div className="mt-2 space-y-2">
+              {summary.reviewReasons.length > 0 ? summary.reviewReasons.slice(0, 3).map((reason) => (
+                <div key={reason} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-600">
+                  {reason}
+                </div>
+              )) : (
+                <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">
+                  Brak uwag.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                Brakujace pola wymagane
+              </div>
+              <span className="text-[11px] font-semibold text-[var(--text-tertiary)]">
+                {summary.requiredFilled}/{summary.requiredTotal}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {summary.missingRequiredFields.length > 0 ? summary.missingRequiredFields.map((field) => (
+                <span
+                  key={field}
+                  className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700"
+                >
+                  {field}
+                </span>
+              )) : (
+                <span className="text-sm text-slate-500">Brak brakujacych pol wymaganych.</span>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

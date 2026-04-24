@@ -3,6 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
+import { getAllegroImportErrorNotice } from "./allegro-import-helpers";
+import {
+  buildAllegroDescriptionHtml,
+  buildPendingAllegroLink,
+  getAllegroDuplicateImportMessage,
+  type AllegroImportCheckResponse,
+  type PendingAllegroLink,
+} from "./allegro-import-link-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -41,6 +49,7 @@ type AllegroCategoryApiResponse = {
   data?: Array<{ id: string; name: string; leaf?: boolean | null }>;
 };
 type UploadImageResponse = { url?: string; error?: string };
+type CreateProductResponse = UploadImageResponse & { success?: boolean; productId?: number };
 type MediaOption = "global" | "separate" | "override";
 const SLOTS = 16;
 
@@ -99,6 +108,32 @@ type AllegroOfferImport = {
   title: string; ean: string; images: string[];
   descHtml: string; allegroId: string; allegroName: string; allegroPath: string;
   parameters: Record<string, string>;
+  link?: PendingAllegroLink | null;
+};
+
+type AmazonStatus = {
+  configured: boolean;
+  ready: boolean;
+  hasRefreshToken: boolean;
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  marketplaceId: string;
+  endpoint: string;
+  message: string;
+};
+
+type AmazonCatalogItem = {
+  asin?: string;
+  title?: string;
+  brand?: string;
+  ean?: string;
+  images?: string[];
+  descriptionHtml?: string;
+  featureBullets?: string[];
+  parameters?: Record<string, string>;
+  classifications?: string[];
+  productTypes?: string[];
+  marketplaceId?: string;
 };
 
 function AllegroImportModal({ onClose, onImport }: {
@@ -155,6 +190,7 @@ function AllegroImportModal({ onClose, onImport }: {
 
   const activeAccount = accounts.find(a => a.environment === env && a.status === "valid");
   const pages = Math.ceil(total / PAGE_SIZE);
+  const allegroImportErrorNotice = getAllegroImportErrorNotice(error);
 
   const filtered = search
     ? offers.filter(o => o.name.toLowerCase().includes(search.toLowerCase()))
@@ -163,6 +199,28 @@ function AllegroImportModal({ onClose, onImport }: {
   const handleSelect = async (offer: AllegroOffer) => {
     setImporting(true);
     try {
+      if (!activeAccount?.id) {
+        throw new Error("Brak aktywnego konta Allegro dla wybranego srodowiska");
+      }
+
+      const importCheckResponse = await fetch(
+        `${API}/api/seller/allegro/import-check?accountId=${activeAccount.id}&offerId=${encodeURIComponent(String(offer.id))}`,
+        { headers: authHeaders() }
+      );
+      const importCheckJson = await importCheckResponse.json() as {
+        data?: AllegroImportCheckResponse;
+        error?: string;
+      };
+      if (!importCheckResponse.ok) {
+        throw new Error(importCheckJson.error || "Nie udalo sie sprawdzic duplikatu importu");
+      }
+
+      const duplicateMessage = getAllegroDuplicateImportMessage(importCheckJson.data);
+      if (duplicateMessage) {
+        setError(duplicateMessage);
+        return;
+      }
+
       // Fetch full offer details
       const r = await fetch(`${API}/api/seller/allegro/offers/${offer.id}?env=${env}`, { headers: authHeaders() });
       const j = await r.json();
@@ -181,15 +239,7 @@ function AllegroImportModal({ onClose, onImport }: {
       }
 
       // Extract HTML description
-      let descHtml = "";
-      if (d.description?.sections?.length) {
-        for (const section of d.description.sections) {
-          for (const item of section.items || []) {
-            if (item.type === "TEXT") descHtml += item.content || "";
-            else if (item.type === "IMAGE" && item.url) descHtml += `<img src="${item.url}" alt="" style="max-width:100%">`;
-          }
-        }
-      }
+      const descHtml = buildAllegroDescriptionHtml(d.description?.sections);
 
       // Extract parameters
       const parameters: Record<string, string> = {};
@@ -218,6 +268,11 @@ function AllegroImportModal({ onClose, onImport }: {
         allegroName,
         allegroPath,
         parameters,
+        link: buildPendingAllegroLink({
+          accountId: activeAccount.id,
+          offerId: String(offer.id),
+          offerTitle: d.name || offer.name,
+        }),
       });
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Nie udało się zaimportować oferty"));
@@ -307,8 +362,8 @@ function AllegroImportModal({ onClose, onImport }: {
                   <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
                 <div>
-                  {error.includes("403")
-                    ? <><strong>Brak uprawnień (403)</strong> — aplikacja Allegro nie ma dostępu do ofert. Sprawdź uprawnienia aplikacji w <a href="https://apps.developer.allegro.pl" target="_blank" className="underline">portalu dewelopera Allegro</a> (wymagany scope: <code className="bg-red-100 px-1 rounded">allegro:api:offers:read</code>).</>
+                  {allegroImportErrorNotice
+                    ? <><strong>{allegroImportErrorNotice.title}</strong> — {allegroImportErrorNotice.message}</>
                     : error
                   }
                 </div>
@@ -410,13 +465,276 @@ function AllegroImportModal({ onClose, onImport }: {
 }
 
 // ── Main Page ────────────────────────────────────────────────────
+const AMAZON_IMPORT_KEY = "lumir.amazon-import";
+
+function AmazonImportModal({ onClose, onImport }: {
+  onClose: () => void;
+  onImport: (data: AmazonCatalogItem) => void;
+}) {
+  const [status, setStatus] = useState<AmazonStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [query, setQuery] = useState("");
+  const [asin, setAsin] = useState("");
+  const [ean, setEan] = useState("");
+  const [searchResults, setSearchResults] = useState<AmazonCatalogItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [directLoading, setDirectLoading] = useState<"asin" | "ean" | "">("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadStatus = async () => {
+      setLoadingStatus(true);
+      try {
+        const res = await fetch(`${API}/api/amazon/status`, { headers: authHeaders() });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Nie udało się pobrać statusu Amazon");
+        if (!cancelled) setStatus(json.data ?? null);
+      } catch (err: unknown) {
+        if (!cancelled) setError(getErrorMessage(err, "Nie udało się pobrać statusu Amazon"));
+      } finally {
+        if (!cancelled) setLoadingStatus(false);
+      }
+    };
+
+    void loadStatus();
+    return () => { cancelled = true; };
+  }, []);
+
+  const ready = !!status?.ready;
+  const configured = !!status?.configured;
+  const missingConfig = status
+    ? [
+        !status.hasClientId && "Brak AMAZON_CLIENT_ID",
+        !status.hasClientSecret && "Brak AMAZON_CLIENT_SECRET",
+        !status.hasRefreshToken && "Brak tokenu odświeżania",
+      ].filter((item): item is string => Boolean(item))
+    : [];
+
+  const applyItem = (item: AmazonCatalogItem) => {
+    onImport(item);
+    onClose();
+  };
+
+  const searchAmazon = async () => {
+    if (!query.trim() || !ready) return;
+    setSearching(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/api/amazon/catalog/search?q=${encodeURIComponent(query.trim())}`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się wyszukać katalogu Amazon");
+      setSearchResults(Array.isArray(json.data?.items) ? json.data.items : []);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Nie udało się wyszukać katalogu Amazon"));
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const fetchDirectItem = async (kind: "asin" | "ean", value: string) => {
+    if (!value.trim() || !ready) return;
+    setDirectLoading(kind);
+    setError("");
+    try {
+      const res = await fetch(`${API}/api/amazon/catalog/item?${kind}=${encodeURIComponent(value.trim())}`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać pozycji Amazon");
+      if (!json.data) throw new Error("Brak danych produktu Amazon");
+      applyItem(json.data as AmazonCatalogItem);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Nie udało się pobrać pozycji Amazon"));
+    } finally {
+      setDirectLoading("");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-[var(--bg-card)] rounded-2xl shadow-2xl border border-[var(--border-default)] w-full max-w-3xl flex flex-col max-h-[88vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-light)]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-orange-500 text-white font-black text-sm shadow-sm">
+              A
+            </div>
+            <div>
+              <div className="font-semibold text-[var(--text-primary)] text-sm">Import z Amazon</div>
+              <div className="text-xs text-[var(--text-tertiary)]">ASIN, EAN lub keyword. Wybierz pozycję i uzupełnij produkt.</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="rounded-2xl border p-4" style={{ background: "var(--bg-input-alt)", borderColor: "var(--border-default)" }}>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className={`px-2 py-1 rounded-full font-semibold border ${configured ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"}`}>
+                {configured ? "Configured" : "Not configured"}
+              </span>
+              <span className={`px-2 py-1 rounded-full font-semibold border ${ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                {ready ? "Ready" : "Not ready"}
+              </span>
+              {status?.message && <span className="px-2 py-1 rounded-full font-semibold border border-slate-200 bg-white text-slate-600">{status.message}</span>}
+            </div>
+            {loadingStatus && <div className="mt-3 text-sm text-[var(--text-secondary)]">Ładowanie statusu...</div>}
+            {!loadingStatus && status && (
+              <div className="mt-3 text-xs text-[var(--text-tertiary)] flex flex-wrap gap-2">
+                <span>Refresh {status.hasRefreshToken ? "OK" : "missing"}</span>
+                <span>Client ID {status.hasClientId ? "OK" : "missing"}</span>
+                <span>Client secret {status.hasClientSecret ? "OK" : "missing"}</span>
+                <span>Marketplace {status.marketplaceId || "—"}</span>
+              </div>
+            )}
+          </div>
+
+          {!loadingStatus && (!status || !ready) ? (
+            <div className="rounded-2xl border p-5" style={{ background: "var(--bg-body)", borderColor: "var(--border-default)" }}>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">!</div>
+                <div>
+                  <div className="font-semibold text-[var(--text-primary)]">Amazon nie jest jeszcze gotowy</div>
+                  <div className="mt-1 text-sm text-[var(--text-secondary)]">{status?.message || "Brak wymaganej konfiguracji źródła."}</div>
+                  {missingConfig.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {missingConfig.map((item) => (
+                        <span key={item} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-2xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">Szukaj</div>
+                <div className="flex gap-2">
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void searchAmazon(); }}
+                    placeholder="ASIN, EAN lub keyword"
+                    className="w-full rounded-xl border-2 px-3 py-2.5 text-sm outline-none"
+                    style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                  />
+                  <button
+                    onClick={() => void searchAmazon()}
+                    disabled={!query.trim() || searching}
+                    className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                  >
+                    {searching ? "Szukam..." : "Szukaj"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                <div className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">Pobierz po identyfikatorze</div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={asin}
+                      onChange={(e) => setAsin(e.target.value)}
+                      placeholder="ASIN"
+                      className="w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                      style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                    />
+                    <button onClick={() => void fetchDirectItem("asin", asin)} disabled={!asin.trim() || directLoading !== ""} className="rounded-xl border border-[var(--border-default)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition disabled:opacity-60">
+                      {directLoading === "asin" ? "..." : "Pobierz"}
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      value={ean}
+                      onChange={(e) => setEan(e.target.value)}
+                      placeholder="EAN"
+                      className="w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                      style={{ background: "var(--bg-input)", color: "var(--text-primary)", borderColor: "var(--border-input)" }}
+                    />
+                    <button onClick={() => void fetchDirectItem("ean", ean)} disabled={!ean.trim() || directLoading !== ""} className="rounded-xl border border-[var(--border-default)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition disabled:opacity-60">
+                      {directLoading === "ean" ? "..." : "Pobierz"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              {searchResults.length > 0 ? (
+                <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
+                  <div className="border-b px-4 py-3 text-sm font-semibold" style={{ background: "var(--bg-body)", borderColor: "var(--border-light)", color: "var(--text-primary)" }}>
+                    Wyniki katalogu
+                  </div>
+                  <div className="divide-y" style={{ borderColor: "var(--border-light)" }}>
+                    {searchResults.map((item, index) => (
+                      <button
+                        key={`${item.asin || item.ean || index}`}
+                        onClick={() => {
+                          if (item.asin) {
+                            void fetchDirectItem("asin", item.asin);
+                            return;
+                          }
+                          if (item.ean) {
+                            void fetchDirectItem("ean", item.ean);
+                            return;
+                          }
+                          applyItem(item);
+                        }}
+                        className="w-full text-left px-4 py-3 transition hover:bg-indigo-500/5"
+                      >
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-[var(--text-primary)]">{item.title || "Brak tytułu"}</div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                              {item.brand && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">{item.brand}</span>}
+                              {item.asin && <span className="font-mono">ASIN {item.asin}</span>}
+                              {item.ean && <span className="font-mono">EAN {item.ean}</span>}
+                            </div>
+                          </div>
+                          <span className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-3 py-2 text-xs font-semibold text-white">
+                            Użyj w produkcie
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : query.trim() && !searching ? (
+                <div className="rounded-2xl border px-4 py-5 text-center text-sm" style={{ background: "var(--bg-body)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
+                  Brak wyników. Spróbuj ponownie inną frazą, ASIN albo EAN.
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const LEGACY_SOURCE_IMPORT_COMPONENTS = [AllegroImportModal, AmazonImportModal];
+void LEGACY_SOURCE_IMPORT_COMPONENTS;
+
 export default function NewProductPage() {
   const router = useRouter();
   const [tab, setTab]       = useState("produkt");
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState("");
-  const [showAllegroImport, setShowAllegroImport] = useState(false);
+  const [pendingAllegroLink] = useState<PendingAllegroLink | null>(null);
 
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
 
@@ -503,6 +821,37 @@ export default function NewProductPage() {
       }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = localStorage.getItem(AMAZON_IMPORT_KEY);
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw) as AmazonCatalogItem;
+      if (data) {
+        if (data.title) setTitle(data.title);
+        if (data.brand) setBrand(data.brand);
+        if (data.asin) setAsin(data.asin);
+        if (data.ean) setEan(data.ean);
+        if (data.descriptionHtml) {
+          setDescHtml(data.descriptionHtml);
+          const stripped = data.descriptionHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          setDesc(stripped);
+        }
+        if (data.images?.length) {
+          setGlobalSlots(prev => {
+            const next = [...prev];
+            data.images!.forEach((url, i) => { if (i < SLOTS) next[i] = url; });
+            return next;
+          });
+        }
+      }
+    } catch {
+      localStorage.removeItem(AMAZON_IMPORT_KEY);
+    } finally {
+      localStorage.removeItem(AMAZON_IMPORT_KEY);
+    }
+  }, []);
+
   // Load categories when on marketplace tab (tylko non-Allegro — Allegro obsługuje swój picker)
   useEffect(() => {
     if (tab !== "marketplace") return;
@@ -571,40 +920,6 @@ export default function NewProductPage() {
     });
   };
 
-  const handleAllegroImport = (data: AllegroOfferImport) => {
-    setShowAllegroImport(false);
-    if (data.title) setTitle(data.title);
-    if (data.ean)   setEan(data.ean);
-    if (data.descHtml) {
-      setDescHtml(data.descHtml);
-      const stripped = data.descHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      setDesc(stripped);
-    }
-    if (data.images.length) {
-      setGlobalSlots(prev => {
-        const next = [...prev];
-        data.images.forEach((url, i) => { if (i < SLOTS) next[i] = url; });
-        return next;
-      });
-    }
-    if (data.allegroId) {
-      const allegroMp = marketplaces.find(m => m.slug === "allegro");
-      setMktCats(prev => {
-        const existing = prev["allegro"] ?? {
-          marketplaceId: allegroMp?.id ?? 0,
-          marketplaceSlug: "allegro",
-          marketplaceLabel: allegroMp?.name ?? "Allegro",
-        };
-        return { ...prev, allegro: { ...existing, allegroId: data.allegroId, allegroName: data.allegroName || data.allegroId } };
-      });
-      setAttrMp("allegro");
-    }
-    if (Object.keys(data.parameters).length) {
-      setAttrVals(prev => ({ ...prev, ...data.parameters }));
-    }
-    if (data.allegroId) setTab("marketplace");
-  };
-
   const handleSave = async () => {
     if (!title.trim()) { setError("Podaj nazwę produktu"); setTab("produkt"); return; }
     setSaving(true); setError("");
@@ -636,12 +951,14 @@ export default function NewProductPage() {
           images,
           marketplaceCategories: Object.values(mktCats),
           attributes: attrVals,
+          marketplaceLink: pendingAllegroLink,
         }),
       });
-      const json: UploadImageResponse = await res.json();
+      const json: CreateProductResponse = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd zapisu");
+      if (!json.productId) throw new Error("Brak productId po zapisie");
       setSaved(true);
-      setTimeout(() => router.push("/dashboard/products"), 700);
+      setTimeout(() => router.push(`/dashboard/products/${json.productId}`), 700);
     } catch (e: unknown) { setError(getErrorMessage(e, "Błąd zapisu")); }
     finally { setSaving(false); }
   };
@@ -690,19 +1007,7 @@ export default function NewProductPage() {
           <h1 className="text-2xl font-bold text-[var(--text-primary)] truncate">{title || "Nowy produkt"}</h1>
           <p className="text-sm text-[var(--text-secondary)] mt-0.5">Wype&#322;nij dane i przypisz do marketplace</p>
         </div>
-        <button onClick={() => setShowAllegroImport(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition hover:shadow-md hover:scale-105 flex-shrink-0"
-          style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
-          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-          </svg>
-          Import z Allegro
-        </button>
       </div>
-
-      {showAllegroImport && (
-        <AllegroImportModal onClose={() => setShowAllegroImport(false)} onImport={handleAllegroImport} />
-      )}
 
       {error && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">

@@ -5,6 +5,7 @@ export const translations = {
     nav: {
       dashboard: "Dashboard",
       products: "Produkty",
+      exportApi: "Export API",
       billing: "Billing",
       settings: "Ustawienia",
       logout: "Wyloguj",
@@ -14,7 +15,7 @@ export const translations = {
       creditsAvailable: "dostępne",
       openBilling: "Otwórz Billing → pakiety i historia",
       marketplace: "Marketplace",
-      category: "Kategoria",
+      categoryIntegrations: "Kategorie i integracje",
       allegroAccounts: "Konta Allegro",
     },
     topbar: {
@@ -313,6 +314,7 @@ export const translations = {
     nav: {
       dashboard: "Dashboard",
       products: "Products",
+      exportApi: "Export API",
       billing: "Billing",
       settings: "Settings",
       logout: "Log out",
@@ -322,7 +324,7 @@ export const translations = {
       creditsAvailable: "available",
       openBilling: "Open Billing → packages & history",
       marketplace: "Marketplace",
-      category: "Category",
+      categoryIntegrations: "Categories & integrations",
       allegroAccounts: "Allegro accounts",
     },
     topbar: {
