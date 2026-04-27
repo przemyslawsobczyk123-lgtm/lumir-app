@@ -26,26 +26,19 @@ import {
   type ProductExportPreflightRow,
 } from "./ui-helpers";
 import { buildExportApiHref } from "../export-api/export-api-helpers";
+import { getProductListPrimaryActions } from "./page-layout-helpers";
 import {
   extractBulkReportItemState,
   normalizeListAIDraftBadge,
   type AIDraftStatus,
   type BulkReportItemState,
 } from "./ai-draft-helpers";
-import { MarketplaceSourceImportModal } from "./MarketplaceSourceImportModal";
 import {
   getProductImportBadgeState,
   hasReportableImportJobItem,
   isImportHubBackgroundJobType,
-  isImportModeWithAi,
-  normalizeImportJobResult,
-  summarizeImportJobItems,
   type JobWithItems,
 } from "./import-job-helpers";
-import type {
-  MarketplaceImportMode,
-  MarketplaceImportProvider,
-} from "./import-hub-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -130,6 +123,7 @@ type JobItemSummary = {
   id: number | null;
   itemOrder?: number | null;
   productId: number | null;
+  resultProductExists?: boolean | null;
   sourceItem?: unknown;
   marketplaceSlug?: string | null;
   mode?: string | null;
@@ -163,24 +157,6 @@ type CompletedBulkReport = {
   reviewItemCount: number;
   failedProductIds: number[];
   successfulProductIds: number[];
-};
-type CompletedImportReport = {
-  job: JobSummary;
-  items: JobItemSummary[];
-  summary: ReturnType<typeof summarizeImportJobItems>;
-  provider: MarketplaceImportProvider | null;
-  mode: MarketplaceImportMode | null;
-  selectedCount: number;
-};
-type RecentProductExport = {
-  id: number;
-  marketplaceSlug: string;
-  marketplaceName: string;
-  categoryPath: string;
-  productIds: number[];
-  productCount: number;
-  fileName: string;
-  createdAt: string;
 };
 type ProductExportResult =
   | { ok: true }
@@ -248,37 +224,7 @@ const PRODUCTS_PAGE_COPY = {
     splitSelectionStatusFailed: "Fail",
     splitSelectionGroupsLabel: "grup",
     splitSelectionOpenGroup: "Otworz grupe",
-    recentExportsTitle: "Ostatnie eksporty",
-    recentExportsDesc: "Szybki powrot do ostatnio wygenerowanych paczek i ponowne pobranie bez skladania zaznaczen od zera.",
-    recentExportsEmpty: "Brak historii eksportow. Pierwszy eksport pojawi sie tutaj.",
-    recentExportsLoading: "Laduje historie eksportow...",
-    recentExportsRetry: "Powtorz eksport",
     recentExportsProducts: "produktow",
-    recentExportsCategory: "Kategoria",
-    recentExportsFile: "Plik",
-    importHistoryTab: "Historia Importow",
-    importHistoryTitle: "Historia importow",
-    importHistoryDesc: "Importy z Allegro i Amazon startuja z listy produktow. Tu widzisz status, duplikaty i ostatnie wyniki.",
-    importHistoryActiveTitle: "Import w tle",
-    importHistoryActiveDesc: "Importuje zaznaczone pozycje z marketplace.",
-    importHistoryLatestTitle: "Ostatni wynik",
-    importHistoryRecentTitle: "Ostatnie importy",
-    importHistoryEmpty: "Brak historii importow. Pierwszy import pojawi sie tutaj.",
-    importHistoryLoading: "Laduje historie importow...",
-    importHistoryRefresh: "Odswiez",
-    importHistoryClose: "Zamknij raport",
-    importHistorySelected: "zaznaczone",
-    importHistoryRows: "wierszy",
-    importHistoryModeAi: "Import + AI",
-    importHistoryModeOnly: "Import only",
-    importHistoryImported: "Zaimportowane",
-    importHistoryDuplicates: "Duplikaty",
-    importHistoryFailed: "Bledy",
-    importHistoryTotal: "Razem",
-    importHistoryDuplicateSkips: "Pominiete duplikaty",
-    importHistoryExistingProduct: "Istniejacy produkt",
-    importHistoryOpen: "Otworz",
-    importHistoryNoItems: "Brak szczegolow pozycji.",
     listLoadError: "Nie udalo sie zaladowac listy produktow.",
   },
   en: {
@@ -328,37 +274,7 @@ const PRODUCTS_PAGE_COPY = {
     splitSelectionStatusFailed: "Failed",
     splitSelectionGroupsLabel: "groups",
     splitSelectionOpenGroup: "Open group",
-    recentExportsTitle: "Recent exports",
-    recentExportsDesc: "Quick return to the latest generated packages and one-click download retry without rebuilding selection.",
-    recentExportsEmpty: "No export history yet. The first export will appear here.",
-    recentExportsLoading: "Loading export history...",
-    recentExportsRetry: "Retry export",
     recentExportsProducts: "products",
-    recentExportsCategory: "Category",
-    recentExportsFile: "File",
-    importHistoryTab: "Import history",
-    importHistoryTitle: "Import history",
-    importHistoryDesc: "Allegro and Amazon imports start from the product list. Status, duplicates, and latest results live here.",
-    importHistoryActiveTitle: "Import in background",
-    importHistoryActiveDesc: "Importing selected marketplace rows.",
-    importHistoryLatestTitle: "Latest result",
-    importHistoryRecentTitle: "Recent imports",
-    importHistoryEmpty: "No import history yet. The first import will appear here.",
-    importHistoryLoading: "Loading import history...",
-    importHistoryRefresh: "Refresh",
-    importHistoryClose: "Close report",
-    importHistorySelected: "selected",
-    importHistoryRows: "rows",
-    importHistoryModeAi: "Import + AI",
-    importHistoryModeOnly: "Import only",
-    importHistoryImported: "Imported",
-    importHistoryDuplicates: "Duplicates",
-    importHistoryFailed: "Failed",
-    importHistoryTotal: "Total",
-    importHistoryDuplicateSkips: "Duplicate skips",
-    importHistoryExistingProduct: "Existing product",
-    importHistoryOpen: "Open",
-    importHistoryNoItems: "No item details.",
     listLoadError: "Could not load product list.",
   },
 } as const;
@@ -393,12 +309,6 @@ const PRODUCTS_AI_COPY = {
     reviewHint: "Review items were saved, but still need a manual check before publish.",
   },
 } as const;
-
-function formatBlockedMixHint(template: string, unmapped: number, attributes: number) {
-  return template
-    .replace("{unmapped}", String(unmapped))
-    .replace("{attributes}", String(attributes));
-}
 
 function getListingIssueMeta(
   lang: keyof typeof PRODUCTS_PAGE_COPY,
@@ -591,6 +501,7 @@ function normalizeJobItemSummary(raw: Partial<JobItemSummary> | null | undefined
     id: typeof raw.id === "number" ? raw.id : null,
     itemOrder: raw.itemOrder ?? null,
     productId,
+    resultProductExists: raw.resultProductExists ?? null,
     sourceItem: raw.sourceItem ?? null,
     marketplaceSlug: raw.marketplaceSlug ?? null,
     mode: raw.mode ?? null,
@@ -682,102 +593,8 @@ function formatDurationLabel(seconds: number | null | undefined) {
   return `${minutes}m ${String(rem).padStart(2, "0")}s`;
 }
 
-function normalizeImportProvider(value: unknown): MarketplaceImportProvider | null {
-  const provider = typeof value === "string" ? value.trim().toLowerCase() : "";
-  return provider === "allegro" || provider === "amazon" ? provider : null;
-}
-
-function normalizeImportMode(value: unknown): MarketplaceImportMode | null {
-  const mode = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (mode === "import_only") return "import_only";
-  if (mode === "import_and_ai" || mode === "import_with_ai") return "import_and_ai";
-  return null;
-}
-
-function buildImportReportFromJob(
-  job: JobSummary,
-  items: JobItemSummary[],
-  fallback?: {
-    provider?: MarketplaceImportProvider | null;
-    mode?: MarketplaceImportMode | null;
-    selectedCount?: number | null;
-  }
-): CompletedImportReport {
-  return {
-    job,
-    items,
-    summary: summarizeImportJobItems(items),
-    provider: fallback?.provider ?? normalizeImportProvider(job.marketplaceSlug),
-    mode: fallback?.mode ?? normalizeImportMode(job.mode),
-    selectedCount: fallback?.selectedCount ?? job.requestedItems ?? items.length,
-  };
-}
-
-function getImportHistoryStatusClass(status: string | null) {
-  if (status === "imported" || status === "done") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "duplicate") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "error") return "border-rose-200 bg-rose-50 text-rose-700";
-  return "border-slate-200 bg-white text-slate-600";
-}
-
-function readImportSourceString(sourceItem: unknown, key: string) {
-  if (!sourceItem || typeof sourceItem !== "object" || Array.isArray(sourceItem)) return "";
-  const value = (sourceItem as Record<string, unknown>)[key];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function getImportHistoryItemLabel(
-  item: JobItemSummary,
-  result: ReturnType<typeof normalizeImportJobResult>,
-  index: number
-) {
-  return result.existingProductTitle
-    || result.message
-    || item.errorMessage
-    || item.currentMessage
-    || readImportSourceString(item.sourceItem, "title")
-    || `row-${index + 1}`;
-}
-
-function getImportHistoryRemoteLabel(
-  item: JobItemSummary,
-  result: ReturnType<typeof normalizeImportJobResult>,
-  index: number
-) {
-  return result.remoteId
-    || readImportSourceString(item.sourceItem, "remoteId")
-    || readImportSourceString(item.sourceItem, "asin")
-    || readImportSourceString(item.sourceItem, "ean")
-    || `row-${index + 1}`;
-}
-
 // ── Import modal ──────────────────────────────────────────────────
 const LIMIT = 50;
-
-function ImportModal({
-  onClose,
-  onQueued,
-}: {
-  onClose: () => void;
-  onQueued: (payload: {
-    job: {
-      id: string;
-      type?: string | null;
-      status: string;
-      progressPercent?: number | null;
-      currentMessage?: string | null;
-      requestedItems?: number | null;
-      createdAt?: string | null;
-    };
-    provider: MarketplaceImportProvider;
-    mode: MarketplaceImportMode;
-    selectedCount: number;
-  }) => void;
-}) {
-  return (
-    <MarketplaceSourceImportModal onClose={onClose} onQueued={onQueued} />
-  );
-}
 
 // Parsuj integracje z formatu "slug\x01name\x01missingCount|||..."
 type Integration = { slug: string; name: string; missing: number };
@@ -989,357 +806,6 @@ function ExportPreflightModal({
                 : `${copy.exportPreflightRun} (${summary.ready})`}
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function formatRecentExportDate(value: string, lang: keyof typeof PRODUCTS_PAGE_COPY) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(lang === "pl" ? "pl-PL" : "en-GB", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function ImportJobProgressCard({
-  job,
-  lastLaunch,
-}: {
-  job: JobSummary;
-  lastLaunch: { selectedCount: number } | null;
-}) {
-  const { lang } = useLang();
-  const copy = PRODUCTS_PAGE_COPY[lang];
-  const progress = Math.max(0, Math.min(100, job.progressPercent ?? 0));
-
-  return (
-    <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-sky-900">{copy.importHistoryActiveTitle}</div>
-          <div className="text-xs text-sky-700">
-            {job.currentMessage || copy.importHistoryActiveDesc}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {lastLaunch && (
-            <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
-              {lastLaunch.selectedCount} {copy.importHistoryRows}
-            </span>
-          )}
-          <span className="rounded-full bg-white/80 px-2 py-1 font-semibold text-sky-700">
-            {progress}%
-          </span>
-          <span className="rounded-full bg-white/80 px-2 py-1 text-sky-700">
-            {formatDurationLabel(job.elapsedSeconds)}
-          </span>
-        </div>
-      </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-100">
-        <div
-          className="h-full rounded-full bg-sky-500 transition-all"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ImportReportCard({
-  report,
-  latest,
-  onClose,
-  onOpenProduct,
-}: {
-  report: CompletedImportReport;
-  latest?: boolean;
-  onClose?: () => void;
-  onOpenProduct: (productId: number) => void;
-}) {
-  const { lang } = useLang();
-  const copy = PRODUCTS_PAGE_COPY[lang];
-  const modeLabel = report.mode
-    ? (isImportModeWithAi(report.mode) ? copy.importHistoryModeAi : copy.importHistoryModeOnly)
-    : null;
-  const reportDate = report.job.finishedAt || report.job.updatedAt || report.job.createdAt || "";
-
-  return (
-    <div className="rounded-2xl border border-indigo-200 bg-white px-4 py-4 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="text-sm font-semibold text-slate-900">
-            {latest ? copy.importHistoryLatestTitle : copy.importHistoryRecentTitle}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>{report.selectedCount} {copy.importHistorySelected}</span>
-            {report.provider && <span>{report.provider}</span>}
-            {modeLabel && <span>{modeLabel}</span>}
-            {reportDate && <span>{formatRecentExportDate(reportDate, lang)}</span>}
-          </div>
-        </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-          >
-            {copy.importHistoryClose}
-          </button>
-        )}
-      </div>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-4">
-        {[
-          [copy.importHistoryImported, report.summary.importedCount, "border-emerald-200 bg-emerald-50 text-emerald-700"],
-          [copy.importHistoryDuplicates, report.summary.duplicateCount, "border-amber-200 bg-amber-50 text-amber-700"],
-          [copy.importHistoryFailed, report.summary.failedCount, "border-rose-200 bg-rose-50 text-rose-700"],
-          [copy.importHistoryTotal, report.summary.totalCount, "border-slate-200 bg-slate-50 text-slate-700"],
-        ].map(([label, value, className]) => (
-          <div key={String(label)} className={`rounded-2xl border px-4 py-3 ${className}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em]">{label}</div>
-            <div className="mt-2 text-2xl font-semibold">{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {report.summary.duplicates.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <div className="text-sm font-semibold text-amber-900">{copy.importHistoryDuplicateSkips}</div>
-          <div className="mt-2 space-y-2">
-            {report.summary.duplicates.slice(0, 5).map((item, index) => (
-              <div key={`${item.remoteId || "duplicate"}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-amber-900">
-                <span className="rounded-full bg-white px-2 py-1 font-mono">{item.remoteId || "remote"}</span>
-                <span>{item.existingProductTitle || copy.importHistoryExistingProduct}</span>
-                {item.existingProductId ? (
-                  <button
-                    onClick={() => onOpenProduct(item.existingProductId as number)}
-                    className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-700 transition hover:bg-amber-100"
-                  >
-                    {copy.importHistoryOpen} #{item.existingProductId}
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4 space-y-2">
-        {report.items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-            {copy.importHistoryNoItems}
-          </div>
-        ) : (
-          report.items.slice(0, latest ? 6 : 4).map((item, index) => {
-            const result = normalizeImportJobResult(item.resultJson);
-            const statusLabel = result.status || item.status || "queued";
-            const productId = result.productId ?? item.productId;
-
-            return (
-              <div
-                key={`${item.id ?? index}-${getImportHistoryRemoteLabel(item, result, index)}-${statusLabel}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-              >
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-mono text-slate-600">
-                    {getImportHistoryRemoteLabel(item, result, index)}
-                  </span>
-                  <span className="text-slate-700">
-                    {getImportHistoryItemLabel(item, result, index)}
-                  </span>
-                  {productId ? (
-                    <button
-                      onClick={() => onOpenProduct(productId)}
-                      className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
-                    >
-                      {copy.importHistoryOpen} #{productId}
-                    </button>
-                  ) : null}
-                </div>
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] ${getImportHistoryStatusClass(statusLabel)}`}>
-                  {statusLabel}
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ImportHistoryPanel({
-  activeJob,
-  lastLaunch,
-  completedReport,
-  reports,
-  loading,
-  onCloseCompleted,
-  onOpenProduct,
-  onRefresh,
-}: {
-  activeJob: JobSummary | null;
-  lastLaunch: { selectedCount: number } | null;
-  completedReport: CompletedImportReport | null;
-  reports: CompletedImportReport[];
-  loading: boolean;
-  onCloseCompleted: () => void;
-  onOpenProduct: (productId: number) => void;
-  onRefresh: () => void;
-}) {
-  const { lang } = useLang();
-  const copy = PRODUCTS_PAGE_COPY[lang];
-  const recentReports = completedReport
-    ? reports.filter((report) => report.job.id !== completedReport.job.id)
-    : reports;
-
-  return (
-    <div className="mb-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
-            {copy.importHistoryTitle}
-          </div>
-          <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
-            {copy.importHistoryDesc}
-          </p>
-        </div>
-        <button
-          onClick={() => { if (!loading) onRefresh(); }}
-          aria-disabled={loading}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            loading
-              ? "bg-slate-200 text-slate-500"
-              : "bg-[var(--text-primary)] text-[var(--bg-card)] hover:opacity-90"
-          }`}
-        >
-          {copy.importHistoryRefresh}
-        </button>
-      </div>
-
-      <div className="mt-4 space-y-4">
-        {activeJob && (
-          <ImportJobProgressCard job={activeJob} lastLaunch={lastLaunch} />
-        )}
-
-        {completedReport && (
-          <ImportReportCard
-            report={completedReport}
-            latest
-            onClose={onCloseCompleted}
-            onOpenProduct={onOpenProduct}
-          />
-        )}
-
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-[var(--text-primary)]">
-            {copy.importHistoryRecentTitle}
-          </div>
-          {loading ? (
-            <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
-              {copy.importHistoryLoading}
-            </div>
-          ) : recentReports.length === 0 && !activeJob && !completedReport ? (
-            <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
-              {copy.importHistoryEmpty}
-            </div>
-          ) : (
-            recentReports.map((report) => (
-              <ImportReportCard
-                key={report.job.id}
-                report={report}
-                onOpenProduct={onOpenProduct}
-              />
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RecentExportsPanel({
-  rows,
-  loading,
-  exporting,
-  onRetry,
-}: {
-  rows: RecentProductExport[];
-  loading: boolean;
-  exporting: boolean;
-  onRetry: (row: RecentProductExport) => void;
-}) {
-  const { lang } = useLang();
-  const copy = PRODUCTS_PAGE_COPY[lang];
-
-  return (
-    <div className="mb-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4 shadow-sm">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
-            {copy.recentExportsTitle}
-          </div>
-          <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
-            {copy.recentExportsDesc}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        {loading ? (
-          <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
-            {copy.recentExportsLoading}
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-6 text-sm text-[var(--text-secondary)]">
-            {copy.recentExportsEmpty}
-          </div>
-        ) : (
-          rows.map((row) => (
-            <div
-              key={row.id}
-              className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 lg:flex-row lg:items-center lg:justify-between"
-            >
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
-                    {row.marketplaceName}
-                  </span>
-                  <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
-                    {formatRecentExportDate(row.createdAt, lang)}
-                  </span>
-                  <span className="rounded-full bg-[var(--bg-card)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                    {row.productCount} {copy.recentExportsProducts}
-                  </span>
-                </div>
-
-                <div className="text-sm text-[var(--text-primary)]">
-                  <span className="font-semibold">{copy.recentExportsCategory}:</span>{" "}
-                  <span className="text-[var(--text-secondary)]">{row.categoryPath || "-"}</span>
-                </div>
-
-                <div className="truncate text-xs text-[var(--text-tertiary)]">
-                  <span className="font-semibold">{copy.recentExportsFile}:</span> {row.fileName}
-                </div>
-              </div>
-
-              <button
-                onClick={() => onRetry(row)}
-                disabled={exporting || row.productIds.length === 0}
-                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                  exporting || row.productIds.length === 0
-                    ? "cursor-not-allowed bg-slate-200 text-slate-500"
-                    : "bg-[var(--text-primary)] text-[var(--bg-card)] hover:opacity-90"
-                }`}
-              >
-                {copy.recentExportsRetry}
-              </button>
-            </div>
-          ))
-        )}
       </div>
     </div>
   );
@@ -1912,7 +1378,6 @@ export default function ProductsPage() {
   const [mpFilter, setMpFilter]           = useState("");
   const [marketplaces, setMarketplaces]   = useState<{slug:string;name:string}[]>([]);
   const [page, setPage]                   = useState(1);
-  const [showImport, setShowImport]       = useState(false);
   const [showBulkAI, setShowBulkAI]       = useState(false);
   const [showExportPreflight, setShowExportPreflight] = useState(false);
   const [selected, setSelected]           = useState<Set<number>>(new Set());
@@ -1922,26 +1387,13 @@ export default function ProductsPage() {
   const [deleting, setDeleting]           = useState(false);
   const [activeInlineJob, setActiveInlineJob] = useState<JobSummary | null>(null);
   const [completedBulkReport, setCompletedBulkReport] = useState<CompletedBulkReport | null>(null);
-  const [activeImportJob, setActiveImportJob] = useState<JobSummary | null>(null);
-  const [completedImportReport, setCompletedImportReport] = useState<CompletedImportReport | null>(null);
   const [activeBackgroundJobs, setActiveBackgroundJobs] = useState<JobWithItems[]>([]);
-  const [lastImportLaunch, setLastImportLaunch] = useState<{
-    provider: MarketplaceImportProvider;
-    mode: MarketplaceImportMode;
-    selectedCount: number;
-  } | null>(null);
   const [retryingFailedBulk, setRetryingFailedBulk] = useState(false);
   const [listingFocus, setListingFocus] = useState<ProductListingFocus>("all");
-  const [activeTab, setActiveTab] = useState<"products" | "imports" | "exports">("products");
-  const [recentImportReports, setRecentImportReports] = useState<CompletedImportReport[]>([]);
-  const [recentImportReportsLoading, setRecentImportReportsLoading] = useState(true);
-  const [recentExports, setRecentExports] = useState<RecentProductExport[]>([]);
-  const [recentExportsLoading, setRecentExportsLoading] = useState(true);
   const [splitSelectionGroups, setSplitSelectionGroups] = useState<ProductExportCategoryGroup[]>([]);
   const [exportBatchGroups, setExportBatchGroups] = useState<ProductExportBatchGroup[]>([]);
   const [batchExporting, setBatchExporting] = useState(false);
   const inlineJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const importJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestSeq = useRef(0);
 
   const loadProducts = useCallback(async (s: string, p: number, st: string, mp: string) => {
@@ -1963,20 +1415,6 @@ export default function ProductsPage() {
       setListError(getErrorMessage(err, PRODUCTS_PAGE_COPY.pl.listLoadError));
     } finally {
       if (requestSeq.current === requestId) setLoading(false);
-    }
-  }, []);
-
-  const loadRecentExports = useCallback(async () => {
-    setRecentExportsLoading(true);
-    try {
-      const res = await fetch(`${API}/api/products/exports/recent?limit=6`, { headers: authHeaders() });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Blad ladowania historii eksportow");
-      setRecentExports(Array.isArray(json.data) ? json.data : []);
-    } catch {
-      setRecentExports([]);
-    } finally {
-      setRecentExportsLoading(false);
     }
   }, []);
 
@@ -2021,66 +1459,6 @@ export default function ProductsPage() {
     }
   }, [loadJobItems]);
 
-  const loadRecentImportReports = useCallback(async () => {
-    setRecentImportReportsLoading(true);
-    try {
-      const res = await fetch(`${API}/api/jobs?scope=recent`, {
-        headers: authHeaders(),
-        cache: "no-store",
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac historii importow");
-
-      const importJobs = Array.isArray(json.data)
-        ? json.data
-            .map((item: Partial<JobSummary>) => normalizeJobSummary(item))
-            .filter((job: JobSummary | null): job is JobSummary => Boolean(job))
-            .filter((job: JobSummary) => String(job.type || "").trim() === "products_import_marketplace")
-            .slice(0, 8)
-        : [];
-
-      const reports = await Promise.all(
-        importJobs.map(async (job: JobSummary) => {
-          let items: JobItemSummary[] = [];
-          try {
-            items = await loadJobItems(job.id);
-          } catch {}
-          return buildImportReportFromJob(job, items);
-        })
-      );
-
-      setRecentImportReports(reports);
-    } catch {
-      setRecentImportReports([]);
-    } finally {
-      setRecentImportReportsLoading(false);
-    }
-  }, [loadJobItems]);
-
-  const finalizeImportJob = useCallback(async (job: JobSummary) => {
-    let items: JobItemSummary[] = [];
-
-    try {
-      items = await loadJobItems(job.id);
-    } catch (err: unknown) {
-      console.error("Import report load failed:", getErrorMessage(err, "Nie udalo sie pobrac itemow joba"));
-    }
-
-    setCompletedImportReport(buildImportReportFromJob(job, items, {
-      provider: lastImportLaunch?.provider ?? null,
-      mode: lastImportLaunch?.mode ?? null,
-      selectedCount: lastImportLaunch?.selectedCount ?? items.length,
-    }));
-    setActiveImportJob(null);
-    setActiveTab("imports");
-
-    await Promise.all([
-      loadProducts(search, page, statusFilter, mpFilter),
-      loadActiveBackgroundJobs(),
-      loadRecentImportReports(),
-    ]);
-  }, [lastImportLaunch, loadActiveBackgroundJobs, loadJobItems, loadProducts, loadRecentImportReports, mpFilter, page, search, statusFilter]);
-
   const handleBulkJobChange = useCallback((job: JobSummary | null) => {
     setActiveInlineJob(job);
     if (!job) {
@@ -2115,14 +1493,6 @@ export default function ProductsPage() {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json()).then(j => { if (j.data) setMarketplaces(j.data); }).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    void loadRecentExports();
-  }, [loadRecentExports]);
-
-  useEffect(() => {
-    void loadRecentImportReports();
-  }, [loadRecentImportReports]);
 
   useEffect(() => {
     void loadActiveBackgroundJobs();
@@ -2210,65 +1580,10 @@ export default function ProductsPage() {
     };
   }, [activeInlineJob?.id, activeInlineJob?.status, handleBulkJobChange]);
 
-  useEffect(() => {
-    if (!activeImportJob?.id) return;
-
-    let cancelled = false;
-    const stopPolling = () => {
-      if (importJobPollRef.current) clearInterval(importJobPollRef.current);
-      importJobPollRef.current = null;
-    };
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`${API}/api/jobs/${activeImportJob.id}`, { headers: authHeaders(), cache: "no-store" });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || "Nie udalo sie pobrac statusu joba importu");
-        const nextJob = normalizeJobSummary(json.data);
-        if (!nextJob || cancelled) return;
-
-        if (nextJob.status === "done" || nextJob.status === "error") {
-          stopPolling();
-          await finalizeImportJob(nextJob);
-          return;
-        }
-
-        setActiveImportJob(nextJob);
-        await loadActiveBackgroundJobs();
-      } catch (err: unknown) {
-        if (cancelled) return;
-        stopPolling();
-        setActiveImportJob((current) => current ? {
-          ...current,
-          status: "error",
-          currentMessage: getErrorMessage(err, "Nie udalo sie pobrac statusu joba importu"),
-        } : current);
-      }
-    };
-
-    void poll();
-    importJobPollRef.current = setInterval(() => {
-      void poll();
-    }, 2000);
-
-    return () => {
-      cancelled = true;
-      stopPolling();
-    };
-  }, [activeImportJob?.id, finalizeImportJob, loadActiveBackgroundJobs]);
-
-  const handleDelete = async (id: number) => {
-    if (!confirm(t.deleteProduct + "?")) return;
-    try {
-      const res = await fetch(`${API}/api/products/${id}`, { method: "DELETE", headers: authHeadersJSON() });
-      if (!res.ok) {
-        alert(await getResponseErrorMessage(res, "Nie udalo sie usunac produktu"));
-        return;
-      }
-      loadProducts(search, page, statusFilter, mpFilter);
-    } catch {
-      alert("Nie udalo sie usunac produktu. Sprawdz polaczenie i sprobuj ponownie.");
-    }
+  const handleDelete = (id: number) => {
+    setOpenMenu(null);
+    setSelected(new Set([id]));
+    setShowDeleteConfirm(true);
   };
 
   const handleExport = async (
@@ -2338,7 +1653,6 @@ export default function ProductsPage() {
       setShowExportPreflight(false);
       await Promise.all([
         loadProducts(search, page, statusFilter, mpFilter),
-        loadRecentExports(),
       ]);
       return { ok: true };
     } catch (err: unknown) {
@@ -2371,7 +1685,10 @@ export default function ProductsPage() {
       setSplitSelectionGroups([]);
       setExportBatchGroups([]);
       setShowDeleteConfirm(false);
-      loadProducts(search, page, statusFilter, mpFilter);
+      await Promise.all([
+        loadProducts(search, page, statusFilter, mpFilter),
+        loadActiveBackgroundJobs(),
+      ]);
     } finally {
       setDeleting(false);
     }
@@ -2556,28 +1873,14 @@ export default function ProductsPage() {
   const selectedOverBulkLimit = selected.size > 10;
   const exportBusy = exporting || batchExporting;
   const inlineJobActive = !!activeInlineJob && activeInlineJob.status !== "done" && activeInlineJob.status !== "error";
-  const backgroundImportJob = activeBackgroundJobs.find((entry) => entry.job.type === "products_import_marketplace")?.job ?? null;
-  const visibleImportJob = activeImportJob ?? backgroundImportJob;
-  const importJobActive = !!visibleImportJob && visibleImportJob.status !== "done" && visibleImportJob.status !== "error";
   const productJobEntries = activeBackgroundJobs;
+  const primaryActions = getProductListPrimaryActions({
+    addProduct: t.addBtn,
+    importProducts: t.importBtn,
+  });
 
   return (
     <div>
-      {showImport && (
-        <ImportModal
-          onClose={() => setShowImport(false)}
-          onQueued={({ job, provider, mode, selectedCount }) => {
-            const nextJob = normalizeJobSummary(job);
-            setLastImportLaunch({ provider, mode, selectedCount });
-            setCompletedImportReport(null);
-            setShowImport(false);
-            setActiveTab("imports");
-            if (nextJob) setActiveImportJob(nextJob);
-            void loadActiveBackgroundJobs();
-          }}
-        />
-      )}
-
       {showDeleteConfirm && (
         <ConfirmDeleteModal
           count={selected.size}
@@ -2627,155 +1930,23 @@ export default function ProductsPage() {
           </p>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
-          <button onClick={() => setShowImport(true)}
-            className="flex items-center justify-center gap-1.5 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] shadow-sm transition hover:bg-[var(--bg-body)]">
-            <UploadIcon /> {t.importBtn}
-          </button>
-          <button onClick={() => router.push("/dashboard/new-product")}
-            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg">
-            <PlusIcon /> {t.addBtn}
-          </button>
+          {primaryActions.map((action) => (
+            <button
+              key={action.key}
+              onClick={() => router.push(action.href)}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
+            >
+              <PlusIcon /> {action.label}
+            </button>
+          ))}
         </div>
       </div>
-
-      {/* Tabs */}
-      <div className="mb-4 flex gap-1 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-1 w-fit shadow-sm">
-        <button
-          onClick={() => setActiveTab("products")}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "products"
-              ? "bg-[var(--text-primary)] text-[var(--bg-card)] shadow-sm"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
-          }`}
-        >
-          {lang === "pl" ? "Produkty" : "Products"}
-        </button>
-        <button
-          onClick={() => setActiveTab("imports")}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "imports"
-              ? "bg-[var(--text-primary)] text-[var(--bg-card)] shadow-sm"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
-          }`}
-        >
-          {PRODUCTS_PAGE_COPY[lang].importHistoryTab}
-          {(importJobActive || recentImportReports.length > 0) && (
-            <span className="ml-2 rounded-full bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-600">
-              {importJobActive ? "live" : recentImportReports.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("exports")}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "exports"
-              ? "bg-[var(--text-primary)] text-[var(--bg-card)] shadow-sm"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)]"
-          }`}
-        >
-          {lang === "pl" ? "Historia eksportów" : "Export history"}
-          {recentExports.length > 0 && (
-            <span className="ml-2 rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-bold text-sky-600">
-              {recentExports.length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Imports tab */}
-      {activeTab === "imports" && (
-        <ImportHistoryPanel
-          activeJob={importJobActive ? visibleImportJob : null}
-          lastLaunch={lastImportLaunch}
-          completedReport={completedImportReport}
-          reports={recentImportReports}
-          loading={recentImportReportsLoading}
-          onCloseCompleted={() => setCompletedImportReport(null)}
-          onOpenProduct={(productId) => router.push(`/dashboard/products/${productId}`)}
-          onRefresh={() => { void loadRecentImportReports(); }}
-        />
-      )}
-
-      {/* Exports tab */}
-      {activeTab === "exports" && (
-        <RecentExportsPanel
-          rows={recentExports}
-          loading={recentExportsLoading}
-          exporting={exportBusy}
-          onRetry={(row) => {
-            void handleExport(row.productIds, {
-              marketplaceSlug: row.marketplaceSlug,
-              categoryPath: row.categoryPath,
-            });
-          }}
-        />
-      )}
-
-      {/* Products tab content */}
-      {activeTab === "products" && (<>
 
       {listError && (
         <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
           {listError}
         </div>
       )}
-
-      {/* Stats cards */}
-      <div className="mb-3 grid gap-3 md:grid-cols-4">
-        {[
-          {
-            focus: "all" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusAll,
-            value: listingStats.all,
-            hint: PRODUCTS_PAGE_COPY[lang].focusAllHint,
-          },
-          {
-            focus: "ready" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusReady,
-            value: listingStats.ready,
-            hint: PRODUCTS_PAGE_COPY[lang].focusReadyHint,
-          },
-          {
-            focus: "review" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusReview,
-            value: listingStats.review,
-            hint: PRODUCTS_PAGE_COPY[lang].focusReviewHint,
-          },
-          {
-            focus: "blocked" as const,
-            label: PRODUCTS_PAGE_COPY[lang].focusBlocked,
-            value: listingStats.blocked,
-            hint: formatBlockedMixHint(
-              PRODUCTS_PAGE_COPY[lang].blockedMixHint,
-              listingStats.unmapped,
-              listingStats.attributesMissing
-            ),
-          },
-        ].map((card) => {
-          const active = listingFocus === card.focus;
-          return (
-            <button
-              key={card.focus}
-              onClick={() => setListingFocus(card.focus)}
-              className="rounded-2xl p-4 text-left transition"
-              style={active ? {
-                background: "var(--accent-primary-light)",
-                border: "1px solid var(--accent-primary-border)",
-                boxShadow: "0 0 0 1px var(--accent-primary-border) inset",
-              } : {
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-default)",
-              }}
-            >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: active ? "var(--accent-primary)" : "var(--text-tertiary)" }}>
-                {card.label}
-              </div>
-              <div className="mt-2 text-3xl font-semibold" style={{ color: "var(--text-heading)" }}>{card.value}</div>
-              <div className="mt-2 text-sm leading-5" style={{ color: "var(--text-secondary)" }}>{card.hint}</div>
-            </button>
-          );
-        })}
-      </div>
 
       {/* Toolbar */}
       <div className={`mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3 shadow-sm sm:p-4 ${
@@ -2802,6 +1973,27 @@ export default function ProductsPage() {
                 {t.clearFilters}
               </button>
             )}
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { focus: "all" as const, label: PRODUCTS_PAGE_COPY[lang].focusAll, value: listingStats.all },
+              { focus: "ready" as const, label: PRODUCTS_PAGE_COPY[lang].focusReady, value: listingStats.ready },
+              { focus: "review" as const, label: PRODUCTS_PAGE_COPY[lang].focusReview, value: listingStats.review },
+              { focus: "blocked" as const, label: PRODUCTS_PAGE_COPY[lang].focusBlocked, value: listingStats.blocked },
+            ].map((item) => (
+              <button
+                key={item.focus}
+                onClick={() => setListingFocus(item.focus)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  listingFocus === item.focus
+                    ? "bg-indigo-600 text-white"
+                    : "border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
+                }`}
+              >
+                {item.label} <span className="ml-1 opacity-75">{item.value}</span>
+              </button>
+            ))}
           </div>
 
           <div className="flex flex-wrap gap-1.5">
@@ -2896,7 +2088,7 @@ export default function ProductsPage() {
                   onClick={() => router.push(buildExportApiHref({ marketplaceSlug: mpFilter, productIds: [...selected] }))}
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
                 >
-                  Otworz w Export API
+                  Otworz w Export
                 </button>
               )}
 
@@ -2930,17 +2122,17 @@ export default function ProductsPage() {
                   setShowBulkAI(true);
                 }}
                 aria-disabled={selectedOverBulkLimit || exportBusy}
-                className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                className={`order-first flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold shadow-lg shadow-indigo-500/25 ring-2 ring-indigo-200/70 transition sm:min-w-[230px] ${
                   selectedOverBulkLimit || exportBusy
-                    ? "cursor-not-allowed bg-indigo-200 text-indigo-500"
-                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                    ? "cursor-not-allowed bg-indigo-200 text-indigo-500 shadow-none ring-indigo-100"
+                    : "bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 hover:shadow-xl hover:shadow-indigo-500/35"
                 }`}
               >
-                <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2}>
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2}>
                   <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5.64 5.64l4.24 4.24"/><path d="M14.12 14.12l4.24 4.24"/>
                   <path d="M3 12h6"/><path d="M15 12h6"/><path d="M5.64 18.36l4.24-4.24"/><path d="M14.12 9.88l4.24-4.24"/>
                 </svg>
-                {t.generateAI}
+                {lang === "pl" ? "Generuj AI dla zaznaczonych" : "Generate AI for selected"}
               </button>
 
               <button
@@ -3069,7 +2261,7 @@ export default function ProductsPage() {
 
         {/* Column headers */}
         <div className="hidden items-center border-b border-[var(--border-light)] bg-[var(--bg-table-header)] px-4 py-3 md:grid"
-          style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}>
+          style={{ gridTemplateColumns: "36px 52px minmax(0,1fr) minmax(220px,280px) 44px" }}>
           <div className="flex items-center justify-center">
             <input type="checkbox" checked={allChecked} onChange={toggleAll}
               ref={el => { if (el) el.indeterminate = someChecked; }}
@@ -3112,7 +2304,7 @@ export default function ProductsPage() {
 
             <div className="hidden divide-y divide-[var(--border-light)] md:block">
               {Array.from({ length: 6 }).map((_, idx) => (
-                <div key={idx} className="grid items-center px-4 py-3" style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}>
+                <div key={idx} className="grid items-center px-4 py-4" style={{ gridTemplateColumns: "36px 52px minmax(0,1fr) minmax(220px,280px) 44px" }}>
                   <div className="mx-auto h-4 w-4 animate-pulse rounded bg-[var(--bg-input)]" />
                   <div className="h-9 w-9 animate-pulse rounded-lg bg-[var(--bg-input)]" />
                   <div className="space-y-2 pl-3">
@@ -3196,7 +2388,7 @@ export default function ProductsPage() {
 
             {!hasFilters && listingFocus === "all" && (
               <div className="mt-1 flex flex-col gap-2 sm:flex-row">
-                <button onClick={() => setShowImport(true)}
+                <button onClick={() => router.push("/dashboard/imports")}
                   className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-100">
                   <UploadIcon /> {t.importProducts}
                 </button>
@@ -3259,7 +2451,16 @@ export default function ProductsPage() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-semibold leading-snug text-[var(--text-primary)]">
+                          {p.title || <span className="italic font-normal text-[var(--text-tertiary)]">{t.noName}</span>}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-mono text-[var(--text-tertiary)]">
+                          <span>ID {p.id}</span>
+                          {p.sku && <span>SKU {p.sku}</span>}
+                          {p.ean && <span>EAN {p.ean}</span>}
+                          {p.asin && <span>ASIN {p.asin}</span>}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
                           <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
                             p.status === "mapped"
                               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -3289,15 +2490,6 @@ export default function ProductsPage() {
                           <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${listingIssue.className}`}>
                             {listingIssue.label}
                           </span>
-                        </div>
-                        <div className="mt-2 text-sm font-semibold leading-snug text-[var(--text-primary)]">
-                          {p.title || <span className="italic font-normal text-[var(--text-tertiary)]">{t.noName}</span>}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-mono text-[var(--text-tertiary)]">
-                          <span>ID {p.id}</span>
-                          {p.sku && <span>SKU {p.sku}</span>}
-                          {p.ean && <span>EAN {p.ean}</span>}
-                          {p.asin && <span>ASIN {p.asin}</span>}
                         </div>
                       </div>
                     </div>
@@ -3367,10 +2559,10 @@ export default function ProductsPage() {
 
                 return (
                   <div key={p.id}
-                    className={`grid items-center px-4 py-3 group cursor-pointer transition-colors ${
+                    className={`grid items-center px-4 py-4 group cursor-pointer transition-colors ${
                       isSelected ? "bg-[var(--bg-card-selected)]" : "hover:bg-[var(--bg-card-hover)]"
                     }`}
-                    style={{ gridTemplateColumns: "36px 44px 1fr 180px 40px" }}
+                    style={{ gridTemplateColumns: "36px 52px minmax(0,1fr) minmax(220px,280px) 44px" }}
                     onClick={() => router.push(`/dashboard/products/${p.id}`)}>
 
                     {/* Checkbox */}
@@ -3381,12 +2573,12 @@ export default function ProductsPage() {
                     </div>
 
                     {/* Thumbnail */}
-                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex items-center justify-center flex-shrink-0 border border-[var(--img-placeholder-border)]">
+                    <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[var(--img-placeholder-bg)] flex items-center justify-center flex-shrink-0 border border-[var(--img-placeholder-border)]">
                       {p.image_url ? (
                         <UnoptimizedRemoteImage
                           src={p.image_url}
                           alt={p.title || ""}
-                          sizes="36px"
+                          sizes="40px"
                           className="object-cover"
                         />
                       ) : (
@@ -3400,10 +2592,16 @@ export default function ProductsPage() {
 
                     {/* Product info */}
                     <div className="min-w-0 pl-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[var(--text-primary)] truncate">
-                          {p.title || <span className="text-[var(--text-tertiary)] font-normal italic">{t.noName}</span>}
-                        </span>
+                      <div className="min-w-0 text-sm font-semibold text-[var(--text-primary)] truncate">
+                        {p.title || <span className="text-[var(--text-tertiary)] font-normal italic">{t.noName}</span>}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ID {p.id}</span>
+                        {p.sku  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">SKU {p.sku}</span>}
+                        {p.ean  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">EAN {p.ean}</span>}
+                        {p.asin && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ASIN {p.asin}</span>}
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
                           p.status === "mapped"
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -3434,12 +2632,6 @@ export default function ProductsPage() {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${listingIssue.className}`}>
                           {listingIssue.label}
                         </span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ID {p.id}</span>
-                        {p.sku  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">SKU {p.sku}</span>}
-                        {p.ean  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">EAN {p.ean}</span>}
-                        {p.asin && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ASIN {p.asin}</span>}
                       </div>
                     </div>
 
@@ -3534,8 +2726,6 @@ export default function ProductsPage() {
           </>
         )}
       </div>
-
-      </>)}
     </div>
   );
 }

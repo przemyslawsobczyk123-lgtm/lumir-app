@@ -53,6 +53,18 @@ export function getAllegroDuplicateImportMessage(
   return `Produkt juz istnieje w LuMir (#${productId}: ${productTitle}). Pomijamy import tej oferty. Usun lokalny produkt, jesli chcesz zaimportowac te oferte ponownie.`;
 }
 
+export function getAllegroDuplicateImportDeleteConfirmMessage(
+  input: AllegroImportCheckResponse | null | undefined
+): string {
+  if (!input?.exists || !Number.isInteger(input.productId)) {
+    return "";
+  }
+
+  const productTitle = normalizeText(input.productTitle) || "Produkt z LuMir";
+
+  return `Produkt juz istnieje w LuMir (#${input.productId}: ${productTitle}). Usunac tylko lokalny produkt w LuMir i pobrac oferte ponownie? Oferta Allegro nie zostanie usunieta.`;
+}
+
 export function buildAllegroDescriptionHtml(rawSections: unknown): string {
   const sections = Array.isArray(rawSections) ? rawSections : [];
   let html = "";

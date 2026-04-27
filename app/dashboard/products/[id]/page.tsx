@@ -3,7 +3,7 @@
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { UnoptimizedRemoteImage } from "../../_components/UnoptimizedRemoteImage";
-import { AmazonImportModal } from "../../_components/AmazonImportModal";
+import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "../../mvp-feature-flags";
 import { canAutoAssignCategory, getDraftCategoryHint } from "../ui-helpers";
 import {
   normalizeDraftQualitySummary,
@@ -39,13 +39,11 @@ import {
   type AmazonProductTypeDefinition,
   type AmazonValidationPreview,
 } from "./amazon-foundation-helpers";
-import {
-  applyAmazonCatalogItemToProductForm,
-  type AmazonCatalogItem,
-} from "../../_lib/amazon-import";
+import { buildExportApiHref } from "../../export-api/export-api-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const ALLEGRO_PUBLISH_ENABLED = isAllegroPublishEnabled();
+const AMAZON_UI_ENABLED = isAmazonUiEnabled();
 
 function getToken() {
   return typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
@@ -361,7 +359,6 @@ export default function EditProductPage() {
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState("");
-  const [showAmazonImport, setShowAmazonImport] = useState(false);
 
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
 
@@ -454,10 +451,11 @@ export default function EditProductPage() {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json() as Promise<MarketplaceListResponse>).then(j => {
         if (j.data) {
-          setMarketplaces(j.data);
-          if (j.data.length) {
-            setAttrMp(j.data[0].slug);
-            setAiMp(j.data[0].slug);
+          const visibleMarketplaces = withoutAmazonWhenDisabled(j.data, (mp) => mp.slug, AMAZON_UI_ENABLED);
+          setMarketplaces(visibleMarketplaces);
+          if (visibleMarketplaces.length) {
+            setAttrMp(visibleMarketplaces[0].slug);
+            setAiMp(visibleMarketplaces[0].slug);
           }
         }
       }).catch(() => {});
@@ -532,34 +530,6 @@ export default function EditProductPage() {
     setAttrMp(mp.slug);
     setAiMp(mp.slug);
   };
-
-  const applyAmazonImport = useCallback((data: AmazonCatalogItem) => {
-    const next = applyAmazonCatalogItemToProductForm({
-      title,
-      brand,
-      asin,
-      ean,
-      desc,
-      descHtml,
-      globalSlots,
-    }, data, SLOTS);
-
-    setTitle(next.title);
-    setBrand(next.brand);
-    setAsin(next.asin);
-    setEan(next.ean);
-    setDesc(next.desc);
-    setDescHtml(next.descHtml);
-    setGlobalSlots(next.globalSlots);
-    setSaved(false);
-    setError("");
-  }, [asin, brand, desc, descHtml, ean, globalSlots, title]);
-
-  const handleAmazonImport = useCallback((data: AmazonCatalogItem) => {
-    setShowAmazonImport(false);
-    applyAmazonImport(data);
-    setTab("produkt");
-  }, [applyAmazonImport]);
 
   const loadProduct = useCallback(async (silent = false) => {
     if (!silent) setLoadingProduct(true);
@@ -776,6 +746,7 @@ export default function EditProductPage() {
   }, [allegroAccountId, allegroAccounts, allegroOfferId, id, productMarketplaceLinks]);
 
   const loadAmazonAccounts = useCallback(async () => {
+    if (!AMAZON_UI_ENABLED) return;
     try {
       const res = await fetch(`${API}/api/seller/amazon/accounts`, { headers: authHeaders(), cache: "no-store" });
       const json = await res.json();
@@ -939,6 +910,7 @@ export default function EditProductPage() {
   }, [allegroAccountId, allegroConfirmNeedsReview, allegroFields, allegroOfferId, id, loadAllegroChecklist, loadAllegroHistory]);
 
   const handleAmazonSuggest = useCallback(async () => {
+    if (!AMAZON_UI_ENABLED) return;
     if (!amazonAccountId || !amazonMarketplaceId) {
       setError("Wybierz konto Amazon i marketplace do sugestii product type");
       return;
@@ -971,6 +943,7 @@ export default function EditProductPage() {
   }, [amazonAccountId, amazonMarketplaceId, id]);
 
   const loadAmazonHistory = useCallback(async () => {
+    if (!AMAZON_UI_ENABLED) return;
     if (!amazonAccountId || !amazonMarketplaceId) {
       setAmazonHistory([]);
       return;
@@ -997,6 +970,7 @@ export default function EditProductPage() {
   }, [amazonAccountId, amazonMarketplaceId, id]);
 
   useEffect(() => {
+    if (!AMAZON_UI_ENABLED) return;
     if (!amazonAccountId || !amazonMarketplaceId || !amazonProductType) {
       setAmazonDefinition(null);
       setAmazonDefinitionBusy(false);
@@ -1038,6 +1012,7 @@ export default function EditProductPage() {
   }, [amazonAccountId, amazonMarketplaceId, amazonProductType]);
 
   const handleAmazonPreview = useCallback(async () => {
+    if (!AMAZON_UI_ENABLED) return;
     if (!amazonAccountId || !amazonMarketplaceId || !amazonProductType) {
       setError("Wybierz konto Amazon, marketplace i product type");
       return;
@@ -1069,6 +1044,7 @@ export default function EditProductPage() {
   }, [amazonAccountId, amazonMarketplaceId, amazonProductType, id, loadAmazonHistory]);
 
   const handleAmazonLoadLatest = useCallback(async () => {
+    if (!AMAZON_UI_ENABLED) return;
     if (!amazonAccountId || !amazonMarketplaceId) return;
 
     try {
@@ -1151,7 +1127,7 @@ export default function EditProductPage() {
     void loadAllegroChecklist();
     void loadAllegroHistory();
     void loadAllegroAccounts();
-    void loadAmazonAccounts();
+    if (AMAZON_UI_ENABLED) void loadAmazonAccounts();
   }, [loadAllegroAccounts, loadAllegroChecklist, loadAllegroHistory, loadAllegroReview, loadAmazonAccounts]);
 
   useEffect(() => {
@@ -1159,12 +1135,14 @@ export default function EditProductPage() {
   }, [allegroAccountId, loadAllegroOffers]);
 
   useEffect(() => {
+    if (!AMAZON_UI_ENABLED) return;
     const account = amazonAccounts.find((entry) => entry.id === amazonAccountId);
     if (!account) return;
     setAmazonMarketplaceId((current) => current || account.marketplace_id || "");
   }, [amazonAccountId, amazonAccounts]);
 
   useEffect(() => {
+    if (!AMAZON_UI_ENABLED) return;
     if (!amazonAccountId || !amazonMarketplaceId) {
       setAmazonHistory([]);
       return;
@@ -1213,7 +1191,7 @@ export default function EditProductPage() {
           mode,
           useAllegro: aiUseAllegro,
           useIcecat: aiUseIcecat,
-          useAmazon: aiUseAmazon,
+          useAmazon: AMAZON_UI_ENABLED ? aiUseAmazon : false,
         }),
       });
       const json = await res.json();
@@ -1248,6 +1226,13 @@ export default function EditProductPage() {
   const assignedCount = Object.values(mktCats).filter(c => c.categoryPath || c.allegroName).length;
   const allegroDisabledReason = allegroPreview ? getAllegroPublishDisabledReason(allegroPreview) : null;
   const allegroPublishGateReason = ALLEGRO_PUBLISH_ENABLED ? null : ALLEGRO_PUBLISH_GATE_REASON;
+  const allegroExportApiHref = buildExportApiHref({
+    marketplaceSlug: "allegro",
+    productIds: [Number(id)],
+    accountId: allegroAccountId,
+    confirmNeedsReview: allegroConfirmNeedsReview,
+    fields: allegroFields,
+  });
 
   if (loadingProduct) {
     return (
@@ -1330,22 +1315,7 @@ export default function EditProductPage() {
           <h1 className="text-2xl font-bold truncate" style={{ color: "var(--text-primary)" }}>{title || "Edycja produktu"}</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>Zaktualizuj dane i przypisz do marketplace</p>
         </div>
-
-        <button
-          onClick={() => setShowAmazonImport(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition hover:shadow-md hover:scale-105 flex-shrink-0"
-          style={{ background: "linear-gradient(135deg,#f97316,#f59e0b)" }}
-        >
-          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-          </svg>
-          Import z Amazon
-        </button>
       </div>
-
-      {showAmazonImport && (
-        <AmazonImportModal onClose={() => setShowAmazonImport(false)} onImport={handleAmazonImport} />
-      )}
 
       {error && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
@@ -1471,6 +1441,7 @@ export default function EditProductPage() {
                 onToggleAllegro={() => setAiUseAllegro(v => !v)}
                 useAmazon={aiUseAmazon}
                 onToggleAmazon={() => setAiUseAmazon(v => !v)}
+                amazonEnabled={AMAZON_UI_ENABLED}
                 useIcecat={aiUseIcecat}
                 onToggleIcecat={() => setAiUseIcecat(v => !v)}
                 busyMode={aiBusyMode}
@@ -1529,6 +1500,7 @@ export default function EditProductPage() {
                 publishEnabled={ALLEGRO_PUBLISH_ENABLED}
                 publishGateReason={allegroPublishGateReason}
                 confirmNeedsReview={allegroConfirmNeedsReview}
+                exportApiHref={allegroExportApiHref}
                 onSelectAccount={(accountId) => {
                   setAllegroAccountId(accountId);
                   setAllegroOfferId("");
@@ -1554,46 +1526,48 @@ export default function EditProductPage() {
                 </div>
               ) : null}
 
-              <AmazonFoundationCard
-                accounts={amazonAccounts}
-                selectedAccountId={amazonAccountId}
-                selectedMarketplaceId={amazonMarketplaceId}
-                selectedProductType={amazonProductType}
-                suggestions={amazonSuggestions}
-                definition={amazonDefinition}
-                history={amazonHistory}
-                preview={amazonPreview}
-                suggestBusy={amazonSuggestBusy}
-                definitionBusy={amazonDefinitionBusy}
-                historyBusy={amazonHistoryBusy}
-                previewBusy={amazonPreviewBusy}
-                onSelectAccount={(accountId) => {
-                  setAmazonAccountId(accountId);
-                  const account = amazonAccounts.find((entry) => entry.id === accountId);
-                  setAmazonMarketplaceId(account?.marketplace_id || "");
-                  setAmazonSuggestions([]);
-                  setAmazonProductType("");
-                  setAmazonDefinition(null);
-                  setAmazonHistory([]);
-                  setAmazonPreview(null);
-                }}
-                onSelectMarketplace={(marketplaceId) => {
-                  setAmazonMarketplaceId(marketplaceId);
-                  setAmazonSuggestions([]);
-                  setAmazonProductType("");
-                  setAmazonDefinition(null);
-                  setAmazonHistory([]);
-                  setAmazonPreview(null);
-                }}
-                onSelectProductType={(productType) => {
-                  setAmazonProductType(productType);
-                  setAmazonDefinition(null);
-                  setAmazonPreview(null);
-                }}
-                onSuggest={handleAmazonSuggest}
-                onPreview={handleAmazonPreview}
-                onReloadLatest={handleAmazonLoadLatest}
-              />
+              {AMAZON_UI_ENABLED && (
+                <AmazonFoundationCard
+                  accounts={amazonAccounts}
+                  selectedAccountId={amazonAccountId}
+                  selectedMarketplaceId={amazonMarketplaceId}
+                  selectedProductType={amazonProductType}
+                  suggestions={amazonSuggestions}
+                  definition={amazonDefinition}
+                  history={amazonHistory}
+                  preview={amazonPreview}
+                  suggestBusy={amazonSuggestBusy}
+                  definitionBusy={amazonDefinitionBusy}
+                  historyBusy={amazonHistoryBusy}
+                  previewBusy={amazonPreviewBusy}
+                  onSelectAccount={(accountId) => {
+                    setAmazonAccountId(accountId);
+                    const account = amazonAccounts.find((entry) => entry.id === accountId);
+                    setAmazonMarketplaceId(account?.marketplace_id || "");
+                    setAmazonSuggestions([]);
+                    setAmazonProductType("");
+                    setAmazonDefinition(null);
+                    setAmazonHistory([]);
+                    setAmazonPreview(null);
+                  }}
+                  onSelectMarketplace={(marketplaceId) => {
+                    setAmazonMarketplaceId(marketplaceId);
+                    setAmazonSuggestions([]);
+                    setAmazonProductType("");
+                    setAmazonDefinition(null);
+                    setAmazonHistory([]);
+                    setAmazonPreview(null);
+                  }}
+                  onSelectProductType={(productType) => {
+                    setAmazonProductType(productType);
+                    setAmazonDefinition(null);
+                    setAmazonPreview(null);
+                  }}
+                  onSuggest={handleAmazonSuggest}
+                  onPreview={handleAmazonPreview}
+                  onReloadLatest={handleAmazonLoadLatest}
+                />
+              )}
             </div>
           </div>
         )}
@@ -1613,6 +1587,7 @@ export default function EditProductPage() {
                 onToggleAllegro={() => setAiUseAllegro(v => !v)}
                 useAmazon={aiUseAmazon}
                 onToggleAmazon={() => setAiUseAmazon(v => !v)}
+                amazonEnabled={AMAZON_UI_ENABLED}
                 useIcecat={aiUseIcecat}
                 onToggleIcecat={() => setAiUseIcecat(v => !v)}
                 busyMode={aiBusyMode}
@@ -1794,6 +1769,7 @@ function AIDraftPanel({
   onToggleAllegro,
   useAmazon,
   onToggleAmazon,
+  amazonEnabled,
   useIcecat,
   onToggleIcecat,
   busyMode,
@@ -1817,6 +1793,7 @@ function AIDraftPanel({
   onToggleAllegro: () => void;
   useAmazon: boolean;
   onToggleAmazon: () => void;
+  amazonEnabled: boolean;
   useIcecat: boolean;
   onToggleIcecat: () => void;
   busyMode: "" | "description" | "attributes" | "all";
@@ -1896,15 +1873,17 @@ function AIDraftPanel({
         >
           Allegro {useAllegro ? "ON" : "OFF"}
         </button>
-        <button
-          onClick={() => { if (!generateBlocked) onToggleAmazon(); }}
-          aria-disabled={generateBlocked}
-          className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition ${
-            useAmazon ? "border-orange-300 bg-orange-100 text-orange-700" : "border-slate-200 bg-white text-slate-500"
-          } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-orange-300"}`}
-        >
-          Amazon {useAmazon ? "ON" : "OFF"}
-        </button>
+        {amazonEnabled && (
+          <button
+            onClick={() => { if (!generateBlocked) onToggleAmazon(); }}
+            aria-disabled={generateBlocked}
+            className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition ${
+              useAmazon ? "border-orange-300 bg-orange-100 text-orange-700" : "border-slate-200 bg-white text-slate-500"
+            } ${generateBlocked ? "opacity-60 cursor-not-allowed" : "hover:border-orange-300"}`}
+          >
+            Amazon {useAmazon ? "ON" : "OFF"}
+          </button>
+        )}
         <button
           onClick={() => { if (!generateBlocked) onToggleIcecat(); }}
           aria-disabled={generateBlocked}

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildMarketplaceImportPayload,
   getImportItemKey,
+  parseAllegroExternalLink,
   toggleImportSelection,
   toggleVisibleImportSelection,
 } from "./import-hub-helpers.ts";
@@ -26,6 +27,47 @@ test("buildMarketplaceImportPayload defaults to import_and_ai for Allegro items"
       { remoteId: "18527975262" },
       { remoteId: "18527975263" },
     ],
+  });
+});
+
+test("parseAllegroExternalLink extracts product UUID and offerId", () => {
+  const parsed = parseAllegroExternalLink(
+    "https://allegro.pl/produkt/ampulka-do-wlosow-phyto-men-60-ml-4390d935-37f4-4efc-bcfe-c686afaa5c07?offerId=18275983621&sid=test"
+  );
+
+  assert.deepEqual(parsed, {
+    url: "https://allegro.pl/produkt/ampulka-do-wlosow-phyto-men-60-ml-4390d935-37f4-4efc-bcfe-c686afaa5c07?offerId=18275983621&sid=test",
+    remoteId: "18275983621",
+    offerId: "18275983621",
+    productId: "4390d935-37f4-4efc-bcfe-c686afaa5c07",
+  });
+});
+
+test("buildMarketplaceImportPayload forces AI mode for Allegro external link imports", () => {
+  const payload = buildMarketplaceImportPayload({
+    provider: "allegro",
+    sourceKind: "external_link",
+    accountId: 13,
+    mode: "import_only",
+    selectedItems: [{
+      url: "https://allegro.pl/produkt/x-4390d935-37f4-4efc-bcfe-c686afaa5c07?offerId=18275983621",
+      remoteId: "18275983621",
+      offerId: "18275983621",
+      productId: "4390d935-37f4-4efc-bcfe-c686afaa5c07",
+    }],
+  });
+
+  assert.deepEqual(payload, {
+    provider: "allegro",
+    sourceKind: "external_link",
+    mode: "import_and_ai",
+    accountId: 13,
+    items: [{
+      url: "https://allegro.pl/produkt/x-4390d935-37f4-4efc-bcfe-c686afaa5c07?offerId=18275983621",
+      remoteId: "18275983621",
+      offerId: "18275983621",
+      productId: "4390d935-37f4-4efc-bcfe-c686afaa5c07",
+    }],
   });
 });
 

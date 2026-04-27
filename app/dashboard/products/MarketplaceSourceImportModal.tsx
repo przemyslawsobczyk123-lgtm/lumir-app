@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
+import { isAmazonUiEnabled } from "../mvp-feature-flags";
 import { useLang } from "../LangContext";
 import type { AmazonCatalogItem, AmazonStatus } from "../_lib/amazon-import";
 import {
   buildMarketplaceImportPayload,
   getImportItemKey,
+  parseAllegroExternalLink,
   toggleImportSelection,
   toggleVisibleImportSelection,
+  type AllegroImportSourceKind,
   type AllegroImportItem,
   type AmazonImportItem,
   type MarketplaceImportMode,
@@ -18,6 +21,8 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const ALLEGRO_PAGE_SIZE = 20;
+const AMAZON_UI_ENABLED = isAmazonUiEnabled();
+const MARKETPLACE_IMPORT_TABS: MarketplaceImportProvider[] = AMAZON_UI_ENABLED ? ["allegro", "amazon"] : ["allegro"];
 
 type QueuedMarketplaceImportJob = {
   id: string;
@@ -47,6 +52,7 @@ type AllegroOffer = {
 type Copy = (typeof COPY)[keyof typeof COPY];
 
 type Props = {
+  initialProvider?: MarketplaceImportProvider;
   onClose: () => void;
   onQueued: (payload: {
     job: QueuedMarketplaceImportJob;
@@ -80,6 +86,15 @@ const COPY = {
     allegro: {
       accountLabel: "Konto Allegro",
       noAccounts: "Brak aktywnego konta Allegro.",
+      sourceSellerOffers: "Moje oferty",
+      sourceExternalLink: "Link Allegro + AI",
+      linkLabel: "Link do produktu lub oferty Allegro",
+      linkPlaceholder: "Wklej link Allegro z /produkt/... lub offerId",
+      linkHint: "AI przepisze opis i atrybuty od nowa. Import only jest zablokowany, zeby nie kopiowac oferty 1:1.",
+      linkMediaHint: "Zdjecia z linku sa traktowane jako material do analizy. Przed publikacja sprawdz prawa do mediow albo dodaj wlasne zdjecia.",
+      parsedOffer: "Oferta",
+      parsedProduct: "Produkt katalogowy",
+      invalidLink: "Wklej poprawny link Allegro, offerId albo ID produktu.",
       searchPlaceholder: "Szukaj po tytule oferty",
       offers: "ofert",
       publicationUnknown: "Nieznany status",
@@ -129,6 +144,15 @@ const COPY = {
     allegro: {
       accountLabel: "Allegro account",
       noAccounts: "No active Allegro account.",
+      sourceSellerOffers: "My offers",
+      sourceExternalLink: "Allegro link + AI",
+      linkLabel: "Allegro product or offer link",
+      linkPlaceholder: "Paste Allegro /produkt/... link or offerId",
+      linkHint: "AI rewrites description and attributes. Import only is blocked to avoid 1:1 copying.",
+      linkMediaHint: "Images from the link are analysis material. Verify media rights or add your own images before publishing.",
+      parsedOffer: "Offer",
+      parsedProduct: "Catalog product",
+      invalidLink: "Paste a valid Allegro link, offerId, or product ID.",
       searchPlaceholder: "Search offer title",
       offers: "offers",
       publicationUnknown: "Unknown status",
@@ -175,12 +199,20 @@ function getCopy(lang: string): Copy {
   return lang === "en" ? COPY.en : COPY.pl;
 }
 
-export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
+export function MarketplaceSourceImportModal({ initialProvider = "allegro", onClose, onQueued }: Props) {
   const { lang } = useLang();
   const copy = getCopy(lang);
+  const subtitle = AMAZON_UI_ENABLED
+    ? copy.subtitle
+    : copy.subtitle
+        .replace("Wybierz Allegro albo Amazon.", "Wybierz Allegro.")
+        .replace("Pick Allegro or Amazon.", "Pick Allegro.");
 
-  const [provider, setProvider] = useState<MarketplaceImportProvider>("allegro");
+  const [provider, setProvider] = useState<MarketplaceImportProvider>(
+    !AMAZON_UI_ENABLED && initialProvider === "amazon" ? "allegro" : initialProvider
+  );
   const [mode, setMode] = useState<MarketplaceImportMode>("import_and_ai");
+  const [allegroSourceKind, setAllegroSourceKind] = useState<AllegroImportSourceKind>("seller_offer");
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -191,6 +223,7 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
   const [allegroTotal, setAllegroTotal] = useState(0);
   const [allegroPage, setAllegroPage] = useState(0);
   const [allegroSearch, setAllegroSearch] = useState("");
+  const [allegroExternalLink, setAllegroExternalLink] = useState("");
   const [allegroLoading, setAllegroLoading] = useState(true);
   const [allegroError, setAllegroError] = useState("");
   const [allegroSelectedKeys, setAllegroSelectedKeys] = useState<Set<string>>(new Set());
@@ -253,7 +286,8 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
       }
     };
 
-    void Promise.all([loadAllegroAccounts(), loadAmazonStatus()]);
+    void Promise.all(AMAZON_UI_ENABLED ? [loadAllegroAccounts(), loadAmazonStatus()] : [loadAllegroAccounts()]);
+    if (!AMAZON_UI_ENABLED) setAmazonStatusLoading(false);
 
     return () => {
       cancelled = true;
@@ -314,6 +348,11 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
     [allegroAccountId, allegroAccounts]
   );
 
+  const parsedAllegroExternalLink = useMemo(
+    () => parseAllegroExternalLink(allegroExternalLink),
+    [allegroExternalLink]
+  );
+
   const visibleAllegroItems = useMemo(() => {
     const normalizedSearch = allegroSearch.trim().toLowerCase();
     if (!normalizedSearch) return allegroOffers;
@@ -330,6 +369,17 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
 
   const selectedItems = useMemo(() => {
     if (provider === "allegro") {
+      if (allegroSourceKind === "external_link") {
+        return parsedAllegroExternalLink
+          ? [{
+              remoteId: parsedAllegroExternalLink.remoteId,
+              url: parsedAllegroExternalLink.url,
+              offerId: parsedAllegroExternalLink.offerId,
+              productId: parsedAllegroExternalLink.productId,
+            } as AllegroImportItem]
+          : [];
+      }
+
       return [...allegroSelectedKeys]
         .map((key) => key.replace(/^allegro:/, ""))
         .map((remoteId) => allegroOfferCache[remoteId])
@@ -348,7 +398,15 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
         ean: item.ean,
         title: item.title,
       }));
-  }, [allegroOfferCache, allegroSelectedKeys, amazonResultCache, amazonSelectedKeys, provider]);
+  }, [
+    allegroOfferCache,
+    allegroSelectedKeys,
+    allegroSourceKind,
+    amazonResultCache,
+    amazonSelectedKeys,
+    parsedAllegroExternalLink,
+    provider,
+  ]);
 
   const selectedCount = selectedItems.length;
   const canSubmit = selectedCount > 0 && (provider !== "allegro" || Boolean(selectedAllegroAccount?.id));
@@ -364,6 +422,7 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
   };
 
   const handleAmazonSearch = async () => {
+    if (!AMAZON_UI_ENABLED) return;
     const query = amazonQuery.trim();
     if (!query || !amazonStatus?.ready) return;
 
@@ -392,6 +451,7 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
   };
 
   const addAmazonItem = async (kind: "asin" | "ean", rawValue: string) => {
+    if (!AMAZON_UI_ENABLED) return;
     const value = rawValue.trim();
     if (!value || !amazonStatus?.ready) return;
 
@@ -424,7 +484,9 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting) {
-      if (!selectedCount) setSubmitError(copy.noSelection);
+      if (!selectedCount && provider === "allegro" && allegroSourceKind === "external_link") {
+        setSubmitError(copy.allegro.invalidLink);
+      } else if (!selectedCount) setSubmitError(copy.noSelection);
       else if (provider === "allegro" && !selectedAllegroAccount?.id) setSubmitError(copy.allegro.pickAccount);
       return;
     }
@@ -432,9 +494,12 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
     setSubmitting(true);
     setSubmitError("");
     try {
+      const effectiveMode: MarketplaceImportMode =
+        provider === "allegro" && allegroSourceKind === "external_link" ? "import_and_ai" : mode;
       const payload = buildMarketplaceImportPayload({
         provider,
-        mode,
+        sourceKind: provider === "allegro" ? allegroSourceKind : undefined,
+        mode: effectiveMode,
         accountId: provider === "allegro" ? selectedAllegroAccount?.id ?? null : undefined,
         selectedItems,
       });
@@ -450,7 +515,7 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
       onQueued({
         job: json.data?.job as QueuedMarketplaceImportJob,
         provider,
-        mode,
+        mode: effectiveMode,
         selectedCount,
       });
     } catch (error: unknown) {
@@ -462,7 +527,9 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
 
   const submitLabel = submitting ? `${copy.submit}...` : copy.submit;
   const selectedSet = provider === "allegro" ? allegroSelectedKeys : amazonSelectedKeys;
-  const visibleSelectionKeys = provider === "allegro" ? visibleAllegroSelectionKeys : visibleAmazonSelectionKeys;
+  const visibleSelectionKeys = provider === "allegro"
+    ? (allegroSourceKind === "external_link" ? [] : visibleAllegroSelectionKeys)
+    : visibleAmazonSelectionKeys;
   const everyVisibleSelected = visibleSelectionKeys.length > 0 && visibleSelectionKeys.every((item) => selectedSet.has(item));
 
   return (
@@ -475,7 +542,7 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.28em] text-indigo-200/80">Import hub</div>
               <h2 className="mt-2 text-2xl font-semibold text-white">{copy.title}</h2>
-              <p className="mt-2 max-w-2xl text-sm text-slate-300">{copy.subtitle}</p>
+              <p className="mt-2 max-w-2xl text-sm text-slate-300">{subtitle}</p>
             </div>
             <button
               onClick={onClose}
@@ -489,7 +556,7 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
 
           <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-wrap gap-2">
-              {(["allegro", "amazon"] as MarketplaceImportProvider[]).map((tab) => {
+              {MARKETPLACE_IMPORT_TABS.map((tab) => {
                 const active = provider === tab;
                 return (
                   <button
@@ -515,19 +582,31 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
                 {([
                   ["import_only", copy.modeImportOnly],
                   ["import_and_ai", copy.modeImportAndAi],
-                ] as Array<[MarketplaceImportMode, string]>).map(([value, label]) => (
-                  <button
-                    key={value}
-                    onClick={() => setMode(value)}
-                    className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                      mode === value
-                        ? "bg-indigo-500 text-white shadow-sm"
-                        : "text-slate-200 hover:bg-white/10"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+                ] as Array<[MarketplaceImportMode, string]>).map(([value, label]) => {
+                  const lockedImportOnly = provider === "allegro" && allegroSourceKind === "external_link" && value === "import_only";
+                  const active = (provider === "allegro" && allegroSourceKind === "external_link")
+                    ? value === "import_and_ai"
+                    : mode === value;
+                  return (
+                    <button
+                      key={value}
+                      onClick={() => {
+                        if (lockedImportOnly) return;
+                        setMode(value);
+                      }}
+                      aria-disabled={lockedImportOnly}
+                      className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                        active
+                          ? "bg-indigo-500 text-white shadow-sm"
+                          : lockedImportOnly
+                            ? "cursor-not-allowed text-slate-500"
+                            : "text-slate-200 hover:bg-white/10"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -581,9 +660,96 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
                       })
                     )}
                   </div>
+
+                  <div className="mt-4 border-t border-white/10 pt-4">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                      Allegro
+                    </div>
+                    <div className="grid gap-2">
+                      {([
+                        ["seller_offer", copy.allegro.sourceSellerOffers],
+                        ["external_link", copy.allegro.sourceExternalLink],
+                      ] as Array<[AllegroImportSourceKind, string]>).map(([value, label]) => {
+                        const active = allegroSourceKind === value;
+                        return (
+                          <button
+                            key={value}
+                            onClick={() => {
+                              setAllegroSourceKind(value);
+                              if (value === "external_link") {
+                                setMode("import_and_ai");
+                                setAllegroSelectedKeys(new Set());
+                              }
+                            }}
+                            className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
+                              active
+                                ? "border-indigo-400 bg-indigo-500/15 text-white"
+                                : "border-white/10 bg-slate-950/60 text-slate-300 hover:bg-white/10"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  {allegroSourceKind === "external_link" ? (
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                          {copy.allegro.linkLabel}
+                        </div>
+                        <input
+                          value={allegroExternalLink}
+                          onChange={(event) => setAllegroExternalLink(event.target.value)}
+                          placeholder={copy.allegro.linkPlaceholder}
+                          className="mt-3 w-full rounded-2xl border border-indigo-300/50 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-indigo-300"
+                        />
+                      </div>
+
+                      <div className="rounded-2xl border border-indigo-300/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+                        <div className="font-semibold">{copy.allegro.sourceExternalLink}</div>
+                        <div className="mt-1 text-xs leading-5 text-indigo-100/80">{copy.allegro.linkHint}</div>
+                      </div>
+
+                      <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-xs leading-5 text-amber-100">
+                        {copy.allegro.linkMediaHint}
+                      </div>
+
+                      {allegroExternalLink.trim() && parsedAllegroExternalLink ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                              {copy.allegro.parsedOffer}
+                            </div>
+                            <div className="mt-2 font-mono text-sm text-white">
+                              {parsedAllegroExternalLink.offerId || "-"}
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                              {copy.allegro.parsedProduct}
+                            </div>
+                            <div className="mt-2 break-all font-mono text-sm text-white">
+                              {parsedAllegroExternalLink.productId || "-"}
+                            </div>
+                          </div>
+                        </div>
+                      ) : allegroExternalLink.trim() ? (
+                        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                          {copy.allegro.invalidLink}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-8 text-center text-sm text-slate-300">
+                          {copy.allegro.linkPlaceholder}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="relative flex-1">
                       <input
@@ -705,6 +871,8 @@ export function MarketplaceSourceImportModal({ onClose, onQueued }: Props) {
                         Next
                       </button>
                     </div>
+                  )}
+                    </>
                   )}
                 </div>
               </div>

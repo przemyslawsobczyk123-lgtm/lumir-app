@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  getImportJobOpenProductId,
   getProductImportBadgeState,
   hasReportableImportJobItem,
   isImportHubBackgroundJobType,
@@ -52,6 +53,27 @@ test("summarizeImportJobItems counts duplicate rows separately and exposes dupli
     existingProductId: 72,
     existingProductTitle: "Obraz z LuMir",
   });
+});
+
+test("summarizeImportJobItems does not count stale duplicate when target product was deleted", () => {
+  const summary = summarizeImportJobItems([
+    {
+      productId: 1,
+      resultProductExists: false,
+      resultJson: {
+        provider: "allegro",
+        remoteId: "18527975262",
+        status: "duplicate",
+        existingProductId: 74,
+        existingProductTitle: "Usuniety produkt",
+      },
+    },
+  ]);
+
+  assert.equal(summary.totalCount, 1);
+  assert.equal(summary.importedCount, 0);
+  assert.equal(summary.duplicateCount, 0);
+  assert.deepEqual(summary.duplicates, []);
 });
 
 test("getProductImportBadgeState prefers raw_data import metadata and active AI jobs", () => {
@@ -230,4 +252,68 @@ test("hasReportableImportJobItem keeps duplicate import rows without product id"
   );
 
   assert.equal(hasReportableImportJobItem({ productId: null, resultJson: null }), false);
+});
+
+test("hasReportableImportJobItem hides stale duplicate rows after target product deletion", () => {
+  assert.equal(
+    hasReportableImportJobItem({
+      productId: 1,
+      resultProductExists: false,
+      resultJson: {
+        status: "duplicate",
+        existingProductId: 74,
+      },
+    }),
+    false
+  );
+});
+
+test("getImportJobOpenProductId uses imported product id instead of import row ordinal", () => {
+  assert.equal(
+    getImportJobOpenProductId({
+      productId: 1,
+      resultJson: {
+        status: "imported",
+        productId: 74,
+      },
+    }),
+    74
+  );
+});
+
+test("getImportJobOpenProductId uses duplicate target instead of import row ordinal", () => {
+  assert.equal(
+    getImportJobOpenProductId({
+      productId: 1,
+      resultJson: {
+        status: "duplicate",
+        existingProductId: 74,
+      },
+    }),
+    74
+  );
+});
+
+test("getImportJobOpenProductId hides open action when only row ordinal exists", () => {
+  assert.equal(
+    getImportJobOpenProductId({
+      productId: 1,
+      resultJson: null,
+    }),
+    null
+  );
+});
+
+test("getImportJobOpenProductId hides open action when result product was deleted", () => {
+  assert.equal(
+    getImportJobOpenProductId({
+      productId: 1,
+      resultProductExists: false,
+      resultJson: {
+        status: "imported",
+        productId: 74,
+      },
+    }),
+    null
+  );
 });

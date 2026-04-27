@@ -8,8 +8,10 @@ import {
   parseAmazonWebsiteAuthorizationSearchParams,
   readLuMirAuthToken,
 } from "../../dashboard/_lib/amazon-seller";
+import { isAmazonUiEnabled } from "../../dashboard/mvp-feature-flags";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const AMAZON_UI_ENABLED = isAmazonUiEnabled();
 
 type BridgeState = "loading" | "redirecting" | "error";
 
@@ -26,6 +28,11 @@ function AmazonLoginBridgeContent() {
     let cancelled = false;
 
     const run = async () => {
+      if (!AMAZON_UI_ENABLED) {
+        window.location.replace("/dashboard");
+        return;
+      }
+
       const parsed = parseAmazonWebsiteAuthorizationSearchParams(searchParams);
       if (!parsed.ok) {
         setState("error");
@@ -75,6 +82,10 @@ function AmazonLoginBridgeContent() {
       cancelled = true;
     };
   }, [searchParams]);
+
+  if (!AMAZON_UI_ENABLED) {
+    return <div className="min-h-screen bg-[#020617]" />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#020617] relative overflow-hidden px-4">

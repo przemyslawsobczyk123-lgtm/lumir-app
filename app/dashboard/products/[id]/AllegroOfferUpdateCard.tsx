@@ -48,6 +48,7 @@ export function AllegroOfferUpdateCard({
   publishEnabled,
   publishGateReason,
   confirmNeedsReview,
+  exportApiHref,
   onSelectAccount,
   onSelectOffer,
   onToggleField,
@@ -68,6 +69,7 @@ export function AllegroOfferUpdateCard({
   publishEnabled: boolean;
   publishGateReason?: string | null;
   confirmNeedsReview: boolean;
+  exportApiHref: string;
   onSelectAccount: (accountId: number | null) => void;
   onSelectOffer: (offerId: string) => void;
   onToggleField: (field: FieldKey) => void;
@@ -92,7 +94,7 @@ export function AllegroOfferUpdateCard({
     >
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-bold text-white">Eksport do Allegro</h3>
+          <h3 className="text-lg font-bold text-white">Allegro preview</h3>
           <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-200">
             existing offer update
           </span>
@@ -103,7 +105,7 @@ export function AllegroOfferUpdateCard({
           </span>
         </div>
         <p className="text-sm text-slate-300">
-          Safe MVP update tylko dla allowlisty pol. Najpierw preview, potem publish.
+          Detail page zostaje do podgladu oferty. Export i batch publish sa teraz w Export.
         </p>
         <p className={`text-xs ${modeSummary.tone === "ready" ? "text-emerald-200/90" : "text-amber-100/80"}`}>
           {modeSummary.detail}
@@ -206,6 +208,12 @@ export function AllegroOfferUpdateCard({
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <Link
+              href={exportApiHref}
+              className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
+            >
+              Otworz Export
+            </Link>
             <button
               onClick={() => {
                 if (canPreview && !previewBusy) void onPreview();

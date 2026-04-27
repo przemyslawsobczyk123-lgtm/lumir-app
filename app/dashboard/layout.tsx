@@ -8,15 +8,19 @@ import { fetchBillingSummary, formatCredits, type BillingSummary } from "./billi
 import { fetchActiveJobs, formatJobDuration, jobTypeLabel, jobStepLabel, type SellerJob } from "./jobs/job-client";
 import { LangProvider, useLang } from "./LangContext";
 import { translations } from "./i18n";
+import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "./mvp-feature-flags";
+import { getDashboardNavItems } from "./nav-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-const MARKETPLACES = [
+const AMAZON_UI_ENABLED = isAmazonUiEnabled();
+
+const MARKETPLACES = withoutAmazonWhenDisabled([
   { slug: "mediaexpert", label: "Media Expert" },
   { slug: "allegro",     label: "Allegro"       },
   { slug: "amazon",      label: "Amazon"        },
   { slug: "empik",       label: "Empik"          },
-];
+], (item) => item.slug);
 
 type AllegroAccountSidebar = {
   id: number;
@@ -163,7 +167,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
     if (!token) { router.push("/login"); return; }
 
     loadAllegroAccounts();
-    loadAmazonAccounts();
+    if (AMAZON_UI_ENABLED) loadAmazonAccounts();
     loadBillingSummary();
   }, [loadAllegroAccounts, loadAmazonAccounts, loadBillingSummary, router]);
 
@@ -198,6 +202,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
 
   // Refresh Allegro status after OAuth on dedicated page
   useEffect(() => {
+    if (!AMAZON_UI_ENABLED) return;
     const handler = (e: MessageEvent) => {
       if (e.data?.type !== "allegro-auth") return;
       if (e.data.success) loadAllegroAccounts();
@@ -260,13 +265,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
 
   const isDark = theme === "dark";
 
-  const NAV_ITEMS = [
-    { href: "/dashboard",          label: t.nav.dashboard, exact: true,  icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
-    { href: "/dashboard/products", label: t.nav.products,  exact: false, icon: "M4 6h16M4 10h16M4 14h16M4 18h16" },
-    { href: "/dashboard/export-api", label: t.nav.exportApi, exact: false, icon: "M5 7h14M5 12h14M5 17h14" },
-    { href: "/dashboard/billing",  label: t.nav.billing,   exact: false, icon: "M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" },
-    { href: "/dashboard/settings", label: t.nav.settings,  exact: false, icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
-  ];
+  const NAV_ITEMS = getDashboardNavItems(t.nav);
 
   return (
     <div className="flex min-h-screen font-[Inter]" style={{ background: "var(--bg-body)" }}>

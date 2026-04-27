@@ -1,0 +1,4 @@
+[submodule "claw-code"]
+	path = claw-code
+	url = https://github.com/ultraworkers/claw-code
+	ignore = untracked

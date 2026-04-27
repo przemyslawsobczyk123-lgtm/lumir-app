@@ -3,6 +3,7 @@ export type ActiveAIStatus = "queued" | "processing";
 
 export type ImportJobItemLike = {
   productId?: number | null;
+  resultProductExists?: boolean | null;
   status?: string | null;
   resultJson?: unknown;
 };
@@ -73,23 +74,32 @@ export function isImportHubBackgroundJobType(type: unknown) {
 }
 
 export function hasReportableImportJobItem(item: ImportJobItemLike) {
+  const result = normalizeImportJobResult(item.resultJson);
+  if (result.status === "duplicate" && item.resultProductExists === false) return false;
   if (item.productId != null) return true;
 
-  const result = normalizeImportJobResult(item.resultJson);
   return result.status === "imported" || result.status === "duplicate" || result.status === "error" || item.status === "error";
+}
+
+export function getImportJobOpenProductId(item: ImportJobItemLike) {
+  const result = normalizeImportJobResult(item.resultJson);
+  const productId = result.productId ?? result.existingProductId ?? null;
+  if (productId == null || item.resultProductExists === false) return null;
+  return productId;
 }
 
 export function summarizeImportJobItems(items: ImportJobItemLike[]): ImportJobSummary {
   return items.reduce<ImportJobSummary>(
     (summary, item) => {
       const result = normalizeImportJobResult(item.resultJson);
+      const staleDuplicate = result.status === "duplicate" && item.resultProductExists === false;
       summary.totalCount += 1;
 
       if (result.status === "imported") {
         summary.importedCount += 1;
       }
 
-      if (result.status === "duplicate") {
+      if (result.status === "duplicate" && !staleDuplicate) {
         summary.duplicateCount += 1;
         summary.duplicates.push({
           provider: result.provider,

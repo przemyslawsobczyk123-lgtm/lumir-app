@@ -2,8 +2,10 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { isAmazonUiEnabled } from "../../mvp-feature-flags";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const AMAZON_UI_ENABLED = isAmazonUiEnabled();
 
 const MP_LABELS: Record<string, string> = {
   mediaexpert: "Media Expert",
@@ -1540,8 +1542,23 @@ function AmazonSourcePage() {
 export default function MarketplaceCategoriesPage() {
   const params = useParams();
   const slug = params.slug as string;
+  if (slug === "amazon" && !AMAZON_UI_ENABLED) return <AmazonDisabledRedirect />;
   if (slug === "amazon") return <AmazonSourcePage />;
   return <MarketplaceCategoriesPageInner slug={slug} />;
+}
+
+function AmazonDisabledRedirect() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/dashboard/marketplace/allegro");
+  }, [router]);
+
+  return (
+    <div className="rounded-2xl border p-6 text-sm" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
+      Przekierowuję do Allegro...
+    </div>
+  );
 }
 
 function MarketplaceCategoriesPageInner({ slug }: { slug: string }) {

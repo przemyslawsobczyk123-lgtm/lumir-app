@@ -3,16 +3,20 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
+import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "../mvp-feature-flags";
 import { getAllegroImportErrorNotice } from "./allegro-import-helpers";
 import {
   buildAllegroDescriptionHtml,
   buildPendingAllegroLink,
+  getAllegroDuplicateImportDeleteConfirmMessage,
   getAllegroDuplicateImportMessage,
   type AllegroImportCheckResponse,
   type PendingAllegroLink,
 } from "./allegro-import-link-helpers";
+import { getCreateProductSuccessRedirectPath } from "./create-product-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const AMAZON_UI_ENABLED = isAmazonUiEnabled();
 
 function getToken() {
   return typeof window !== "undefined" ? localStorage.getItem("token") ?? "" : "";
@@ -217,8 +221,22 @@ function AllegroImportModal({ onClose, onImport }: {
 
       const duplicateMessage = getAllegroDuplicateImportMessage(importCheckJson.data);
       if (duplicateMessage) {
-        setError(duplicateMessage);
-        return;
+        const confirmMessage = getAllegroDuplicateImportDeleteConfirmMessage(importCheckJson.data);
+        const duplicateProductId = importCheckJson.data?.productId;
+        if (!confirmMessage || !duplicateProductId || !window.confirm(confirmMessage)) {
+          setError(duplicateMessage);
+          return;
+        }
+
+        const deleteResponse = await fetch(`${API}/api/products/${duplicateProductId}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        const deleteJson = await deleteResponse.json().catch(() => null) as { error?: string } | null;
+        if (!deleteResponse.ok) {
+          throw new Error(deleteJson?.error || "Nie udalo sie usunac lokalnego produktu LuMir");
+        }
+        setError("");
       }
 
       // Fetch full offer details
@@ -817,12 +835,20 @@ export default function NewProductPage() {
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json() as Promise<MarketplaceListResponse>).then(j => {
-        if (j.data) { setMarketplaces(j.data); if (j.data.length) setAttrMp(j.data[0].slug); }
+        if (j.data) {
+          const visibleMarketplaces = withoutAmazonWhenDisabled(j.data, (mp) => mp.slug, AMAZON_UI_ENABLED);
+          setMarketplaces(visibleMarketplaces);
+          if (visibleMarketplaces.length) setAttrMp(visibleMarketplaces[0].slug);
+        }
       }).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!AMAZON_UI_ENABLED) {
+      localStorage.removeItem(AMAZON_IMPORT_KEY);
+      return;
+    }
     const raw = localStorage.getItem(AMAZON_IMPORT_KEY);
     if (!raw) return;
     try {
@@ -958,7 +984,7 @@ export default function NewProductPage() {
       if (!res.ok) throw new Error(json.error || "Błąd zapisu");
       if (!json.productId) throw new Error("Brak productId po zapisie");
       setSaved(true);
-      setTimeout(() => router.push(`/dashboard/products/${json.productId}`), 700);
+      router.replace(getCreateProductSuccessRedirectPath(json.productId));
     } catch (e: unknown) { setError(getErrorMessage(e, "Błąd zapisu")); }
     finally { setSaving(false); }
   };

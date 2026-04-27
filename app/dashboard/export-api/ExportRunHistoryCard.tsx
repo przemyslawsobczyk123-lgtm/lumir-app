@@ -53,7 +53,7 @@ export function ExportRunHistoryCard({
             Historia batch runow dla {marketplaceSlug}
           </h2>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            Audit i statusy sa juz w nowym modelu. Retry CTA odblokujemy razem z worker execution coverage.
+            Audit, statusy i retry bazuja na pozycjach runa. Retry bierze tylko pozycje error.
           </p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export function ExportRunHistoryCard({
         </div>
       ) : runs.length === 0 ? (
         <div className="mt-5 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 text-sm text-[var(--text-secondary)]">
-          Brak runow dla tego marketplace. Najpierw potrzebny bedzie worker execution slice.
+          Brak runow dla tego marketplace. Uruchom preflight, potem export.
         </div>
       ) : (
         <div className="mt-5 space-y-3">

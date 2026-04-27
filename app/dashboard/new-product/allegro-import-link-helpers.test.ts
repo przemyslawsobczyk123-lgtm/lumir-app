@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildAllegroDescriptionHtml,
   buildPendingAllegroLink,
+  getAllegroDuplicateImportDeleteConfirmMessage,
   getAllegroDuplicateImportMessage,
 } from "./allegro-import-link-helpers.ts";
 
@@ -49,6 +50,18 @@ test("getAllegroDuplicateImportMessage returns LuMir duplicate copy", () => {
       remoteOfferId: "18527975262",
     }),
     "Produkt juz istnieje w LuMir (#68: Produkt z LuMir). Pomijamy import tej oferty. Usun lokalny produkt, jesli chcesz zaimportowac te oferte ponownie."
+  );
+});
+
+test("getAllegroDuplicateImportDeleteConfirmMessage explains local-only delete", () => {
+  assert.equal(
+    getAllegroDuplicateImportDeleteConfirmMessage({
+      exists: true,
+      productId: 68,
+      productTitle: "Produkt z LuMir",
+      remoteOfferId: "18527975262",
+    }),
+    "Produkt juz istnieje w LuMir (#68: Produkt z LuMir). Usunac tylko lokalny produkt w LuMir i pobrac oferte ponownie? Oferta Allegro nie zostanie usunieta."
   );
 });
 
