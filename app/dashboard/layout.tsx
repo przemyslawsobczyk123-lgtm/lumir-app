@@ -9,7 +9,16 @@ import { fetchActiveJobs, formatJobDuration, jobTypeLabel, jobStepLabel, type Se
 import { LangProvider, useLang } from "./LangContext";
 import { translations } from "./i18n";
 import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "./mvp-feature-flags";
-import { getDashboardNavItems } from "./nav-helpers";
+import {
+  getDashboardNavItemClass,
+  getDashboardNavItems,
+  parseDashboardUser,
+} from "./nav-helpers";
+import {
+  clearAdminOriginalSession,
+  getImpersonationSession,
+  stopSellerImpersonation,
+} from "./admin/sellers/admin-sellers-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -35,25 +44,6 @@ type AmazonAccountSidebar = {
   status: "valid" | "expired";
 };
 
-type DashboardUser = {
-  name?: string;
-  email?: string;
-};
-
-function parseStoredUser(raw: string): DashboardUser | null {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const candidate = parsed as Record<string, unknown>;
-    return {
-      name: typeof candidate.name === "string" ? candidate.name : undefined,
-      email: typeof candidate.email === "string" ? candidate.email : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function getDashboardUserSnapshot(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -75,6 +65,10 @@ function subscribeDashboardSnapshot(onStoreChange: () => void) {
     window.removeEventListener("storage", handler);
     window.removeEventListener("lumir-dashboard-storage", handler as EventListener);
   };
+}
+
+function readUserLabel(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : "";
 }
 
 // ¦¦ Theme icons ¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦
@@ -112,7 +106,10 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const jobsRef = useRef<HTMLDivElement>(null);
   const userRaw = useSyncExternalStore(subscribeDashboardSnapshot, getDashboardUserSnapshot, getDashboardServerUserSnapshot);
-  const user = userRaw ? parseStoredUser(userRaw) : null;
+  const user = parseDashboardUser(userRaw);
+  const impersonationSession = getImpersonationSession();
+  const impersonatedName = readUserLabel(impersonationSession?.currentUser?.name);
+  const impersonatedEmail = readUserLabel(impersonationSession?.currentUser?.email);
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [activeJobs, setActiveJobs] = useState<SellerJob[]>([]);
@@ -255,6 +252,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
   function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    clearAdminOriginalSession();
     router.push("/login");
   }
 
@@ -265,7 +263,14 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
 
   const isDark = theme === "dark";
 
-  const NAV_ITEMS = getDashboardNavItems(t.nav);
+  const NAV_ITEMS = getDashboardNavItems(t.nav, user);
+  const impersonatedLabel = impersonatedName || impersonatedEmail || (lang === "pl" ? "sprzedawca" : "seller");
+
+  function returnToAdmin() {
+    const restored = stopSellerImpersonation();
+    if (!restored) return;
+    router.push("/dashboard/admin/sellers");
+  }
 
   return (
     <div className="flex min-h-screen font-[Inter]" style={{ background: "var(--bg-body)" }}>
@@ -282,16 +287,12 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
         </div>
 
         <div className="space-y-3 flex-1">
-          {NAV_ITEMS.map(({ href, label, exact, icon }) => {
+          {NAV_ITEMS.map(({ href, label, exact, icon, tone }) => {
             const active = exact ? pathname === href : pathname.startsWith(href);
             return (
               <div key={href}
                 onClick={() => router.push(href)}
-                className={`flex items-center gap-2.5 px-4 py-3 rounded-xl font-medium cursor-pointer transition-all ${
-                  active
-                    ? "bg-green-500 text-white shadow-sm shadow-green-900/30"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}>
+                className={getDashboardNavItemClass(active, tone)}>
                 <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                   <path d={icon}/>
                 </svg>
@@ -436,6 +437,25 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
 
       {/* MAIN */}
       <div className="ml-[220px] w-full">
+        {impersonationSession && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-400/20 bg-amber-500/10 px-8 py-2 text-xs text-amber-100">
+            <div className="min-w-0">
+              <span className="font-semibold uppercase tracking-[0.18em] text-amber-200">
+                {lang === "pl" ? "Impersonacja" : "Impersonating"}
+              </span>
+              <span className="ml-3 text-amber-100/90">
+                {impersonatedLabel}
+                {impersonatedEmail && impersonatedEmail !== impersonatedLabel ? ` (${impersonatedEmail})` : ""}
+              </span>
+            </div>
+            <button
+              onClick={returnToAdmin}
+              className="rounded-lg border border-amber-300/30 bg-amber-300/15 px-3 py-1.5 font-semibold text-amber-50 transition hover:bg-amber-300/25"
+            >
+              {lang === "pl" ? "Wroc do admina" : "Return to admin"}
+            </button>
+          </div>
+        )}
 
         {/* TOPBAR */}
         <div className="relative flex justify-end items-center px-8 py-4 border-b"
