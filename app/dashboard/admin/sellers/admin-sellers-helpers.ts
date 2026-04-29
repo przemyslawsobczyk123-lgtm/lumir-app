@@ -2,6 +2,7 @@ import type { DashboardUser } from "../../nav-helpers";
 
 export const ADMIN_ORIGINAL_TOKEN_KEY = "admin_original_token";
 export const ADMIN_ORIGINAL_USER_KEY = "admin_original_user";
+export const ADMIN_SELLERS_PAGE_SIZE = 50;
 
 const TOKEN_KEY = "token";
 const USER_KEY = "user";
@@ -88,6 +89,22 @@ const ADMIN_SELLER_PERMISSION_OPTIONS: Record<"pl" | "en", AdminSellerPermission
 
 export function getAdminSellerPermissionOptions(lang: "pl" | "en") {
   return ADMIN_SELLER_PERMISSION_OPTIONS[lang];
+}
+
+function normalizePage(page: unknown) {
+  const parsed = typeof page === "number" ? page : Number.parseInt(String(page ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+}
+
+export function buildAdminSellersQuery({ page, search }: { page: number; search: string }) {
+  const params = new URLSearchParams();
+  const trimmedSearch = search.trim();
+
+  params.set("page", String(normalizePage(page)));
+  params.set("limit", String(ADMIN_SELLERS_PAGE_SIZE));
+  if (trimmedSearch) params.set("search", trimmedSearch);
+
+  return params.toString();
 }
 
 function normalizeRole(role: unknown) {

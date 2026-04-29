@@ -5,6 +5,8 @@ import * as adminSellerHelpers from "./admin-sellers-helpers.ts";
 import {
   ADMIN_ORIGINAL_TOKEN_KEY,
   ADMIN_ORIGINAL_USER_KEY,
+  ADMIN_SELLERS_PAGE_SIZE,
+  buildAdminSellersQuery,
   canEditSellerPermissions,
   canImpersonateSeller,
   getImpersonationSession,
@@ -238,4 +240,16 @@ test("admin seller permission options use clear Polish labels and stable order",
       },
     ],
   );
+});
+
+test("buildAdminSellersQuery sends 50 sellers per page and trims search", () => {
+  assert.equal(ADMIN_SELLERS_PAGE_SIZE, 50);
+  assert.equal(
+    buildAdminSellersQuery({ page: 2, search: "  Smoke Prod  " }),
+    "page=2&limit=50&search=Smoke+Prod",
+  );
+});
+
+test("buildAdminSellersQuery clamps invalid page and omits empty search", () => {
+  assert.equal(buildAdminSellersQuery({ page: -4, search: "   " }), "page=1&limit=50");
 });

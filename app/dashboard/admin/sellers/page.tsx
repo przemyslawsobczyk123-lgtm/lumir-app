@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLang } from "../../LangContext";
 import {
+  ADMIN_SELLERS_PAGE_SIZE,
+  buildAdminSellersQuery,
   getAdminSellerPermissionOptions,
   canEditSellerPermissions,
   canImpersonateSeller,
@@ -36,7 +38,27 @@ type Seller = AdminSellerRow & {
 type SellersResponse = {
   success?: boolean;
   data?: Seller[];
+  pagination?: SellerPagination;
+  filters?: { search?: string };
   error?: string;
+};
+
+type SellerPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+};
+
+const EMPTY_PAGINATION: SellerPagination = {
+  page: 1,
+  limit: ADMIN_SELLERS_PAGE_SIZE,
+  total: 0,
+  totalPages: 1,
+  hasNextPage: false,
+  hasPrevPage: false,
 };
 
 const COPY = {
@@ -70,6 +92,16 @@ const COPY = {
     impersonateFailed: "Nie udalo sie przelaczyc na sprzedawce.",
     readOnly: "Tylko podglad",
     ownerLocked: "Owner",
+    searchPlaceholder: "Szukaj po nazwie, emailu lub firmie",
+    search: "Szukaj",
+    clear: "Wyczysc",
+    previous: "Poprzednia",
+    next: "Nastepna",
+    results: "Wyniki",
+    shown: "Na stronie",
+    page: "Strona",
+    of: "z",
+    perPage: "na strone",
   },
   en: {
     title: "Sellers",
@@ -101,6 +133,16 @@ const COPY = {
     impersonateFailed: "Failed to impersonate seller.",
     readOnly: "Read only",
     ownerLocked: "Owner",
+    searchPlaceholder: "Search by name, email, or company",
+    search: "Search",
+    clear: "Clear",
+    previous: "Previous",
+    next: "Next",
+    results: "Results",
+    shown: "On page",
+    page: "Page",
+    of: "of",
+    perPage: "per page",
   },
 } as const;
 
@@ -122,6 +164,33 @@ function normalizeSeller(seller: Seller): Seller {
     can_view_admin_sellers: boolValue(seller.can_view_admin_sellers),
     can_impersonate_sellers: boolValue(seller.can_impersonate_sellers),
     can_grant_admin_permissions: boolValue(seller.can_grant_admin_permissions),
+  };
+}
+
+function normalizePagination(pagination: SellerPagination | undefined, fallbackPage: number, rowCount: number): SellerPagination {
+  if (!pagination) {
+    return {
+      ...EMPTY_PAGINATION,
+      page: fallbackPage,
+      total: rowCount,
+      hasPrevPage: fallbackPage > 1,
+    };
+  }
+
+  const page = Number.isFinite(pagination.page) && pagination.page > 0 ? pagination.page : fallbackPage;
+  const limit = Number.isFinite(pagination.limit) && pagination.limit > 0 ? pagination.limit : ADMIN_SELLERS_PAGE_SIZE;
+  const total = Number.isFinite(pagination.total) && pagination.total > 0 ? pagination.total : 0;
+  const totalPages = Math.max(1, Number.isFinite(pagination.totalPages) && pagination.totalPages > 0
+    ? pagination.totalPages
+    : Math.ceil(total / limit));
+
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasNextPage: Boolean(pagination.hasNextPage),
+    hasPrevPage: Boolean(pagination.hasPrevPage),
   };
 }
 
@@ -158,6 +227,10 @@ export default function AdminSellersPage() {
   const copy = COPY[lang];
   const [currentUser, setCurrentUser] = useState<DashboardUser | null>(null);
   const [sellers, setSellers] = useState<Seller[]>([]);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [pagination, setPagination] = useState<SellerPagination>(EMPTY_PAGINATION);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rowMessages, setRowMessages] = useState<Record<number, { ok: boolean; text: string }>>({});
@@ -181,7 +254,9 @@ export default function AdminSellersPage() {
       }
 
       try {
-        const res = await fetch(`${API}/api/admin/sellers`, {
+        setLoading(true);
+        const query = buildAdminSellersQuery({ page, search: submittedSearch });
+        const res = await fetch(`${API}/api/admin/sellers?${query}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const json = (await res.json().catch(() => ({}))) as SellersResponse;
@@ -194,7 +269,10 @@ export default function AdminSellersPage() {
         }
 
         if (!disposed) {
-          setSellers(json.data.map(normalizeSeller));
+          const normalizedSellers = json.data.map(normalizeSeller);
+          setSellers(normalizedSellers);
+          setPagination(normalizePagination(json.pagination, page, normalizedSellers.length));
+          setRowMessages({});
           setError("");
         }
       } catch (err) {
@@ -208,19 +286,31 @@ export default function AdminSellersPage() {
     return () => {
       disposed = true;
     };
-  }, [copy.loadFailed, copy.noAccess]);
-
-  const totals = useMemo(() => {
-    const active = sellers.filter((seller) => seller.is_active === true || seller.is_active === 1).length;
-    const admins = sellers.filter((seller) => seller.role === "admin" || seller.role === "owner").length;
-    return { active, admins };
-  }, [sellers]);
+  }, [copy.loadFailed, copy.noAccess, page, submittedSearch]);
 
   const setMessage = (sellerId: number, ok: boolean, text: string) => {
     setRowMessages((current) => ({ ...current, [sellerId]: { ok, text } }));
   };
 
   const permissionOptions = useMemo(() => getAdminSellerPermissionOptions(lang), [lang]);
+
+  const submitSearch = () => {
+    const nextSearch = searchInput.trim();
+    setSubmittedSearch(nextSearch);
+    setPage(1);
+  };
+
+  const clearSearch = () => {
+    if (!searchInput.trim() && !submittedSearch) return;
+    setSearchInput("");
+    setSubmittedSearch("");
+    setPage(1);
+  };
+
+  const goToPage = (nextPage: number) => {
+    if (loading || nextPage < 1 || nextPage > pagination.totalPages) return;
+    setPage(nextPage);
+  };
 
   const updatePermission = async (seller: Seller, key: AdminSellerPermissionKey, checked: boolean) => {
     if (!currentUser || !canEditSellerPermissions(currentUser, seller)) return;
@@ -402,6 +492,47 @@ export default function AdminSellersPage() {
     );
   };
 
+  const renderPaginationControls = () => {
+    const canGoPrevious = !loading && pagination.hasPrevPage;
+    const canGoNext = !loading && pagination.hasNextPage;
+
+    return (
+      <div className="flex flex-col gap-3 border-t border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-xs text-slate-400">
+          {copy.page} {pagination.page} {copy.of} {pagination.totalPages} · {pagination.limit} {copy.perPage} · {copy.results}: {pagination.total}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            aria-disabled={!canGoPrevious}
+            onClick={() => {
+              if (!canGoPrevious) return;
+              goToPage(pagination.page - 1);
+            }}
+            className={`rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-100 transition ${
+              canGoPrevious ? "bg-white/5 hover:bg-white/10" : "cursor-not-allowed bg-slate-950/30 opacity-50"
+            }`}
+          >
+            {copy.previous}
+          </button>
+          <button
+            type="button"
+            aria-disabled={!canGoNext}
+            onClick={() => {
+              if (!canGoNext) return;
+              goToPage(pagination.page + 1);
+            }}
+            className={`rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-100 transition ${
+              canGoNext ? "bg-white/5 hover:bg-white/10" : "cursor-not-allowed bg-slate-950/30 opacity-50"
+            }`}
+          >
+            {copy.next}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 pb-16">
       <div className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.96),rgba(15,23,42,0.98))] p-6 shadow-2xl shadow-indigo-950/20">
@@ -415,12 +546,12 @@ export default function AdminSellersPage() {
           </div>
           <div className="grid grid-cols-2 gap-3 sm:min-w-[280px]">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{copy.active}</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{totals.active}</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{copy.results}</div>
+              <div className="mt-2 text-3xl font-semibold text-white">{pagination.total}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Admin</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{totals.admins}</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{copy.shown}</div>
+              <div className="mt-2 text-3xl font-semibold text-white">{sellers.length}</div>
             </div>
           </div>
         </div>
@@ -439,6 +570,45 @@ export default function AdminSellersPage() {
       ) : null}
 
       <section className="overflow-hidden rounded-[1.5rem] shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitSearch();
+          }}
+          className="flex flex-col gap-3 border-b border-white/10 p-4 lg:flex-row lg:items-center lg:justify-between"
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder={copy.searchPlaceholder}
+              className="min-h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/40 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-indigo-300/70 focus:bg-slate-950/70"
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-950/25 transition hover:shadow-lg hover:shadow-indigo-500/20"
+              >
+                {copy.search}
+              </button>
+              <button
+                type="button"
+                aria-disabled={!searchInput.trim() && !submittedSearch}
+                onClick={clearSearch}
+                className={`rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-100 transition ${
+                  searchInput.trim() || submittedSearch ? "bg-white/5 hover:bg-white/10" : "cursor-not-allowed bg-slate-950/30 opacity-50"
+                }`}
+              >
+                {copy.clear}
+              </button>
+            </div>
+          </div>
+          <div className="text-xs text-slate-400">
+            {copy.page} {pagination.page} {copy.of} {pagination.totalPages} · {pagination.limit} {copy.perPage}
+          </div>
+        </form>
+
         {loading ? (
           <div className="p-6 text-sm" style={{ color: "var(--text-secondary)" }}>{copy.loading}</div>
         ) : sellers.length === 0 ? (
@@ -524,6 +694,7 @@ export default function AdminSellersPage() {
               </tbody>
               </table>
             </div>
+            {renderPaginationControls()}
           </>
         )}
       </section>
