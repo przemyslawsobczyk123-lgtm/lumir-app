@@ -344,7 +344,7 @@ export default function AdminSellersPage() {
 
     return (
       <div className="min-w-0">
-        <div className="grid gap-2 xl:grid-cols-3">
+        <div className="grid gap-2">
           {permissionOptions.map((permission) => {
             const permissionSaving = savingKey === `${seller.id}:${permission.key}`;
             const locked = !editable || permissionSaving;
@@ -479,14 +479,14 @@ export default function AdminSellersPage() {
             </div>
 
             <div className="hidden overflow-x-auto lg:block">
-              <table className="min-w-[1120px] w-full text-left text-sm" style={{ borderCollapse: "collapse" }}>
+              <table className="min-w-[980px] w-full text-left text-sm" style={{ borderCollapse: "collapse" }}>
               <thead className="text-xs uppercase tracking-[0.2em]" style={{ background: "var(--bg-table-header)", color: "var(--text-secondary)" }}>
                 <tr>
                   <th className="sticky left-0 z-10 min-w-[260px] px-4 py-3 font-semibold" style={{ background: "var(--bg-table-header)" }}>{copy.seller}</th>
                   <th className="px-4 py-3 font-semibold">{copy.company}</th>
                   <th className="px-4 py-3 font-semibold">{copy.account}</th>
                   <th className="px-4 py-3 font-semibold">{copy.lastLogin}</th>
-                  <th className="min-w-[520px] px-4 py-3 font-semibold">{copy.permissions}</th>
+                  <th className="min-w-[360px] px-4 py-3 font-semibold">{copy.permissions}</th>
                 </tr>
               </thead>
               <tbody>
