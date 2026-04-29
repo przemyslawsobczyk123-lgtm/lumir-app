@@ -31,6 +31,65 @@ export type AdminSellerRow = {
   active?: boolean | number | null;
 };
 
+export type AdminSellerPermissionKey =
+  | "can_view_admin_sellers"
+  | "can_impersonate_sellers"
+  | "can_grant_admin_permissions";
+
+type AdminSellerPermissionOption = {
+  key: AdminSellerPermissionKey;
+  label: string;
+  shortLabel: string;
+  description: string;
+};
+
+const ADMIN_SELLER_PERMISSION_OPTIONS: Record<"pl" | "en", AdminSellerPermissionOption[]> = {
+  pl: [
+    {
+      key: "can_view_admin_sellers",
+      label: "Lista sprzedawcow",
+      shortLabel: "Lista",
+      description: "Widok zakladki i listy kont.",
+    },
+    {
+      key: "can_impersonate_sellers",
+      label: "Przelaczanie kont",
+      shortLabel: "Konta",
+      description: "Wejscie w tryb sprzedawcy.",
+    },
+    {
+      key: "can_grant_admin_permissions",
+      label: "Nadawanie admina",
+      shortLabel: "Admin",
+      description: "Edycja uprawnien innych kont.",
+    },
+  ],
+  en: [
+    {
+      key: "can_view_admin_sellers",
+      label: "Seller list",
+      shortLabel: "List",
+      description: "View seller admin tab and accounts.",
+    },
+    {
+      key: "can_impersonate_sellers",
+      label: "Switch accounts",
+      shortLabel: "Switch",
+      description: "Enter seller account mode.",
+    },
+    {
+      key: "can_grant_admin_permissions",
+      label: "Grant admin",
+      shortLabel: "Admin",
+      description: "Edit permissions on other accounts.",
+    },
+  ],
+};
+
+export function getAdminSellerPermissionOptions(lang: "pl" | "en") {
+  return ADMIN_SELLER_PERMISSION_OPTIONS[lang];
+}
+
 function normalizeRole(role: unknown) {
   return typeof role === "string" ? role.toLowerCase() : "";
 }

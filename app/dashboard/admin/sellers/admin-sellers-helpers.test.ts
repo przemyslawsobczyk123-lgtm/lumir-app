@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as adminSellerHelpers from "./admin-sellers-helpers.ts";
 import {
   ADMIN_ORIGINAL_TOKEN_KEY,
   ADMIN_ORIGINAL_USER_KEY,
@@ -201,4 +202,40 @@ test("storeFreshAuthSession clears stale admin original before writing fresh log
     email: "new@lumir.test",
     role: "seller",
   });
+});
+
+test("admin seller permission options use clear Polish labels and stable order", () => {
+  const getAdminSellerPermissionOptions = (adminSellerHelpers as {
+    getAdminSellerPermissionOptions?: (lang: "pl" | "en") => Array<{
+      key: string;
+      label: string;
+      description: string;
+    }>;
+  }).getAdminSellerPermissionOptions;
+
+  assert.equal(typeof getAdminSellerPermissionOptions, "function");
+  assert.deepEqual(
+    getAdminSellerPermissionOptions?.("pl").map((permission) => ({
+      key: permission.key,
+      label: permission.label,
+      description: permission.description,
+    })),
+    [
+      {
+        key: "can_view_admin_sellers",
+        label: "Lista sprzedawcow",
+        description: "Widok zakladki i listy kont.",
+      },
+      {
+        key: "can_impersonate_sellers",
+        label: "Przelaczanie kont",
+        description: "Wejscie w tryb sprzedawcy.",
+      },
+      {
+        key: "can_grant_admin_permissions",
+        label: "Nadawanie admina",
+        description: "Edycja uprawnien innych kont.",
+      },
+    ],
+  );
 });
