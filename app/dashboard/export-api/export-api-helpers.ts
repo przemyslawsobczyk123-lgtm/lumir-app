@@ -16,6 +16,17 @@ export type ExportMarketplaceOption = {
   badge: string;
 };
 
+export type OperationDiagnostic = {
+  severity: string | null;
+  title: string | null;
+  message: string | null;
+  code: string | null;
+  hint: string | null;
+  details: string | null;
+  retryable: boolean | null;
+  source: string | null;
+};
+
 const ALLEGRO_EXPORT_FIELD_KEYS: AllegroExportField[] = ["title", "description", "price", "stock"];
 
 export const EXPORT_MARKETPLACE_OPTIONS: ExportMarketplaceOption[] = [
@@ -28,6 +39,74 @@ export const EXPORT_MARKETPLACE_OPTIONS: ExportMarketplaceOption[] = [
 export function getVisibleExportMarketplaceOptions(amazonEnabled = isAmazonUiEnabled()) {
   return withoutAmazonWhenDisabled(EXPORT_MARKETPLACE_OPTIONS, (item) => item.value, amazonEnabled);
 }
+
+export function getExportMarketplaceTabClass(active: boolean, enabled: boolean) {
+  const base = "rounded-xl border p-3 text-left transition";
+
+  if (active) {
+    return `${base} border-indigo-500 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 [html.dark_&]:border-indigo-300 [html.dark_&]:from-indigo-400 [html.dark_&]:to-violet-500 [html.dark_&]:shadow-violet-950/50`;
+  }
+
+  if (enabled) {
+    return `${base} border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-primary)] hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-900 [html.dark_&]:hover:border-[#818cf8]/70 [html.dark_&]:hover:bg-[#1f2450] [html.dark_&]:hover:text-[#e0e7ff]`;
+  }
+
+  return `${base} cursor-not-allowed border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-tertiary)] opacity-70`;
+}
+
+const EXPORT_TONE_CLASSES = {
+  ready: {
+    badge: "border-emerald-400 bg-emerald-100 text-emerald-900 [html.dark_&]:border-[#34d399]/70 [html.dark_&]:bg-[#052e2b] [html.dark_&]:text-[#a7f3d0]",
+    panel: "border-emerald-400 bg-emerald-100 text-emerald-900 shadow-sm shadow-emerald-900/10 [html.dark_&]:border-[#34d399]/70 [html.dark_&]:bg-[#052e2b] [html.dark_&]:text-[#a7f3d0] [html.dark_&]:shadow-black/20",
+    row: "hover:border-emerald-400/60 [html.dark_&]:hover:border-[#34d399]/55",
+  },
+  warning: {
+    badge: "border-amber-400 bg-amber-100 text-amber-900 [html.dark_&]:border-[#f59e0b]/70 [html.dark_&]:bg-[#3b2a08] [html.dark_&]:text-[#fde68a]",
+    panel: "border-amber-400 bg-amber-100 text-amber-900 shadow-sm shadow-amber-900/10 [html.dark_&]:border-[#f59e0b]/70 [html.dark_&]:bg-[#3b2a08] [html.dark_&]:text-[#fde68a] [html.dark_&]:shadow-black/20",
+    row: "hover:border-amber-400/60 [html.dark_&]:hover:border-[#f59e0b]/55",
+  },
+  danger: {
+    badge: "border-rose-400 bg-rose-100 text-rose-900 [html.dark_&]:border-[#fb7185]/70 [html.dark_&]:bg-[#3f101c] [html.dark_&]:text-[#fecdd3]",
+    panel: "border-rose-400 bg-rose-100 text-rose-900 shadow-sm shadow-rose-900/10 [html.dark_&]:border-[#fb7185]/70 [html.dark_&]:bg-[#3f101c] [html.dark_&]:text-[#fecdd3] [html.dark_&]:shadow-black/20",
+    row: "hover:border-rose-400/60 [html.dark_&]:hover:border-[#fb7185]/55",
+  },
+  info: {
+    badge: "border-sky-400 bg-sky-100 text-sky-900 [html.dark_&]:border-[#38bdf8]/70 [html.dark_&]:bg-[#082f49] [html.dark_&]:text-[#bae6fd]",
+    panel: "border-sky-400 bg-sky-100 text-sky-900 shadow-sm shadow-sky-900/10 [html.dark_&]:border-[#38bdf8]/70 [html.dark_&]:bg-[#082f49] [html.dark_&]:text-[#bae6fd] [html.dark_&]:shadow-black/20",
+    row: "hover:border-sky-400/60 [html.dark_&]:hover:border-[#38bdf8]/55",
+  },
+} as const satisfies Record<ExportOperationTone, { badge: string; panel: string; row: string }>;
+
+export const exportHelperPanelClasses = {
+  card: "rounded-2xl border border-indigo-300 bg-indigo-100 p-4 shadow-sm shadow-indigo-900/10 [html.dark_&]:border-[#6366f1]/70 [html.dark_&]:bg-[#17172f] [html.dark_&]:shadow-indigo-950/30",
+  eyebrow: "text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-600 [html.dark_&]:text-[#a5b4fc]",
+  body: "mt-2 text-sm leading-6 text-indigo-700 [html.dark_&]:text-[#c7d2fe]",
+  ready: `rounded-xl border px-3 py-2 text-sm ${EXPORT_TONE_CLASSES.ready.panel}`,
+  review: `rounded-xl border px-3 py-2 text-sm ${EXPORT_TONE_CLASSES.warning.panel}`,
+  blocked: `rounded-xl border px-3 py-2 text-sm ${EXPORT_TONE_CLASSES.danger.panel}`,
+} as const;
+
+export function getExportOperationToneClasses(tone: ExportOperationTone) {
+  const classes = EXPORT_TONE_CLASSES[tone];
+  return {
+    badge: classes.badge,
+    row: classes.row,
+  };
+}
+
+export function getExportRunToneClass(tone: ExportRunTone) {
+  return EXPORT_TONE_CLASSES[tone].badge;
+}
+
+export function getExportReasonChipClass(tone: "warning" | "danger") {
+  return EXPORT_TONE_CLASSES[tone].badge;
+}
+
+export const exportPreflightSummaryClasses = {
+  ready: `rounded-xl border p-4 ${EXPORT_TONE_CLASSES.ready.panel}`,
+  blocked: `rounded-xl border p-4 ${EXPORT_TONE_CLASSES.danger.panel}`,
+  info: `rounded-xl border p-4 ${EXPORT_TONE_CLASSES.info.panel}`,
+} as const;
 
 export const DEFAULT_ALLEGRO_EXPORT_FIELDS: AllegroExportFields = {
   title: true,
@@ -78,6 +157,16 @@ export type ExportRunRow = {
   blockedCount: number;
   createdAt: string | null;
   updatedAt: string | null;
+  items: ExportRunItemRow[];
+  failedItems: ExportRunItemRow[];
+};
+
+export type ExportRunItemRow = {
+  id: number | null;
+  productId: number | null;
+  status: string;
+  errorMessage: string | null;
+  diagnostic: OperationDiagnostic | null;
 };
 
 export type ExportPreflightResult = {
@@ -105,11 +194,89 @@ function toRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value ? value as Record<string, unknown> : {};
 }
 
+function toPlainRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function normalizeIntegerArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
     .map((entry) => Number.parseInt(String(entry || ""), 10))
     .filter((entry, index, array) => Number.isInteger(entry) && entry > 0 && array.indexOf(entry) === index);
+}
+
+function normalizeOptionalString(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized || null;
+}
+
+function normalizeNumberOrNull(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeDiagnosticDetails(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+
+  if (value == null) return null;
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+export function parseOperationDiagnostic(input: unknown): OperationDiagnostic | null {
+  let rawObject = toPlainRecord(input);
+
+  if (!rawObject && typeof input === "string") {
+    try {
+      rawObject = toPlainRecord(JSON.parse(input) as unknown);
+    } catch {
+      rawObject = null;
+    }
+  }
+
+  if (!rawObject) return null;
+
+  const diagnostic: OperationDiagnostic = {
+    severity: normalizeOptionalString(rawObject.severity),
+    title: normalizeOptionalString(rawObject.title),
+    message: normalizeOptionalString(rawObject.message),
+    code: normalizeOptionalString(rawObject.code),
+    hint: normalizeOptionalString(rawObject.hint),
+    details: normalizeDiagnosticDetails(rawObject.details),
+    retryable: typeof rawObject.retryable === "boolean" ? rawObject.retryable : null,
+    source: normalizeOptionalString(rawObject.source),
+  };
+
+  const hasDisplayValue = Boolean(
+    diagnostic.severity
+      || diagnostic.title
+      || diagnostic.message
+      || diagnostic.code
+      || diagnostic.hint
+      || diagnostic.details
+      || diagnostic.source
+  );
+
+  return hasDisplayValue ? diagnostic : null;
 }
 
 export function normalizeAllegroExportFields(value: unknown, fallback: AllegroExportFields = DEFAULT_ALLEGRO_EXPORT_FIELDS): AllegroExportFields {
@@ -618,6 +785,37 @@ export function buildExportApiHref(input: { marketplaceSlug: string; productIds:
   return `/dashboard/export-api?${serializeExportApiSelection(input)}`;
 }
 
+function normalizeExportRunItemErrorMessage(entry: Record<string, unknown>, error: Record<string, unknown> | null) {
+  if (typeof entry.error === "string" && entry.error.trim()) return entry.error.trim();
+  return normalizeOptionalString(entry.errorMessage)
+    ?? normalizeOptionalString(error?.message)
+    ?? normalizeOptionalString(error?.error)
+    ?? null;
+}
+
+function isFailedExportRunItem(item: ExportRunItemRow) {
+  const status = normalizedLower(item.status);
+  return status === "error" || status === "failed" || status === "blocked" || Boolean(item.diagnostic || item.errorMessage);
+}
+
+function normalizeExportRunItems(input: unknown): ExportRunItemRow[] {
+  if (!Array.isArray(input)) return [];
+
+  return input.map((item) => {
+    const entry = toRecord(item);
+    const error = toPlainRecord(entry.error);
+    const diagnostic = parseOperationDiagnostic(entry.diagnostic) ?? parseOperationDiagnostic(error?.diagnostic);
+
+    return {
+      id: normalizeNumberOrNull(entry.id),
+      productId: normalizeNumberOrNull(entry.productId),
+      status: normalizeOptionalString(entry.status) ?? "unknown",
+      errorMessage: normalizeExportRunItemErrorMessage(entry, error),
+      diagnostic,
+    };
+  });
+}
+
 export function normalizeExportRunRows(input: unknown): ExportRunRow[] {
   if (!Array.isArray(input)) return [];
 
@@ -625,6 +823,7 @@ export function normalizeExportRunRows(input: unknown): ExportRunRow[] {
     .map((row) => {
       const data = typeof row === "object" && row ? row as Record<string, unknown> : {};
       const summary = typeof data.summary === "object" && data.summary ? data.summary as Record<string, unknown> : {};
+      const items = normalizeExportRunItems(data.items);
 
       return {
         id: Number(data.id || 0),
@@ -636,6 +835,8 @@ export function normalizeExportRunRows(input: unknown): ExportRunRow[] {
         blockedCount: Number(summary.blockedCount || 0),
         createdAt: typeof data.createdAt === "string" ? data.createdAt : null,
         updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
+        items,
+        failedItems: items.filter(isFailedExportRunItem),
       };
     })
     .filter((row) => Number.isInteger(row.id) && row.id > 0);

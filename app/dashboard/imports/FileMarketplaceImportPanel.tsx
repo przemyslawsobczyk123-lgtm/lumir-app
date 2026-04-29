@@ -132,8 +132,7 @@ export function FileMarketplaceImportPanel({ marketplace, onBack, onClose, onQue
       });
       const json = await res.json();
       if (!res.ok) {
-        const code = typeof json.code === "string" ? `${json.code}: ` : "";
-        throw new Error(`${code}${json.error || copy.queueError}`);
+        throw new Error(json.error || copy.queueError);
       }
 
       onQueued({

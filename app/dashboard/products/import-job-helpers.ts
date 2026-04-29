@@ -6,6 +6,7 @@ export type ImportJobItemLike = {
   resultProductExists?: boolean | null;
   status?: string | null;
   resultJson?: unknown;
+  diagnostic?: unknown;
 };
 
 export type JobWithItems = {
@@ -36,6 +37,17 @@ export type ImportDuplicateRow = {
   existingProductTitle: string | null;
 };
 
+export type OperationDiagnostic = {
+  severity: string | null;
+  title: string | null;
+  message: string | null;
+  code: string | null;
+  hint: string | null;
+  details: string | null;
+  retryable: boolean | null;
+  source: string | null;
+};
+
 export type ImportJobSummary = {
   totalCount: number;
   importedCount: number;
@@ -59,6 +71,7 @@ export type NormalizedImportJobResult = {
   existingProductId: number | null;
   existingProductTitle: string | null;
   message?: string | null;
+  diagnostic: OperationDiagnostic | null;
 };
 
 export function isImportModeWithAi(mode: unknown) {
@@ -75,10 +88,11 @@ export function isImportHubBackgroundJobType(type: unknown) {
 
 export function hasReportableImportJobItem(item: ImportJobItemLike) {
   const result = normalizeImportJobResult(item.resultJson);
+  const diagnostic = parseOperationDiagnostic(item.diagnostic) ?? result.diagnostic;
   if (result.status === "duplicate" && item.resultProductExists === false) return false;
   if (item.productId != null) return true;
 
-  return result.status === "imported" || result.status === "duplicate" || result.status === "error" || item.status === "error";
+  return result.status === "imported" || result.status === "duplicate" || result.status === "error" || item.status === "error" || Boolean(diagnostic);
 }
 
 export function getImportJobOpenProductId(item: ImportJobItemLike) {
@@ -177,6 +191,38 @@ export function parseImportMeta(rawData: unknown): ParsedImportMeta | null {
   };
 }
 
+export function parseOperationDiagnostic(input: unknown): OperationDiagnostic | null {
+  const rawObject = parseUnknownObject(input);
+  if (!rawObject) return null;
+
+  const diagnostic: OperationDiagnostic = {
+    severity: normalizeOptionalString(rawObject.severity),
+    title: normalizeOptionalString(rawObject.title),
+    message: normalizeOptionalString(rawObject.message),
+    code: normalizeOptionalString(rawObject.code),
+    hint: normalizeOptionalString(rawObject.hint),
+    details: normalizeDiagnosticDetails(rawObject.details),
+    retryable: typeof rawObject.retryable === "boolean" ? rawObject.retryable : null,
+    source: normalizeOptionalString(rawObject.source),
+  };
+
+  const hasDisplayValue = Boolean(
+    diagnostic.severity
+      || diagnostic.title
+      || diagnostic.message
+      || diagnostic.code
+      || diagnostic.hint
+      || diagnostic.details
+      || diagnostic.source
+  );
+
+  return hasDisplayValue ? diagnostic : null;
+}
+
+export function getImportJobItemDiagnostic(item: ImportJobItemLike) {
+  return parseOperationDiagnostic(item.diagnostic) ?? normalizeImportJobResult(item.resultJson).diagnostic;
+}
+
 export function normalizeImportJobResult(input: unknown): NormalizedImportJobResult {
   const rawObject = parseUnknownObject(input);
   if (!rawObject) {
@@ -188,6 +234,7 @@ export function normalizeImportJobResult(input: unknown): NormalizedImportJobRes
       existingProductId: null,
       existingProductTitle: null,
       message: null,
+      diagnostic: null,
     };
   }
 
@@ -201,6 +248,7 @@ export function normalizeImportJobResult(input: unknown): NormalizedImportJobRes
     existingProductId: normalizeNumber(rawObject.existingProductId),
     existingProductTitle: normalizeOptionalString(rawObject.existingProductTitle),
     message: normalizeOptionalString(rawObject.message),
+    diagnostic: parseOperationDiagnostic(rawObject.diagnostic),
   };
 }
 
@@ -232,5 +280,27 @@ function normalizeNumber(value: unknown) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
+  return null;
+}
+
+function normalizeDiagnosticDetails(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+
+  if (value == null) return null;
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+
   return null;
 }

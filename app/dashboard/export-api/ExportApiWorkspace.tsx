@@ -11,6 +11,9 @@ import {
   canRunMarketplacePreflight,
   canStartExportRun,
   DEFAULT_ALLEGRO_EXPORT_FIELDS,
+  exportHelperPanelClasses,
+  exportPreflightSummaryClasses,
+  getExportMarketplaceTabClass,
   getVisibleExportMarketplaceOptions,
   getExportReadinessPresentation,
   getSelectableExportReadinessIds,
@@ -22,10 +25,12 @@ import {
   type AllegroExportFields,
   type ExportReadinessFilter,
   type ExportPreflightResult,
+  type ExportRunRow,
 } from "./export-api-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const AMAZON_UI_ENABLED = isAmazonUiEnabled();
+const EXPORT_READINESS_LIMIT = 100;
 
 const ALLEGRO_FIELD_LABELS: Record<AllegroExportField, string> = {
   title: "Tytul",
@@ -128,6 +133,36 @@ function getDownloadFileName(response: Response, fallback: string) {
   return match?.[1] || fallback;
 }
 
+async function loadMarketplaceRunHistory(marketplaceSlug: string): Promise<ExportRunRow[]> {
+  const runsPayload = await fetch(`${API}/api/marketplace-export/runs`, {
+    headers: authHeaders(),
+    cache: "no-store",
+  }).then(readJsonOrThrow);
+
+  const listedRuns = normalizeExportRunRows(
+    typeof runsPayload === "object" && runsPayload && "data" in runsPayload
+      ? (runsPayload as { data?: unknown }).data
+      : []
+  ).filter((run) => run.marketplaceSlug === marketplaceSlug);
+
+  return Promise.all(listedRuns.map(async (run) => {
+    try {
+      const detailPayload = await fetch(`${API}/api/marketplace-export/runs/${run.id}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      }).then(readJsonOrThrow);
+      const detailed = normalizeExportRunRows([
+        typeof detailPayload === "object" && detailPayload && "data" in detailPayload
+          ? (detailPayload as { data?: unknown }).data
+          : null,
+      ])[0];
+      return detailed ?? run;
+    } catch {
+      return run;
+    }
+  }));
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -151,6 +186,7 @@ export function ExportApiWorkspace() {
   const [selectedIds, setSelectedIds] = useState<number[]>(initialSelection.productIds);
   const [statusFilter, setStatusFilter] = useState<ExportReadinessFilter>("all");
   const [rows, setRows] = useState(() => normalizeExportReadinessRows([]));
+  const [readinessPage, setReadinessPage] = useState(1);
   const [runs, setRuns] = useState(() => normalizeExportRunRows([]));
   const [allegroAccounts, setAllegroAccounts] = useState<AllegroAccountOption[]>([]);
   const [selectedAllegroAccountId, setSelectedAllegroAccountId] = useState<number | null>(initialSelection.accountId);
@@ -172,6 +208,7 @@ export function ExportApiWorkspace() {
     setConfirmNeedsReview(!!nextSelection.confirmNeedsReview);
     setAllegroFields(nextSelection.fields || DEFAULT_ALLEGRO_EXPORT_FIELDS);
     setPreflight(null);
+    setReadinessPage(1);
   }, [searchString]);
 
   const toggleAllegroField = (field: AllegroExportField) => {
@@ -245,13 +282,14 @@ export function ExportApiWorkspace() {
         }
         if (scopedProductIds.length > 0) {
           readinessUrl.searchParams.set("productIds", scopedProductIds.join(","));
+        } else {
+          readinessUrl.searchParams.set("page", String(readinessPage));
+          readinessUrl.searchParams.set("limit", String(EXPORT_READINESS_LIMIT));
         }
 
-        const runsUrl = new URL(`${API}/api/marketplace-export/runs`);
-
-        const [readinessPayload, runsPayload] = await Promise.all([
+        const [readinessPayload, nextRuns] = await Promise.all([
           fetch(readinessUrl.toString(), { headers: authHeaders(), cache: "no-store" }).then(readJsonOrThrow),
-          fetch(runsUrl.toString(), { headers: authHeaders(), cache: "no-store" }).then(readJsonOrThrow),
+          loadMarketplaceRunHistory(marketplaceSlug),
         ]);
 
         if (cancelled) return;
@@ -261,12 +299,6 @@ export function ExportApiWorkspace() {
             ? (readinessPayload as { data?: unknown }).data
             : []
         );
-        const nextRuns = normalizeExportRunRows(
-          typeof runsPayload === "object" && runsPayload && "data" in runsPayload
-            ? (runsPayload as { data?: unknown }).data
-            : []
-        ).filter((run) => run.marketplaceSlug === marketplaceSlug);
-
         setRows(nextRows);
         setRuns(nextRuns);
         setSelectedIds((current) => getSelectableExportReadinessIds(nextRows, current));
@@ -287,7 +319,7 @@ export function ExportApiWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [marketplaceSlug, scopedProductIds, selectedAllegroAccountId]);
+  }, [marketplaceSlug, scopedProductIds, selectedAllegroAccountId, readinessPage]);
 
   const copy = marketplaceHelperCopy(marketplaceSlug);
   const marketplaceLabel = getMarketplaceLabel(marketplaceSlug);
@@ -390,16 +422,7 @@ export function ExportApiWorkspace() {
 
       setRunResult(`Run #${data.data?.runId ?? "-"} dodany do kolejki${data.data?.jobId ? ` (${data.data.jobId})` : ""}.`);
 
-      const runsPayload = await fetch(`${API}/api/marketplace-export/runs`, {
-        headers: authHeaders(),
-        cache: "no-store",
-      }).then(readJsonOrThrow);
-      const nextRuns = normalizeExportRunRows(
-        typeof runsPayload === "object" && runsPayload && "data" in runsPayload
-          ? (runsPayload as { data?: unknown }).data
-          : []
-      ).filter((run) => run.marketplaceSlug === marketplaceSlug);
-      setRuns(nextRuns);
+      setRuns(await loadMarketplaceRunHistory(marketplaceSlug));
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Export run fail");
     } finally {
@@ -473,40 +496,37 @@ export function ExportApiWorkspace() {
                       setMarketplaceSlug(option.value);
                       setPreflight(null);
                       setRunResult(null);
+                      setReadinessPage(1);
                     }}
-                    className={`rounded-xl border p-3 text-left transition ${
-                      active
-                        ? "border-indigo-400 bg-indigo-500/20 text-white"
-                        : option.enabled
-                          ? "border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
-                          : "cursor-not-allowed border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-tertiary)] opacity-70"
-                    }`}
+                    className={getExportMarketplaceTabClass(active, option.enabled)}
                   >
                     <div className="text-sm font-semibold">{option.label}</div>
-                    <div className="mt-1 text-xs text-[var(--text-secondary)]">{option.badge}</div>
+                    <div className={`mt-1 text-xs ${active ? "text-indigo-100" : "text-[var(--text-secondary)]"}`}>
+                      {option.badge}
+                    </div>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-300">
+          <div className={exportHelperPanelClasses.card}>
+            <div className={exportHelperPanelClasses.eyebrow}>
               {copy.eyebrow}
             </div>
-            <p className="mt-2 text-sm leading-6 text-indigo-100">
+            <p className={exportHelperPanelClasses.body}>
               {copy.body}
             </p>
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+              <div className={exportHelperPanelClasses.ready}>
                 <div className="text-[10px] uppercase tracking-[0.16em]">Gotowe</div>
                 <div className="mt-1 text-xl font-semibold">{readyCount}</div>
               </div>
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              <div className={exportHelperPanelClasses.review}>
                 <div className="text-[10px] uppercase tracking-[0.16em]">Review</div>
                 <div className="mt-1 text-xl font-semibold">{reviewCount}</div>
               </div>
-              <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+              <div className={exportHelperPanelClasses.blocked}>
                 <div className="text-[10px] uppercase tracking-[0.16em]">Blokady</div>
                 <div className="mt-1 text-xl font-semibold">{blockedCount}</div>
               </div>
@@ -640,10 +660,11 @@ export function ExportApiWorkspace() {
                 onClick={() => {
                   setScopedProductIds([]);
                   setPreflight(null);
+                  setReadinessPage(1);
                 }}
                 className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15"
               >
-                Ostatnie 50
+                Ostatnie 100
               </button>
             )}
           </div>
@@ -676,6 +697,46 @@ export function ExportApiWorkspace() {
         }}
         onOpenProduct={(productId) => router.push(`/dashboard/products/${productId}`)}
       />
+
+      {scopedProductIds.length === 0 && (readinessPage > 1 || rows.length >= EXPORT_READINESS_LIMIT) && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)] sm:flex-row sm:items-center sm:justify-between">
+          <span>Strona {readinessPage} · max {EXPORT_READINESS_LIMIT} wynikow</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              aria-disabled={readinessPage === 1}
+              onClick={() => {
+                if (readinessPage === 1) return;
+                setReadinessPage((current) => Math.max(1, current - 1));
+                setPreflight(null);
+              }}
+              className={`rounded-xl border px-3 py-2 font-semibold transition ${
+                readinessPage === 1
+                  ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
+                  : "border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+              }`}
+            >
+              Poprzednia
+            </button>
+            <button
+              type="button"
+              aria-disabled={rows.length < EXPORT_READINESS_LIMIT}
+              onClick={() => {
+                if (rows.length < EXPORT_READINESS_LIMIT) return;
+                setReadinessPage((current) => current + 1);
+                setPreflight(null);
+              }}
+              className={`rounded-xl border px-3 py-2 font-semibold transition ${
+                rows.length < EXPORT_READINESS_LIMIT
+                  ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
+                  : "border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+              }`}
+            >
+              Nastepna
+            </button>
+          </div>
+        </div>
+      )}
 
       {preflight && (
         <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 shadow-[var(--shadow-card)]">
@@ -734,15 +795,15 @@ export function ExportApiWorkspace() {
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
+            <div className={exportPreflightSummaryClasses.ready}>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">Gotowe</div>
               <div className="mt-2 text-2xl font-semibold">{preflight.eligibleCount}</div>
             </div>
-            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-rose-100">
+            <div className={exportPreflightSummaryClasses.blocked}>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">Blokady</div>
               <div className="mt-2 text-2xl font-semibold">{preflight.blockedCount}</div>
             </div>
-            <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4 text-sky-100">
+            <div className={exportPreflightSummaryClasses.info}>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                 {miraklMode ? "Format" : "Wybrane pola"}
               </div>

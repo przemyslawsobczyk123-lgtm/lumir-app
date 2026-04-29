@@ -6,11 +6,13 @@ import { useLang } from "../LangContext";
 import { FileMarketplaceImportPanel } from "./FileMarketplaceImportPanel";
 import { MarketplaceSourceImportModal } from "../products/MarketplaceSourceImportModal";
 import {
+  getImportJobItemDiagnostic,
   getImportJobOpenProductId,
   hasReportableImportJobItem,
   isImportModeWithAi,
   normalizeImportJobResult,
   summarizeImportJobItems,
+  type OperationDiagnostic,
 } from "../products/import-job-helpers";
 import type { MarketplaceImportMode, MarketplaceImportProvider } from "../products/import-hub-helpers";
 import {
@@ -117,6 +119,7 @@ type JobItemSummary = {
   currentMessage?: string | null;
   resultRefId?: number | null;
   resultJson?: unknown;
+  diagnostic?: unknown;
   errorCode?: string | null;
   errorMessage?: string | null;
   elapsedSeconds?: number | null;
@@ -184,7 +187,7 @@ function normalizeJobItemSummary(raw: Partial<JobItemSummary> | null | undefined
     }
   }
   const productId = normalizeJobItemProductId(raw.productId);
-  if (!hasReportableImportJobItem({ productId, status: raw.status ?? null, resultJson })) return null;
+  if (!hasReportableImportJobItem({ productId, status: raw.status ?? null, resultJson, diagnostic: raw.diagnostic })) return null;
 
   return {
     id: typeof raw.id === "number" ? raw.id : null,
@@ -200,6 +203,7 @@ function normalizeJobItemSummary(raw: Partial<JobItemSummary> | null | undefined
     currentMessage: raw.currentMessage ?? null,
     resultRefId: raw.resultRefId ?? null,
     resultJson,
+    diagnostic: raw.diagnostic ?? null,
     errorCode: raw.errorCode ?? null,
     errorMessage: raw.errorMessage ?? null,
     elapsedSeconds: raw.elapsedSeconds ?? null,
@@ -329,12 +333,72 @@ function getRemoteLabel(item: JobItemSummary, result: ReturnType<typeof normaliz
 }
 
 function getItemLabel(item: JobItemSummary, result: ReturnType<typeof normalizeImportJobResult>, index: number) {
+  const diagnostic = getImportJobItemDiagnostic(item);
   return result.existingProductTitle
+    || diagnostic?.title
+    || diagnostic?.message
     || result.message
     || item.errorMessage
     || item.currentMessage
     || readSourceString(item.sourceItem, "title")
     || `row-${index + 1}`;
+}
+
+function clipDiagnosticDetails(value: string) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > 360 ? `${compact.slice(0, 360)}...` : compact;
+}
+
+function ImportDiagnosticBlock({
+  diagnostic,
+  fallbackMessage,
+}: {
+  diagnostic: OperationDiagnostic | null;
+  fallbackMessage?: string | null;
+}) {
+  const title = diagnostic?.title || fallbackMessage || null;
+  const message = diagnostic?.message || (diagnostic?.title ? fallbackMessage : null);
+  const chips = [
+    diagnostic?.code ? `code: ${diagnostic.code}` : "",
+    diagnostic?.source ? `source: ${diagnostic.source}` : "",
+    diagnostic?.retryable != null ? (diagnostic.retryable ? "retryable" : "no retry") : "",
+  ].filter(Boolean);
+
+  if (!title && !message && !diagnostic?.hint && chips.length === 0 && !diagnostic?.details) return null;
+
+  return (
+    <div className="w-full min-w-0 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-950 [html.dark_&]:border-[#fb7185]/45 [html.dark_&]:bg-[#3f101c] [html.dark_&]:text-[#fecdd3]">
+      {title && <div className="break-words font-semibold">{title}</div>}
+      {message && message !== title && <div className="mt-1 break-words">{message}</div>}
+      {diagnostic?.hint && (
+        <div className="mt-1 break-words text-rose-800 [html.dark_&]:text-[#fecdd3]/85">
+          Hint: {diagnostic.hint}
+        </div>
+      )}
+      {chips.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {chips.map((chip) => (
+            <span
+              key={chip}
+              className="max-w-full rounded-full border border-rose-300 bg-white/70 px-2 py-0.5 font-mono text-[10px] text-rose-900 [html.dark_&]:border-[#fb7185]/45 [html.dark_&]:bg-[#111827] [html.dark_&]:text-[#fecdd3]"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+      {diagnostic?.details && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em]">
+            Details
+          </summary>
+          <pre className="mt-1 max-h-28 overflow-hidden whitespace-pre-wrap break-words rounded-lg bg-white/70 px-2 py-1 font-mono text-[11px] leading-5 text-rose-950 [html.dark_&]:bg-[#111827] [html.dark_&]:text-[#fecdd3]">
+            {clipDiagnosticDetails(diagnostic.details)}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function ImportProgressCard({ job, selectedCount }: { job: JobSummary; selectedCount: number | null }) {
@@ -446,23 +510,28 @@ function ImportReportCard({
             const result = normalizeImportJobResult(item.resultJson);
             const statusLabel = result.status || item.status || "queued";
             const productId = getImportJobOpenProductId(item);
+            const diagnostic = getImportJobItemDiagnostic(item);
+            const fallbackMessage = result.message || item.errorMessage || item.currentMessage || null;
 
             return (
-              <div key={`${item.id ?? index}-${getRemoteLabel(item, result, index)}-${statusLabel}`} className={importReportClasses.itemRow}>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className={importReportClasses.itemId}>
-                    {getRemoteLabel(item, result, index)}
+              <div key={`${item.id ?? index}-${getRemoteLabel(item, result, index)}-${statusLabel}`} className={`${importReportClasses.itemRow} flex-col items-stretch`}>
+                <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className={importReportClasses.itemId}>
+                      {getRemoteLabel(item, result, index)}
+                    </span>
+                    <span className={`${importReportClasses.itemLabel} min-w-0 break-words`}>{getItemLabel(item, result, index)}</span>
+                    {productId ? (
+                      <button onClick={() => onOpenProduct(productId)} className={importReportClasses.openButton}>
+                        {copy.open} #{productId}
+                      </button>
+                    ) : null}
+                  </div>
+                  <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] ${getImportStatusClass(statusLabel)}`}>
+                    {statusLabel}
                   </span>
-                  <span className={importReportClasses.itemLabel}>{getItemLabel(item, result, index)}</span>
-                  {productId ? (
-                    <button onClick={() => onOpenProduct(productId)} className={importReportClasses.openButton}>
-                      {copy.open} #{productId}
-                    </button>
-                  ) : null}
                 </div>
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] ${getImportStatusClass(statusLabel)}`}>
-                  {statusLabel}
-                </span>
+                <ImportDiagnosticBlock diagnostic={diagnostic} fallbackMessage={statusLabel === "error" ? fallbackMessage : null} />
               </div>
             );
           })

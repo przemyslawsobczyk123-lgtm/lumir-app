@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  getImportJobItemDiagnostic,
   getImportJobOpenProductId,
   getProductImportBadgeState,
   hasReportableImportJobItem,
   isImportHubBackgroundJobType,
   isImportModeWithAi,
+  normalizeImportJobResult,
+  parseOperationDiagnostic,
   summarizeImportJobItems,
 } from "./import-job-helpers.ts";
 
@@ -53,6 +56,74 @@ test("summarizeImportJobItems counts duplicate rows separately and exposes dupli
     existingProductId: 72,
     existingProductTitle: "Obraz z LuMir",
   });
+});
+
+test("parseOperationDiagnostic normalizes safe import diagnostic fields", () => {
+  const diagnostic = parseOperationDiagnostic({
+    severity: "error",
+    title: "Nie udalo sie pobrac oferty",
+    message: "Allegro zwrocilo 404",
+    code: "ALLEGRO_NOT_FOUND",
+    hint: "Sprawdz remote id i sprobuj ponownie",
+    details: { remoteId: "18527975262", status: 404 },
+    retryable: true,
+    source: "allegro",
+  });
+
+  assert.deepEqual(diagnostic, {
+    severity: "error",
+    title: "Nie udalo sie pobrac oferty",
+    message: "Allegro zwrocilo 404",
+    code: "ALLEGRO_NOT_FOUND",
+    hint: "Sprawdz remote id i sprobuj ponownie",
+    details: "{\"remoteId\":\"18527975262\",\"status\":404}",
+    retryable: true,
+    source: "allegro",
+  });
+});
+
+test("normalizeImportJobResult keeps result diagnostic and ignores malformed diagnostics", () => {
+  const result = normalizeImportJobResult({
+    status: "error",
+    message: "Legacy error",
+    diagnostic: {
+      title: "Walidacja nie przeszla",
+      message: "Brakuje EAN",
+      code: "MISSING_EAN",
+      retryable: false,
+    },
+  });
+
+  assert.equal(result.diagnostic?.title, "Walidacja nie przeszla");
+  assert.equal(result.diagnostic?.message, "Brakuje EAN");
+  assert.equal(result.diagnostic?.code, "MISSING_EAN");
+  assert.equal(result.diagnostic?.retryable, false);
+
+  assert.equal(parseOperationDiagnostic(null), null);
+  assert.equal(parseOperationDiagnostic("boom"), null);
+  assert.equal(parseOperationDiagnostic({ retryable: true }), null);
+  assert.equal(normalizeImportJobResult({ diagnostic: ["bad"] }).diagnostic, null);
+});
+
+test("getImportJobItemDiagnostic prefers top-level item diagnostic over result diagnostic", () => {
+  const diagnostic = getImportJobItemDiagnostic({
+    diagnostic: {
+      title: "Top-level failure",
+      message: "Worker preserved sanitized diagnostic",
+      code: "WORKER_DIAGNOSTIC",
+    },
+    resultJson: {
+      diagnostic: {
+        title: "Result failure",
+        message: "Older payload",
+        code: "RESULT_DIAGNOSTIC",
+      },
+    },
+  });
+
+  assert.equal(diagnostic?.title, "Top-level failure");
+  assert.equal(diagnostic?.message, "Worker preserved sanitized diagnostic");
+  assert.equal(diagnostic?.code, "WORKER_DIAGNOSTIC");
 });
 
 test("summarizeImportJobItems does not count stale duplicate when target product was deleted", () => {

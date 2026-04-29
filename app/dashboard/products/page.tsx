@@ -26,7 +26,7 @@ import {
   type ProductExportPreflightRow,
 } from "./ui-helpers";
 import { buildExportApiHref } from "../export-api/export-api-helpers";
-import { getProductListPrimaryActions } from "./page-layout-helpers";
+import { getProductListPrimaryActions, getProductPaginationWindow } from "./page-layout-helpers";
 import {
   extractBulkReportItemState,
   normalizeListAIDraftBadge,
@@ -594,7 +594,7 @@ function formatDurationLabel(seconds: number | null | undefined) {
 }
 
 // ── Import modal ──────────────────────────────────────────────────
-const LIMIT = 50;
+const LIMIT = 100;
 
 // Parsuj integracje z formatu "slug\x01name\x01missingCount|||..."
 type Integration = { slug: string; name: string; missing: number };
@@ -2702,16 +2702,22 @@ export default function ProductsPage() {
                       text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)] disabled:opacity-40 transition">
                     &larr;
                   </button>
-                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(pg => (
-                    <button key={pg}
-                      onClick={() => { setPage(pg); loadProducts(search, pg, statusFilter, mpFilter); }}
-                      className={`w-8 h-8 text-xs rounded-lg border transition font-medium ${
-                        page === pg
-                          ? "bg-indigo-600 border-indigo-600 text-white"
-                          : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)]"
-                      }`}>
-                      {pg}
-                    </button>
+                  {getProductPaginationWindow(page, totalPages).map((token) => (
+                    typeof token === "number" ? (
+                      <button key={token}
+                        onClick={() => { setPage(token); loadProducts(search, token, statusFilter, mpFilter); }}
+                        className={`w-8 h-8 text-xs rounded-lg border transition font-medium ${
+                          page === token
+                            ? "bg-indigo-600 border-indigo-600 text-white"
+                            : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)]"
+                        }`}>
+                        {token}
+                      </button>
+                    ) : (
+                      <span key={token} className="flex h-8 w-8 items-center justify-center text-xs text-[var(--text-tertiary)]">
+                        ...
+                      </span>
+                    )
                   ))}
                   <button
                     disabled={page === totalPages}

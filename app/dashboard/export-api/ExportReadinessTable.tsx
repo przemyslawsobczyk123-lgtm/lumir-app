@@ -3,9 +3,10 @@ import { useState } from "react";
 import {
   canSelectExportReadinessRow,
   filterExportReadinessRows,
+  getExportOperationToneClasses,
+  getExportReasonChipClass,
   getExportReadinessPresentation,
   type ExportOperationFilter,
-  type ExportOperationTone,
   type ExportReadinessFilter,
   type ExportReadinessRow,
 } from "./export-api-helpers";
@@ -36,34 +37,6 @@ const OPERATION_FILTER_OPTIONS: Array<{ value: ExportOperationFilter; label: str
   { value: "conflict", label: "Konflikty" },
   { value: "missing_link", label: "Brak linku" },
 ];
-
-function getToneClasses(tone: ExportOperationTone) {
-  if (tone === "ready") {
-    return {
-      badge: "border-emerald-400/25 bg-emerald-500/10 text-emerald-100",
-      row: "hover:border-emerald-400/30",
-    };
-  }
-
-  if (tone === "warning") {
-    return {
-      badge: "border-amber-400/25 bg-amber-500/10 text-amber-100",
-      row: "hover:border-amber-400/30",
-    };
-  }
-
-  if (tone === "danger") {
-    return {
-      badge: "border-rose-400/25 bg-rose-500/10 text-rose-100",
-      row: "hover:border-rose-400/30",
-    };
-  }
-
-  return {
-    badge: "border-sky-400/25 bg-sky-500/10 text-sky-100",
-    row: "hover:border-sky-400/30",
-  };
-}
 
 function getReasonChips(row: ExportReadinessRow) {
   return [
@@ -249,7 +222,7 @@ export function ExportReadinessTable({
             <tbody>
               {visibleRows.map((row) => {
                 const presentation = getExportReadinessPresentation(row);
-                const tone = getToneClasses(presentation.tone);
+                const tone = getExportOperationToneClasses(presentation.tone);
                 const checked = selectedIds.includes(row.productId);
                 const selectable = presentation.selectable;
                 const reasons = getReasonChips(row);
@@ -311,11 +284,7 @@ export function ExportReadinessTable({
                           {reasons.map((reason) => (
                             <span
                               key={`${row.productId}:${reason.label}`}
-                              className={`rounded-full border px-2 py-1 text-[11px] ${
-                                reason.tone === "danger"
-                                  ? "border-rose-400/20 bg-rose-500/10 text-rose-100"
-                                  : "border-amber-400/20 bg-amber-500/10 text-amber-100"
-                              }`}
+                              className={`rounded-full border px-2 py-1 text-[11px] ${getExportReasonChipClass(reason.tone)}`}
                             >
                               {reason.label}
                             </span>
