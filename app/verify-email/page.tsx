@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { storeFreshAuthSession } from "../dashboard/admin/sellers/admin-sellers-helpers";
 
 type VerifyState = "loading" | "success" | "error";
 
@@ -50,8 +51,7 @@ function VerifyEmailContent() {
       .then(r => r.json())
       .then(data => {
         if (data.user) {
-          localStorage.setItem("token", token);
-          localStorage.setItem("user", JSON.stringify(data.user));
+          storeFreshAuthSession(token, data.user);
         }
       })
       .catch(() => {});

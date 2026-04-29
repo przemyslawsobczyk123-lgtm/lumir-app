@@ -7,8 +7,11 @@ import {
   canEditSellerPermissions,
   canImpersonateSeller,
   getImpersonationSession,
+  getImpersonationSessionFromSnapshot,
+  getImpersonationSessionSnapshot,
   startSellerImpersonation,
   stopSellerImpersonation,
+  storeFreshAuthSession,
 } from "./admin-sellers-helpers.ts";
 
 class FakeStorage implements Storage {
@@ -87,6 +90,26 @@ test("getImpersonationSession returns current seller and original admin session"
   });
 });
 
+test("impersonation snapshot is empty without original admin and parses without storage reads", () => {
+  const storage = new FakeStorage();
+
+  assert.equal(getImpersonationSessionSnapshot(storage), "");
+
+  storage.setItem(ADMIN_ORIGINAL_TOKEN_KEY, "admin-token");
+  storage.setItem(ADMIN_ORIGINAL_USER_KEY, JSON.stringify({ email: "admin@lumir.test", role: "admin" }));
+  storage.setItem("token", "seller-token");
+  storage.setItem("user", JSON.stringify({ email: "seller@lumir.test", role: "seller" }));
+
+  const snapshot = getImpersonationSessionSnapshot(storage);
+
+  assert.deepEqual(getImpersonationSessionFromSnapshot(snapshot), {
+    currentToken: "seller-token",
+    currentUser: { email: "seller@lumir.test", role: "seller" },
+    originalToken: "admin-token",
+    originalUser: { email: "admin@lumir.test", role: "admin" },
+  });
+});
+
 test("stopSellerImpersonation restores admin session and clears original keys", () => {
   const storage = new FakeStorage();
   storage.setItem(ADMIN_ORIGINAL_TOKEN_KEY, "admin-token");
@@ -135,6 +158,20 @@ test("canEditSellerPermissions requires grant flag and blocks owner rows", () =>
     ),
     false,
   );
+  assert.equal(
+    canEditSellerPermissions(
+      { role: "seller", can_grant_admin_permissions: true },
+      { id: 5, role: "seller" },
+    ),
+    false,
+  );
+  assert.equal(
+    canEditSellerPermissions(
+      { role: "owner", can_grant_admin_permissions: true },
+      { id: 6, role: "seller" },
+    ),
+    true,
+  );
 });
 
 test("canImpersonateSeller requires impersonate flag and active non-admin seller", () => {
@@ -144,4 +181,24 @@ test("canImpersonateSeller requires impersonate flag and active non-admin seller
   assert.equal(canImpersonateSeller(currentUser, { id: 2, role: "seller", status: "inactive" }), false);
   assert.equal(canImpersonateSeller(currentUser, { id: 3, role: "admin", status: "active" }), false);
   assert.equal(canImpersonateSeller({ role: "admin" }, { id: 4, role: "seller", status: "active" }), false);
+  assert.equal(canImpersonateSeller({ role: "seller", can_impersonate_sellers: true }, { id: 5, role: "seller", status: "active" }), false);
+  assert.equal(canImpersonateSeller({ role: "owner", can_impersonate_sellers: true }, { id: 6, role: "seller", status: "active" }), true);
+});
+
+test("storeFreshAuthSession clears stale admin original before writing fresh login", () => {
+  const storage = new FakeStorage();
+  storage.setItem(ADMIN_ORIGINAL_TOKEN_KEY, "old-admin-token");
+  storage.setItem(ADMIN_ORIGINAL_USER_KEY, JSON.stringify({ email: "old-admin@lumir.test" }));
+  storage.setItem("token", "seller-token");
+  storage.setItem("user", JSON.stringify({ email: "seller@lumir.test" }));
+
+  storeFreshAuthSession("new-token", { email: "new@lumir.test", role: "seller" }, storage);
+
+  assert.equal(storage.getItem(ADMIN_ORIGINAL_TOKEN_KEY), null);
+  assert.equal(storage.getItem(ADMIN_ORIGINAL_USER_KEY), null);
+  assert.equal(storage.getItem("token"), "new-token");
+  assert.deepEqual(JSON.parse(storage.getItem("user") ?? "{}"), {
+    email: "new@lumir.test",
+    role: "seller",
+  });
 });

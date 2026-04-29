@@ -35,6 +35,11 @@ function normalizeRole(role: unknown) {
   return typeof role === "string" ? role.toLowerCase() : "";
 }
 
+function isAdminActor(user: DashboardUser | null | undefined) {
+  const role = normalizeRole(user?.role);
+  return role === "admin" || role === "owner";
+}
+
 function isActiveSeller(seller: AdminSellerRow) {
   if (seller.status) return seller.status.toLowerCase() === "active";
   return seller.is_active === true || seller.is_active === 1 || seller.active === true || seller.active === 1;
@@ -45,13 +50,14 @@ export function isProtectedOwnerSeller(seller: AdminSellerRow) {
 }
 
 export function canEditSellerPermissions(currentUser: DashboardUser | null | undefined, seller: AdminSellerRow) {
-  return Boolean(currentUser?.can_grant_admin_permissions && !isProtectedOwnerSeller(seller));
+  return Boolean(isAdminActor(currentUser) && currentUser?.can_grant_admin_permissions && !isProtectedOwnerSeller(seller));
 }
 
 export function canImpersonateSeller(currentUser: DashboardUser | null | undefined, seller: AdminSellerRow) {
   const role = normalizeRole(seller.role);
   return Boolean(
-    currentUser?.can_impersonate_sellers &&
+    isAdminActor(currentUser) &&
+      currentUser?.can_impersonate_sellers &&
       isActiveSeller(seller) &&
       role !== "admin" &&
       role !== "owner",
@@ -116,6 +122,41 @@ export function getImpersonationSession(storage = getBrowserStorage()): Imperson
   };
 }
 
+export function getImpersonationSessionSnapshot(storage = getBrowserStorage()) {
+  if (!storage) return "";
+
+  const originalToken = storage.getItem(ADMIN_ORIGINAL_TOKEN_KEY);
+  if (!originalToken) return "";
+
+  return JSON.stringify({
+    currentToken: storage.getItem(TOKEN_KEY) ?? "",
+    currentUserRaw: storage.getItem(USER_KEY),
+    originalToken,
+    originalUserRaw: storage.getItem(ADMIN_ORIGINAL_USER_KEY),
+  });
+}
+
+export function getImpersonationSessionFromSnapshot(snapshot: string | null | undefined): ImpersonationSession | null {
+  if (!snapshot) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(snapshot);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const candidate = parsed as Record<string, unknown>;
+    const originalToken = typeof candidate.originalToken === "string" ? candidate.originalToken : "";
+    if (!originalToken) return null;
+
+    return {
+      currentToken: typeof candidate.currentToken === "string" ? candidate.currentToken : "",
+      currentUser: readJsonObject(typeof candidate.currentUserRaw === "string" ? candidate.currentUserRaw : null),
+      originalToken,
+      originalUser: readJsonObject(typeof candidate.originalUserRaw === "string" ? candidate.originalUserRaw : null),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function stopSellerImpersonation(storage = getBrowserStorage()) {
   if (!storage) return false;
 
@@ -141,4 +182,15 @@ export function clearAdminOriginalSession(storage = getBrowserStorage()) {
   storage.removeItem(ADMIN_ORIGINAL_TOKEN_KEY);
   storage.removeItem(ADMIN_ORIGINAL_USER_KEY);
   dispatchDashboardStorageEvent();
+}
+
+export function storeFreshAuthSession(token: string, user: AdminSellerUser, storage = getBrowserStorage()) {
+  if (!storage) return false;
+
+  storage.removeItem(ADMIN_ORIGINAL_TOKEN_KEY);
+  storage.removeItem(ADMIN_ORIGINAL_USER_KEY);
+  storage.setItem(TOKEN_KEY, token);
+  storage.setItem(USER_KEY, JSON.stringify(user));
+  dispatchDashboardStorageEvent();
+  return true;
 }

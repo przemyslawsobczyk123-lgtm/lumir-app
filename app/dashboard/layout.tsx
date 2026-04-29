@@ -16,7 +16,8 @@ import {
 } from "./nav-helpers";
 import {
   clearAdminOriginalSession,
-  getImpersonationSession,
+  getImpersonationSessionFromSnapshot,
+  getImpersonationSessionSnapshot,
   stopSellerImpersonation,
 } from "./admin/sellers/admin-sellers-helpers";
 
@@ -55,6 +56,14 @@ function getDashboardUserSnapshot(): string | null {
 
 function getDashboardServerUserSnapshot(): string | null {
   return null;
+}
+
+function getDashboardImpersonationSnapshot() {
+  return getImpersonationSessionSnapshot();
+}
+
+function getDashboardServerImpersonationSnapshot() {
+  return "";
 }
 
 function subscribeDashboardSnapshot(onStoreChange: () => void) {
@@ -107,7 +116,12 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
   const jobsRef = useRef<HTMLDivElement>(null);
   const userRaw = useSyncExternalStore(subscribeDashboardSnapshot, getDashboardUserSnapshot, getDashboardServerUserSnapshot);
   const user = parseDashboardUser(userRaw);
-  const impersonationSession = getImpersonationSession();
+  const impersonationRaw = useSyncExternalStore(
+    subscribeDashboardSnapshot,
+    getDashboardImpersonationSnapshot,
+    getDashboardServerImpersonationSnapshot,
+  );
+  const impersonationSession = getImpersonationSessionFromSnapshot(impersonationRaw);
   const impersonatedName = readUserLabel(impersonationSession?.currentUser?.name);
   const impersonatedEmail = readUserLabel(impersonationSession?.currentUser?.email);
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);

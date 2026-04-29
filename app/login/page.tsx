@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { storeFreshAuthSession } from "../dashboard/admin/sellers/admin-sellers-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -29,8 +30,7 @@ function LoginForm() {
         .then(r => r.json())
         .then(data => {
           if (data.user) {
-            localStorage.setItem("token", googleToken);
-            localStorage.setItem("user", JSON.stringify(data.user));
+            storeFreshAuthSession(googleToken, data.user);
             setSuccess(true);
             setTimeout(() => router.push("/dashboard"), 800);
           }
@@ -61,8 +61,7 @@ function LoginForm() {
           setError(data.error);
         }
       } else {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
+        storeFreshAuthSession(data.token, data.user);
         setSuccess(true);
         setTimeout(() => router.push("/dashboard"), 800);
       }

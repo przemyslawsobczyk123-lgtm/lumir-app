@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { storeFreshAuthSession } from "../dashboard/admin/sellers/admin-sellers-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -40,8 +41,7 @@ function ResetPasswordForm() {
           .then(r => r.json())
           .then(d => {
             if (d.user) {
-              localStorage.setItem("token", data.token);
-              localStorage.setItem("user", JSON.stringify(d.user));
+              storeFreshAuthSession(data.token, d.user);
             }
           })
           .catch(() => {});
