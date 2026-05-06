@@ -113,6 +113,12 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
     }
   });
   const [logoutModal, setLogoutModal] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactType, setContactType] = useState<"suggestion"|"meeting"|"issue"|null>(null);
+  const [contactMsg, setContactMsg] = useState("");
+  const [contactSending, setContactSending] = useState(false);
+  const [contactDone, setContactDone] = useState(false);
+  const [contactError, setContactError] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const jobsRef = useRef<HTMLDivElement>(null);
   const userRaw = useSyncExternalStore(subscribeDashboardSnapshot, getDashboardUserSnapshot, getDashboardServerUserSnapshot);
@@ -275,6 +281,29 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
   function confirmLogout() {
     setLogoutModal(true);
     setOpen(false);
+  }
+
+  async function sendContact() {
+    if (!contactType || contactMsg.trim().length < 10) return;
+    setContactSending(true);
+    setContactError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API}/api/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: contactType, message: contactMsg.trim() }),
+      });
+      if (res.status === 429) { setContactError(lang === "pl" ? "Poczekaj 3 minuty przed wysłaniem kolejnej wiadomości." : "Please wait 3 minutes before sending another message."); return; }
+      if (!res.ok) { setContactError(lang === "pl" ? "Nie udało się wysłać. Spróbuj ponownie." : "Failed to send. Please try again."); return; }
+      setContactDone(true);
+      setContactMsg("");
+      setContactType(null);
+    } catch {
+      setContactError(lang === "pl" ? "Błąd sieci. Spróbuj ponownie." : "Network error. Please try again.");
+    } finally {
+      setContactSending(false);
+    }
   }
 
   const isDark = theme === "dark";
@@ -587,45 +616,6 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
               </button>
             )}
 
-            {/* Language switcher */}
-            <button
-              onClick={() => setLang(lang === "pl" ? "en" : "pl")}
-              className="rounded-xl px-3 py-2 text-xs font-bold tracking-widest uppercase transition hover:opacity-80"
-              style={{ background: "var(--accent-primary)", color: "#fff", border: "none", letterSpacing: "0.08em" }}
-            >
-              {lang === "pl" ? "EN" : "PL"}
-            </button>
-
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              className="relative flex items-center w-[72px] h-8 rounded-full p-0.5 transition-all duration-300"
-              style={{
-                background: isDark ? "linear-gradient(135deg, #312e81, #1e1b4b)" : "linear-gradient(135deg, #fef3c7, #fde68a)",
-                border: `1px solid ${isDark ? "#4338ca" : "#f59e0b"}`,
-              }}
-              title={isDark ? t.topbar.themeLight : t.topbar.themeDark}
-            >
-              <div
-                className="absolute w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 shadow-md"
-                style={{
-                  left: isDark ? "calc(100% - 30px)" : "2px",
-                  background: isDark ? "#1e1b4b" : "#ffffff",
-                  color: isDark ? "#fbbf24" : "#f59e0b",
-                }}
-              >
-                {isDark ? <MoonIcon /> : <SunIcon />}
-              </div>
-              <span className="text-[9px] font-bold uppercase tracking-wider transition-all duration-300"
-                style={{
-                  marginLeft: isDark ? "6px" : "auto",
-                  marginRight: isDark ? "auto" : "6px",
-                  color: isDark ? "#a5b4fc" : "#92400e",
-                }}>
-                {isDark ? t.topbar.dark : t.topbar.light}
-              </span>
-            </button>
-
             <button
               onClick={() => router.push("/dashboard/new-product")}
               className="px-5 py-2 rounded-xl font-semibold text-white
@@ -655,6 +645,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
               <div className="text-xs" style={{ color: "var(--text-tertiary)" }}>{user?.email}</div>
             </div>
             <div className="flex flex-col text-sm">
+              {/* Settings */}
               <div
                 onClick={() => { setOpen(false); router.push("/dashboard/settings"); }}
                 className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition"
@@ -662,14 +653,75 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
                 onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
+                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
                 {t.dropdown.settings}
               </div>
+
+              {/* Separator: settings / utilities */}
+              <div className="my-1 border-t" style={{ borderColor: "var(--border-light)" }} />
+
+              {/* Contact */}
+              <div
+                onClick={() => { setOpen(false); setContactOpen(true); setContactDone(false); setContactError(""); }}
+                className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition"
+                style={{ color: "var(--text-primary)" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+                </svg>
+                {lang === "pl" ? "Kontakt" : "Contact"}
+              </div>
+
+              {/* Theme toggle row */}
+              <div
+                onClick={toggleTheme}
+                className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition"
+                style={{ color: "var(--text-primary)" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                <span style={{ color: isDark ? "#fbbf24" : "#6366f1" }} className="shrink-0">
+                  {isDark ? <MoonIcon /> : <SunIcon />}
+                </span>
+                <span>{isDark ? t.topbar.dark : t.topbar.light}</span>
+              </div>
+
+              {/* Language toggle row */}
+              <div
+                onClick={() => { setLang(lang === "pl" ? "en" : "pl"); setOpen(false); }}
+                className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition"
+                style={{ color: "var(--text-primary)" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-card-hover)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                <span className="flex-1">{lang === "pl" ? "Polski" : "English"}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "var(--accent-primary-light, rgba(99,102,241,0.12))", color: "var(--accent-primary)" }}>
+                  {lang === "pl" ? "EN" : "PL"}
+                </span>
+              </div>
+
+              {/* Separator: preferences / destructive */}
+              <div className="my-1 border-t" style={{ borderColor: "var(--border-light)" }} />
+
+              {/* Logout */}
               <div
                 onClick={confirmLogout}
                 className="flex items-center gap-3 px-3 py-2 rounded-lg text-red-500 cursor-pointer transition"
                 onMouseEnter={e => (e.currentTarget.style.background = isDark ? "rgba(127,29,29,0.3)" : "#fef2f2")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
+                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
                 {t.dropdown.logout}
               </div>
             </div>
@@ -728,6 +780,168 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
                 {t.logoutModal.confirm}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* CONTACT MODAL */}
+      {contactOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(2,6,23,0.75)", backdropFilter: "blur(6px)" }}
+          onClick={() => setContactOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-[420px] rounded-2xl p-7 shadow-2xl border"
+            style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setContactOpen(false)}
+              className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center transition hover:opacity-70"
+              style={{ color: "var(--text-tertiary)", background: "var(--bg-card-hover)" }}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+
+            {contactDone ? (
+              /* Success state */
+              <div className="flex flex-col items-center text-center py-4">
+                <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center mb-4">
+                  <svg viewBox="0 0 24 24" className="w-7 h-7 text-green-500" fill="none" stroke="currentColor" strokeWidth={1.8}><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <h3 className="text-base font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+                  {lang === "pl" ? "Wiadomość wysłana!" : "Message sent!"}
+                </h3>
+                <p className="text-sm mb-5" style={{ color: "var(--text-secondary)" }}>
+                  {lang === "pl" ? "Odpiszemy na Twój adres email tak szybko jak to możliwe." : "We'll reply to your email address as soon as possible."}
+                </p>
+                <button
+                  onClick={() => setContactOpen(false)}
+                  className="px-6 py-2 rounded-xl text-sm font-semibold text-white"
+                  style={{ background: "var(--accent-primary)" }}
+                >
+                  {lang === "pl" ? "Zamknij" : "Close"}
+                </button>
+              </div>
+            ) : (
+              /* Form state */
+              <>
+                <h3 className="text-base font-bold mb-1" style={{ color: "var(--text-primary)" }}>
+                  {lang === "pl" ? "Skontaktuj się z nami" : "Get in touch"}
+                </h3>
+                <p className="text-sm mb-5" style={{ color: "var(--text-secondary)" }}>
+                  {lang === "pl" ? "Wybierz temat i napisz wiadomość." : "Choose a topic and write your message."}
+                </p>
+
+                {/* Type selector */}
+                <div className="grid grid-cols-3 gap-2 mb-5">
+                  {([
+                    {
+                      key: "suggestion",
+                      pl: "Sugestia", en: "Suggestion",
+                      plSub: "Podziel się pomysłem", enSub: "Share an idea",
+                      color: "#8b5cf6",
+                      bg: "rgba(139,92,246,0.08)",
+                      icon: (
+                        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                          <circle cx="12" cy="12" r="10"/>
+                          <line x1="12" y1="8" x2="12" y2="12"/>
+                          <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                      ),
+                    },
+                    {
+                      key: "meeting",
+                      pl: "Spotkanie", en: "Meeting",
+                      plSub: "Umów konsultację", enSub: "Book a call",
+                      color: "#0ea5e9",
+                      bg: "rgba(14,165,233,0.08)",
+                      icon: (
+                        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2"/>
+                          <line x1="16" y1="2" x2="16" y2="6"/>
+                          <line x1="8" y1="2" x2="8" y2="6"/>
+                          <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                      ),
+                    },
+                    {
+                      key: "issue",
+                      pl: "Problem", en: "Issue",
+                      plSub: "Coś nie działa", enSub: "Something's wrong",
+                      color: "#f59e0b",
+                      bg: "rgba(245,158,11,0.08)",
+                      icon: (
+                        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                          <line x1="12" y1="9" x2="12" y2="13"/>
+                          <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                      ),
+                    },
+                  ] as const).map(opt => {
+                    const active = contactType === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => setContactType(opt.key)}
+                        className="flex flex-col items-center gap-2 px-2 py-4 rounded-xl border-2 transition text-center"
+                        style={{
+                          borderColor: active ? opt.color : "var(--border-default)",
+                          background: active ? opt.bg : "transparent",
+                          color: active ? opt.color : "var(--text-secondary)",
+                        }}
+                      >
+                        <span style={{ color: active ? opt.color : "var(--text-tertiary)" }}>{opt.icon}</span>
+                        <span className="text-xs font-semibold leading-tight" style={{ color: active ? opt.color : "var(--text-primary)" }}>
+                          {lang === "pl" ? opt.pl : opt.en}
+                        </span>
+                        <span className="text-[10px] leading-tight" style={{ color: "var(--text-tertiary)" }}>
+                          {lang === "pl" ? opt.plSub : opt.enSub}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Message textarea */}
+                <textarea
+                  value={contactMsg}
+                  onChange={e => setContactMsg(e.target.value)}
+                  placeholder={lang === "pl" ? "Opisz szczegółowo…" : "Describe in detail…"}
+                  rows={4}
+                  maxLength={2000}
+                  className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none border transition"
+                  style={{
+                    background: "var(--bg-input, var(--bg-card-hover))",
+                    borderColor: "var(--border-default)",
+                    color: "var(--text-primary)",
+                  }}
+                />
+                <div className="text-xs text-right mt-1 mb-4" style={{ color: "var(--text-tertiary)" }}>
+                  {contactMsg.length}/2000
+                </div>
+
+                {contactError && (
+                  <p className="text-xs text-red-500 mb-3">{contactError}</p>
+                )}
+
+                <button
+                  onClick={sendContact}
+                  disabled={!contactType || contactMsg.trim().length < 10 || contactSending}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white transition disabled:opacity-40"
+                  style={{ background: "var(--accent-primary)" }}
+                >
+                  {contactSending
+                    ? (lang === "pl" ? "Wysyłanie…" : "Sending…")
+                    : (lang === "pl" ? "Wyślij wiadomość" : "Send message")}
+                </button>
+                <p className="text-center text-[11px] mt-3" style={{ color: "var(--text-tertiary)" }}>
+                  {lang === "pl" ? "Możesz wysłać wiadomość co 3 minuty." : "You can send a message every 3 minutes."}
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

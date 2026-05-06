@@ -92,13 +92,13 @@ function LoginForm() {
       {/* Ambient glows */}
       <div className="absolute w-[500px] h-[500px] rounded-full bg-indigo-600/20 blur-[120px] top-[-100px] left-[-100px] pointer-events-none" />
       <div className="absolute w-[400px] h-[400px] rounded-full bg-purple-600/15 blur-[100px] bottom-[-80px] right-[-80px] pointer-events-none" />
-      <div className="absolute w-[300px] h-[300px] rounded-full bg-green-500/10 blur-[80px] top-[40%] left-[40%] pointer-events-none" />
+      <div className="absolute w-[320px] h-[320px] rounded-full bg-orange-500/12 blur-[80px] top-[40%] left-[40%] pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-[420px] mx-4">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
-            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
+            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)", boxShadow: "0 0 40px rgba(99,102,241,0.4)" }}>
               <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="w-9 h-9" />
           </div>
           <h1 className="text-3xl font-semibold text-white"
@@ -109,7 +109,8 @@ function LoginForm() {
         </div>
 
         {/* Card */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+        <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-px" style={{ background: "linear-gradient(90deg, transparent, #6366f1, #8b5cf6, transparent)" }} />
           <h2 className="text-lg font-semibold text-white mb-1">Witaj ponownie</h2>
           <p className="text-slate-400 text-sm mb-6">Zaloguj się, aby kontynuować</p>
 
