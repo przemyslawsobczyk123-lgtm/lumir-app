@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
-import { Inter, Cormorant_Garamond } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
-
-export const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-brand",
-});
 
 export const metadata: Metadata = {
   title: "LuMir - Generator Ofert AI",
@@ -30,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           })();
         `}} />
       </head>
-      <body className={`${inter.className} ${cormorant.variable}`}>{children}</body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

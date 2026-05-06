@@ -768,18 +768,8 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-            >
-              <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="M13 10V3L4 14h7v7l9-11h-7Z" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <span
-              className="text-xl font-semibold tracking-wide text-gray-900"
-              style={{ fontFamily: "var(--font-brand, ‘Georgia’, serif)", letterSpacing: "0.06em" }}
-            >
+            <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="h-9 w-9 rounded-xl shadow-sm" priority />
+            <span className="text-xl font-semibold tracking-wide text-gray-900">
               LuMir
             </span>
           </div>
@@ -1198,12 +1188,8 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
             <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-                <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path d="M13 10V3L4 14h7v7l9-11h-7Z" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <span className="text-base font-semibold text-gray-900" style={{ fontFamily: "var(--font-brand, ‘Georgia’, serif)", letterSpacing: "0.05em" }}>
+              <Image src="/lumir-icon.svg" alt="LuMir" width={28} height={28} className="h-7 w-7 rounded-lg shadow-sm" />
+              <span className="text-base font-semibold tracking-wide text-gray-900">
                 LuMir
               </span>
             </div>

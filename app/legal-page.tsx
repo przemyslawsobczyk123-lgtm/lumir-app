@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 type LegalSection = {
   title: string;
@@ -16,8 +17,9 @@ export function LegalPage({ title, subtitle, updatedAt, sections }: LegalPagePro
   return (
     <main className="min-h-screen bg-[#020617] px-6 py-10 text-slate-200">
       <div className="mx-auto max-w-4xl">
-        <Link href="/" className="text-sm font-semibold text-indigo-300 transition hover:text-indigo-100">
-          LuMir
+        <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-300 transition hover:text-indigo-100">
+          <Image src="/lumir-icon.svg" alt="LuMir" width={28} height={28} className="h-7 w-7 rounded-lg" />
+          <span>LuMir</span>
         </Link>
         <header className="mt-8 border-b border-white/10 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-300">Dokument prawny</p>

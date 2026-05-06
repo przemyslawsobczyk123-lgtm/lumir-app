@@ -106,12 +106,10 @@ export default function RegisterPage() {
       <div className="relative z-10 w-full max-w-[420px] mx-4">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
-            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)", boxShadow: "0 0 40px rgba(99,102,241,0.4)" }}>
-            <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="w-9 h-9" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 shadow-[0_0_40px_rgba(124,58,237,0.28)]">
+            <Image src="/lumir-icon.svg" alt="LuMir" width={64} height={64} className="h-16 w-16 rounded-2xl" />
           </div>
-          <h1 className="text-3xl font-semibold text-white"
-            style={{ fontFamily: "var(--font-brand), Georgia, serif", letterSpacing: "0.06em" }}>
+          <h1 className="text-3xl font-semibold tracking-wide text-white">
             LuMir
           </h1>
           <p className="text-slate-400 text-sm mt-1">Inteligentny generator ofert</p>

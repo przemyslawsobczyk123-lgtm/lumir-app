@@ -325,9 +325,8 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
       <div className="w-[220px] text-white p-5 fixed h-full flex flex-col overflow-y-auto"
         style={{ background: "var(--bg-sidebar)" }}>
         <div className="flex items-center gap-2.5 mb-10">
-          <Image src="/lumir-icon.svg" alt="LuMir" width={32} height={32} className="w-8 h-8 rounded-lg flex-shrink-0" />
-          <span className="text-[22px] font-semibold tracking-wide text-white"
-            style={{ fontFamily: "var(--font-brand), Georgia, serif", letterSpacing: "0.04em" }}>
+          <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="h-9 w-9 rounded-xl flex-shrink-0" />
+          <span className="text-[22px] font-semibold tracking-wide text-white">
             LuMir
           </span>
         </div>
