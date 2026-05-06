@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 /* ─────────────────────────────────────────────────────────────
    Smooth anchor scroll with 80px sticky-nav offset
@@ -318,6 +319,210 @@ function MicrowaveIllustration({ clean }: { clean: boolean }) {
 /* ─────────────────────────────────────────────────────────────
    BeforeAfterSlider — auto-plays, drag to control
 ───────────────────────────────────────────────────────────── */
+const MICROWAVE_PHOTOS = {
+  before: "/landing/microwave-before.png",
+  after: "/landing/microwave-after.png",
+} as const;
+
+function ProductPhoto({ variant }: { variant: "before" | "after" }) {
+  const [failed, setFailed] = useState(false);
+  const isAfter = variant === "after";
+
+  if (failed) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <MicrowaveIllustration clean={isAfter} />
+      </div>
+    );
+  }
+
+  return (
+    <Image
+      src={MICROWAVE_PHOTOS[variant]}
+      alt={isAfter ? "Kuchenka mikrofalowa po LuMirAI na bialym tle" : "Kuchenka mikrofalowa przed LuMirAI w kuchni"}
+      fill
+      sizes="(max-width: 768px) 92vw, 560px"
+      className="object-contain"
+      onError={() => setFailed(true)}
+      unoptimized
+    />
+  );
+}
+
+type CompareContent = {
+  badge: string;
+  title: string;
+  text?: string;
+  bullets?: string[];
+  chips?: string[];
+};
+
+function ComparePanel({ content, tone, variant }: { content: CompareContent; tone: "before" | "after"; variant: "title" | "description" | "attributes" | "photos" }) {
+  if (variant === "photos") {
+    return (
+      <div className="absolute inset-0 bg-white">
+        <ProductPhoto variant={tone === "after" ? "after" : "before"} />
+      </div>
+    );
+  }
+
+  const accent = tone === "after" ? "#14b8a6" : "#8b5cf6";
+  return (
+    <div className="absolute inset-0 bg-white p-5 sm:p-7 text-slate-900">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <span className="rounded-md px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em]" style={{ background: tone === "after" ? "#ccfbf1" : "#ede9fe", color: accent }}>
+          {content.badge}
+        </span>
+        {tone === "after" && <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-500">Gotowe do oferty</span>}
+      </div>
+      <h3 className="mb-4 text-xl font-bold leading-tight text-slate-950 sm:text-2xl">{content.title}</h3>
+      {content.text && <p className="mb-5 max-w-xl text-sm leading-relaxed text-slate-600">{content.text}</p>}
+      {content.bullets && (
+        <ul className="space-y-3 text-sm leading-relaxed text-slate-600">
+          {content.bullets.map((item) => (
+            <li key={item} className="flex gap-3">
+              <span className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: accent }} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {content.chips && (
+        <div className="mt-6 flex flex-wrap gap-2">
+          {content.chips.map((chip) => (
+            <span key={chip} className="rounded-md border px-3 py-1.5 text-[11px] font-medium" style={{ borderColor: tone === "after" ? "#99f6e4" : "#ddd6fe", color: accent, background: tone === "after" ? "#f0fdfa" : "#faf5ff" }}>
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompareSlider({ before, after, variant }: { before: CompareContent; after: CompareContent; variant: "title" | "description" | "attributes" | "photos" }) {
+  const [pos, setPos] = useState(46);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const heightClass = variant === "description" ? "h-[430px]" : variant === "attributes" ? "h-[390px]" : variant === "photos" ? "h-[430px]" : "h-[300px]";
+
+  useEffect(() => {
+    function onMove(e: MouseEvent | TouchEvent) {
+      if (!dragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+      setPos(Math.round((x / rect.width) * 100));
+    }
+    function onUp() { dragging.current = false; }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.10)] ${heightClass}`}
+      style={{ cursor: "col-resize" }}
+      onMouseDown={() => { dragging.current = true; }}
+      onTouchStart={() => { dragging.current = true; }}
+    >
+      <ComparePanel content={after} tone="after" variant={variant} />
+      <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}>
+        <ComparePanel content={before} tone="before" variant={variant} />
+      </div>
+      <div className="absolute inset-y-0 z-10 w-0.5 bg-slate-900 shadow-[0_0_18px_rgba(15,23,42,0.35)]" style={{ left: `${pos}%` }} />
+      <div className="absolute top-1/2 z-20 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-xl" style={{ left: `${pos}%` }}>
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.5}>
+          <path d="M9 18l-6-6 6-6M15 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+const TRANSFORMATION_SECTIONS = [
+  {
+    eyebrow: "OPISY PRODUKTOWE",
+    title: "Masz 10-15 sekund. Kazde slowo musi pracowac.",
+    description: "Naglowki odpowiadaja na pytania, ktore kupujacy i tak zadadza. LuMirAI porzadkuje dane produktu, wzmacnia benefity i uklada opis pod decyzje zakupowa oraz algorytm Allegro.",
+    chips: ["Algorytm Allegro", "Opinie klientow", "Rozwiazuje problem", "Unikalny tekst", "Naglowki H1-H3", "Jezyk sprzedazy"],
+    variant: "description" as const,
+    before: {
+      badge: "PRZED",
+      title: "Kuchenka mikrofalowa z wyswietlaczem LED",
+      text: "Mikrofala 20L. Kolor srebrny. Moc 700W. Timer. Talerz szklany. Do kuchni.",
+      bullets: ["Brak struktury i naglowkow.", "Dane techniczne zmieszane z opisem.", "Klient nie widzi, jaki problem rozwiazuje produkt."],
+    },
+    after: {
+      badge: "PO LUMIRAI",
+      title: "Kuchenka mikrofalowa 20L 700W z wyswietlaczem LED",
+      text: "Szybkie podgrzewanie, rozmrazanie i codzienne gotowanie w kompaktowej kuchence do malej i sredniej kuchni.",
+      bullets: ["Dlaczego kupujacy wybieraja ten model?", "Czytelny panel LED ulatwia ustawienie czasu i programu.", "Pojemnosc 20 l sprawdza sie w codziennym podgrzewaniu obiadow i napojow.", "Timer pomaga kontrolowac proces bez otwierania drzwiczek."],
+    },
+  },
+  {
+    eyebrow: "TYTULY AI",
+    title: "Tytul, ktory trafia w to, czego szukaja kupujacy.",
+    description: "LuMirAI uklada tytul z najwazniejszych danych oferty: typu produktu, pojemnosci, mocy, koloru i funkcji. Maks. 75 znakow, bez szumu.",
+    chips: ["Allegro Analytics", "Planer Kampanii", "Google Trends", "Wyszukiwarka Allegro", "Maks. 75 znakow", "Wysoki wolumen"],
+    variant: "title" as const,
+    before: {
+      badge: "PRZED",
+      title: "Mikrofala MW-20 srebrna",
+      text: "Krotki tytul bez pojemnosci, mocy i slow kluczowych.",
+    },
+    after: {
+      badge: "PO LUMIRAI",
+      title: "Kuchenka mikrofalowa 20L 700W Srebrna Timer LED",
+      text: "Typ produktu, pojemnosc, moc, kolor i funkcja w jednym czytelnym tytule.",
+      chips: ["55 / 75 znakow", "Kuchenka mikrofalowa", "20L", "700W", "Timer LED"],
+    },
+  },
+  {
+    eyebrow: "ATRYBUTY PRODUKTU",
+    title: "Atrybuty, ktore przechodza walidacje marketplace.",
+    description: "LuMirAI zmienia niepelne dane w uporzadkowane pola: techniczne, logistyczne i sprzedazowe. Sprzedawca widzi, co bylo puste i co zostalo uzupelnione.",
+    chips: ["Pola wymagane", "Walidacja Allegro", "Dane techniczne", "Braki oznaczone", "Gotowe do eksportu"],
+    variant: "attributes" as const,
+    before: {
+      badge: "PRZED",
+      title: "Braki w atrybutach",
+      bullets: ["Pojemnosc: brak", "Moc: 700W wpisane w opisie", "Sterowanie: brak", "Srednica talerza: brak", "Gwarancja: brak"],
+    },
+    after: {
+      badge: "PO LUMIRAI",
+      title: "Komplet atrybutow produktu",
+      bullets: ["Pojemnosc: 20 l", "Moc mikrofal: 700 W", "Kolor: srebrny", "Sterowanie: elektroniczne", "Srednica talerza: 25.5 cm", "Gwarancja: 24 mies."],
+    },
+  },
+  {
+    eyebrow: "ZDJECIA PRODUKTOWE",
+    title: "Zdjecia i miniatury pod trafnosc Allegro. Technicznie i wizualnie.",
+    description: "Format 2560x2560 px, biale tlo RGB 255, wycieta ramka. Zgodne z wymaganiami Allegro i czytelne w wynikach wyszukiwania.",
+    chips: ["2560x2560 px", "RGB 255 biale tlo", "Biala ramka wycieta", "Trafnosc Allegro", "Format Allegro"],
+    variant: "photos" as const,
+    before: {
+      badge: "PRZED",
+      title: "Zdjecie z kuchni",
+      text: "Tlo, szafki i blat konkuruja z produktem.",
+    },
+    after: {
+      badge: "PO LUMIRAI",
+      title: "Produkt na bialym tle",
+      text: "Czysta miniatura gotowa do marketplace.",
+    },
+  },
+];
+
 function BeforeAfterSlider() {
   const [pos, setPos]   = useState(22);
   const containerRef    = useRef<HTMLDivElement>(null);
@@ -383,7 +588,7 @@ function BeforeAfterSlider() {
         {/* Cień produktu */}
         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-36 h-6 rounded-full" style={{ background: "#000", opacity: 0.08, filter: "blur(18px)" }} />
 
-        <MicrowaveIllustration clean />
+        <ProductPhoto variant="after" />
 
         {/* ── Specs overlay (top-right) ── */}
         <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5 pointer-events-none">
@@ -433,7 +638,7 @@ function BeforeAfterSlider() {
           <div className="absolute bottom-[35%] left-1/2 -translate-x-1/2 w-72 h-12 rounded-full" style={{ background: "rgba(15,23,42,0.24)", filter: "blur(14px)" }} />
           <div className="absolute top-[38%] right-12 w-20 h-20 rounded-full" style={{ background: "rgba(255,255,255,0.22)", filter: "blur(18px)" }} />
 
-          <MicrowaveIllustration clean={false} />
+          <ProductPhoto variant="before" />
 
           {/* ── PRZED badge ── */}
           <div className="absolute top-4 left-4 text-[9px] font-bold px-2.5 py-1 rounded-full tracking-widest" style={{ background: "rgba(0,0,0,0.45)", color: "#fff", backdropFilter: "blur(4px)" }}>
@@ -750,85 +955,43 @@ export default function Landing() {
       </section>
 
       {/* ── BEFORE / AFTER OFFER TRANSFORMATION ───────────────── */}
-      <section className="py-32 md:py-40 px-6 bg-slate-950 text-white overflow-hidden">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-[0.92fr_1.08fr] gap-12 lg:gap-16 items-start">
-            <div data-animate>
-              <p className="eyebrow text-emerald-300">Przed i po LuMirAI</p>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-5">
-                Z chaotycznych danych do oferty gotowej na marketplace.
-              </h2>
-              <p className="text-slate-300 text-lg leading-relaxed mb-8">
-                Ten sam produkt: kuchenka mikrofalowa. LuMirAI porządkuje tytuł, opis produktu, atrybuty produktu i zdjęcia produktowe tak, żeby klient widział komplet, a nie surowy import.
-              </p>
-
-              <div className="grid gap-4">
-                {[
-                  {
-                    label: "Tytuł produktu",
-                    before: "Kuchenka mikrofalowa MW-20 srebrna",
-                    after: "Kuchenka mikrofalowa 20L 700W Srebrna Timer LED",
-                    note: "31 / 75 znaków → 55 / 75 znaków",
-                  },
-                  {
-                    label: "Opis produktu",
-                    before: "Mikrofala 20L. Kolor srebrny. Moc 700W. Timer. Talerz szklany. Do kuchni.",
-                    after: "Szybkie podgrzewanie i rozmrażanie w kompaktowej kuchence 20 l. Moc 700 W, czytelny panel LED i timer pomagają przygotować codzienne posiłki bez zgadywania ustawień.",
-                    note: "Surowe dane → opis sprzedażowy z benefitami",
-                  },
-                  {
-                    label: "Atrybuty produktu",
-                    before: "Braki: pojemność, moc, sterowanie, średnica talerza, gwarancja.",
-                    after: "Pojemność: 20 l · Moc: 700 W · Kolor: srebrny · Sterowanie: elektroniczne · Talerz: 25.5 cm · Gwarancja: 24 mies.",
-                    note: "Braki → komplet pól do walidacji",
-                  },
-                  {
-                    label: "Zdjęcia produktowe",
-                    before: "Zdjęcie z kuchni, kafelki w tle, nierówne światło.",
-                    after: "Białe tło RGB 255, produkt wycentrowany, czysty cień i format gotowy pod miniaturę.",
-                    note: "Zdjęcie robocze → marketplace-ready",
-                  },
-                ].map((item, idx) => (
-                  <div
-                    key={item.label}
-                    className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5"
-                    data-animate
-                    data-animate-delay={String(Math.min(idx + 1, 5)) as "1" | "2" | "3" | "4" | "5"}
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <h3 className="text-white font-semibold">{item.label}</h3>
-                      <span className="text-[10px] uppercase tracking-[0.18em] text-emerald-300">{item.note}</span>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2">PRZED</div>
-                        <p className="text-sm leading-relaxed text-slate-400">{item.before}</p>
-                      </div>
-                      <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300 mb-2">PO LUMIRAI</div>
-                        <p className="text-sm leading-relaxed text-slate-100">{item.after}</p>
-                      </div>
-                    </div>
+      <section className="bg-white px-6">
+        <div className="mx-auto max-w-6xl">
+          {TRANSFORMATION_SECTIONS.map((item, idx) => {
+            const reverse = idx % 2 === 1;
+            return (
+              <div key={item.eyebrow} className="grid gap-12 border-t border-slate-200 py-28 lg:grid-cols-2 lg:items-center lg:gap-16">
+                <div className={reverse ? "lg:order-2" : ""} data-animate>
+                  <p className="mb-5 text-xs font-black uppercase tracking-[0.22em]" style={{ color: idx === 1 ? "#8b5cf6" : idx === 2 ? "#6366f1" : "#14b8a6" }}>
+                    {item.eyebrow}
+                  </p>
+                  <h2 className="mb-6 text-4xl font-black leading-tight tracking-tight text-slate-950 md:text-5xl">
+                    {item.title}
+                  </h2>
+                  <p className="mb-7 max-w-xl text-lg leading-relaxed text-slate-600">
+                    {item.description}
+                  </p>
+                  <div className="flex max-w-xl flex-wrap gap-2">
+                    {item.chips.map((chip) => (
+                      <span key={chip} className="rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-medium text-violet-700 shadow-sm">
+                        {chip}
+                      </span>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="lg:sticky lg:top-28" data-animate data-animate-delay="2">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Zdjęcie produktu</p>
-                  <p className="text-sm text-slate-300">Animacja automatyczna · przeciągnij suwak</p>
                 </div>
-                <div className="hidden sm:flex flex-wrap justify-end gap-2">
-                  {["RGB 255", "białe tło", "miniatura Allegro"].map(label => (
-                    <span key={label} className="px-3 py-1 rounded-full text-[11px] border border-emerald-400/25 text-emerald-200 bg-emerald-400/10">{label}</span>
-                  ))}
+                <div className={reverse ? "lg:order-1" : ""} data-animate data-animate-delay="2">
+                  <p className="mb-3 text-center text-xs font-medium text-slate-400">
+                    Przeciagaj suwak: PRZED / PO LUMIRAI
+                  </p>
+                  {item.variant === "photos" ? (
+                    <BeforeAfterSlider />
+                  ) : (
+                    <CompareSlider before={item.before} after={item.after} variant={item.variant} />
+                  )}
                 </div>
               </div>
-              <BeforeAfterSlider />
-            </div>
-          </div>
+            );
+          })}
         </div>
       </section>
 

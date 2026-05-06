@@ -11,11 +11,28 @@ test("landing shows microwave before and after LumirAI image transformation", ()
   assert.match(page, /PRZED/);
   assert.match(page, /PO LUMIRAI/);
   assert.match(page, /RGB 255/);
-  assert.match(page, /białe tło/i);
 });
 
 test("landing explains all generated offer artifacts", () => {
-  for (const label of ["Tytuł produktu", "Opis produktu", "Atrybuty produktu", "Zdjęcia produktowe"]) {
+  for (const label of ["OPISY PRODUKTOWE", "ATRYBUTY PRODUKTU"]) {
     assert.match(page, new RegExp(label, "i"));
+  }
+  assert.match(page, /Tytu/);
+  assert.match(page, /Zdj/);
+});
+
+test("landing uses draggable before-after sliders for each artifact", () => {
+  assert.match(page, /function CompareSlider/);
+  assert.match(page, /variant === "photos"/);
+  for (const copy of ["Masz 10", "Allegro Analytics", "Google Trends", "Format 2560"]) {
+    assert.match(page, new RegExp(copy, "i"));
+  }
+});
+
+test("landing is wired for exact microwave photo assets", () => {
+  assert.match(page, /\/landing\/microwave-before\.png/);
+  assert.match(page, /\/landing\/microwave-after\.png/);
+  for (const file of ["microwave-before.png", "microwave-after.png"]) {
+    assert.equal(fs.existsSync(path.resolve("public", "landing", file)), true, `${file} missing`);
   }
 });
