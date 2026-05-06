@@ -98,7 +98,7 @@ function LoginForm() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 shadow-[0_0_40px_rgba(124,58,237,0.28)]">
-              <Image src="/lumir-icon.svg" alt="LuMir" width={64} height={64} className="h-16 w-16 rounded-2xl" />
+              <Image src="/lumir-icon.svg?v=outlined-20260506" alt="LuMir" width={64} height={64} className="h-16 w-16 rounded-2xl" />
           </div>
           <h1 className="text-3xl font-semibold tracking-wide text-white">
             LuMir

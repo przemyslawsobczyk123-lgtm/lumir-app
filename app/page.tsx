@@ -768,7 +768,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <Image src="/lumir-icon.svg" alt="LuMir" width={36} height={36} className="h-9 w-9 rounded-xl shadow-sm" priority />
+            <Image src="/lumir-icon.svg?v=outlined-20260506" alt="LuMir" width={36} height={36} className="h-9 w-9 rounded-xl shadow-sm" priority />
             <span className="text-xl font-semibold tracking-wide text-gray-900">
               LuMir
             </span>
@@ -1188,7 +1188,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
             <div className="flex items-center gap-3">
-              <Image src="/lumir-icon.svg" alt="LuMir" width={28} height={28} className="h-7 w-7 rounded-lg shadow-sm" />
+              <Image src="/lumir-icon.svg?v=outlined-20260506" alt="LuMir" width={28} height={28} className="h-7 w-7 rounded-lg shadow-sm" />
               <span className="text-base font-semibold tracking-wide text-gray-900">
                 LuMir
               </span>

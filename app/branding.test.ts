@@ -5,6 +5,8 @@ import test from "node:test";
 
 const appDir = path.resolve("app");
 const publicDir = path.resolve("public");
+const logoVersion = "outlined-20260506";
+const versionedLogoPath = `/lumir-icon.svg?v=${logoVersion}`;
 
 function read(relativePath: string) {
   return fs.readFileSync(path.resolve(relativePath), "utf8");
@@ -38,7 +40,8 @@ test("visible brand surfaces use shared LuMir logo and wordmark", () => {
   for (const file of surfaces) {
     const content = read(file);
     assert.match(content, /LuMir/);
-    assert.match(content, /lumir-icon\.svg/);
+    assert.match(content, new RegExp(`lumir-icon\\.svg\\?v=${logoVersion}`));
+    assert.doesNotMatch(content, /src="\/lumir-icon\.svg"/);
     assert.doesNotMatch(content, /font-brand/);
   }
 });
@@ -46,5 +49,5 @@ test("visible brand surfaces use shared LuMir logo and wordmark", () => {
 test("landing brand no longer renders the old lightning logo", () => {
   const page = read("app/page.tsx");
   assert.doesNotMatch(page, /M13 10V3L4 14h7v7l9-11h-7Z/);
-  assert.match(page, /<Image src="\/lumir-icon\.svg" alt="LuMir"/);
+  assert.match(page, new RegExp(`<Image src="${versionedLogoPath.replace("/", "\\/").replace("?", "\\?")}" alt="LuMir"`));
 });
