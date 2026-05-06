@@ -480,6 +480,7 @@ const MICROWAVE_PHOTOS = {
 function ProductPhoto({ variant }: { variant: "before" | "after" }) {
   const [failed, setFailed] = useState(false);
   const isAfter = variant === "after";
+  const photoFitClass = isAfter ? "object-contain" : "object-cover";
 
   if (failed) {
     return (
@@ -495,7 +496,9 @@ function ProductPhoto({ variant }: { variant: "before" | "after" }) {
       alt={isAfter ? "Kuchenka mikrofalowa po LuMirAI na bialym tle" : "Kuchenka mikrofalowa przed LuMirAI w kuchni"}
       fill
       sizes="(max-width: 768px) 92vw, 560px"
-      className={isAfter ? "object-contain" : "object-cover"}
+      className={`pointer-events-none select-none ${photoFitClass}`}
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
       onError={() => setFailed(true)}
       unoptimized
     />
@@ -568,7 +571,7 @@ function ComparePanel({ content, tone, variant }: { content: CompareContent; ton
 
 function getSliderPercentFromClientX(rect: DOMRect, clientX: number) {
   const x = clientX - rect.left;
-  return Math.max(0, Math.min(100, Math.round((x / rect.width) * 100)));
+  return Math.max(0, Math.min(100, (x / rect.width) * 100));
 }
 
 type CompareSliderStyle = CSSProperties & {
@@ -579,6 +582,7 @@ type CompareSliderStyle = CSSProperties & {
 function CompareSlider({ before, after, variant }: { before: CompareContent; after: CompareContent; variant: "title" | "description" | "attributes" | "photos" }) {
   const [pos, setPos] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dragRect = useRef<DOMRect | null>(null);
   const dragging = useRef(false);
   const autoDirection = useRef(1);
   const pauseAutoUntil = useRef(0);
@@ -586,6 +590,9 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
   const sliderStyle: CompareSliderStyle = {
     "--split": `${pos}%`,
     "--handle-x": `clamp(24px, ${pos}%, calc(100% - 24px))`,
+    cursor: "ew-resize",
+    touchAction: "none",
+    userSelect: "none",
   };
 
   useEffect(() => {
@@ -622,25 +629,29 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  function updateFromPointer(clientX: number) {
-    if (!containerRef.current) return;
-    setPos(getSliderPercentFromClientX(containerRef.current.getBoundingClientRect(), clientX));
+  function updateFromPointer(clientX: number, rect = dragRect.current) {
+    if (!rect) return;
+    setPos(getSliderPercentFromClientX(rect, clientX));
   }
 
   function startDrag(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
     dragging.current = true;
+    dragRect.current = event.currentTarget.getBoundingClientRect();
     pauseAutoUntil.current = performance.now() + 3200;
     event.currentTarget.setPointerCapture(event.pointerId);
-    updateFromPointer(event.clientX);
+    updateFromPointer(event.clientX, dragRect.current);
   }
 
   function moveDrag(event: PointerEvent<HTMLDivElement>) {
     if (!dragging.current) return;
+    event.preventDefault();
     updateFromPointer(event.clientX);
   }
 
   function stopDrag(event: PointerEvent<HTMLDivElement>) {
     dragging.current = false;
+    dragRect.current = null;
     pauseAutoUntil.current = performance.now() + 3200;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -664,8 +675,16 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
       aria-valuenow={pos}
     >
       <ComparePanel content={after} tone="after" variant={variant} />
-      <div className="absolute inset-0 overflow-hidden will-change-[clip-path]" style={{ clipPath: "inset(0 calc(100% - var(--split)) 0 0)" }}>
-        <ComparePanel content={before} tone="before" variant={variant} />
+      <div
+        className="absolute inset-0 overflow-hidden will-change-transform"
+        style={{ transform: "translate3d(calc(var(--split) - 100%), 0, 0)" }}
+      >
+        <div
+          className="absolute inset-0 will-change-transform"
+          style={{ transform: "translate3d(calc(100% - var(--split)), 0, 0)" }}
+        >
+          <ComparePanel content={before} tone="before" variant={variant} />
+        </div>
       </div>
       <div className="pointer-events-none absolute inset-y-0 z-20 w-[2px] bg-gradient-to-b from-transparent via-slate-950 to-transparent shadow-[0_0_26px_rgba(15,23,42,0.35)]" style={{ left: "var(--split)" }} />
       <div className="compare-slider-handle pointer-events-none absolute top-1/2 z-30 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-white/95 text-slate-600 shadow-[0_18px_45px_rgba(15,23,42,0.22)] ring-8 ring-white/35 backdrop-blur-xl transition-transform duration-200" style={{ left: "var(--handle-x)" }}>

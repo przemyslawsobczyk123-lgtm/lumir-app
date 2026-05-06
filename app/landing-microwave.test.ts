@@ -50,6 +50,18 @@ test("landing comparison sliders auto-animate and pause after manual drag", () =
   assert.match(page, /next <= 0/);
 });
 
+test("landing comparison sliders keep manual photo drag smooth", () => {
+  assert.match(page, /const dragRect = useRef<DOMRect \| null>\(null\)/);
+  assert.match(page, /touchAction: "none"/);
+  assert.match(page, /userSelect: "none"/);
+  assert.match(page, /draggable=\{false\}/);
+  assert.match(page, /event\.preventDefault\(\)/);
+  assert.match(page, /translate3d\(calc\(var\(--split\) - 100%\)/);
+  assert.match(page, /translate3d\(calc\(100% - var\(--split\)\)/);
+  assert.doesNotMatch(page, /Math\.round\(\(x \/ rect\.width\) \* 100\)/);
+  assert.doesNotMatch(page, /will-change-\[clip-path\]|clipPath/);
+});
+
 test("landing photo comparison uses the same fixed-layer slider as text sections", () => {
   assert.doesNotMatch(page, /<BeforeAfterSlider \/>/);
   assert.match(page, /<CompareSlider before=\{item\.before\} after=\{item\.after\} variant=\{item\.variant\}/);
