@@ -657,6 +657,7 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
       onPointerUp={stopDrag}
       onPointerCancel={stopDrag}
       role="slider"
+      data-auto-play="true"
       aria-label="Porownanie przed i po LuMirAI"
       aria-valuemin={0}
       aria-valuemax={100}

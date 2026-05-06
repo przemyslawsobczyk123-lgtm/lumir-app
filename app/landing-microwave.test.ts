@@ -43,6 +43,7 @@ test("landing comparison sliders auto-animate and pause after manual drag", () =
   assert.match(page, /const pauseAutoUntil = useRef/);
   assert.match(page, /function animateSlider/);
   assert.match(page, /requestAnimationFrame\(animateSlider\)/);
+  assert.match(page, /data-auto-play="true"/);
   assert.match(page, /pauseAutoUntil\.current = performance\.now\(\) \+ 3200/);
   assert.match(page, /if \(dragging\.current \|\| time < pauseAutoUntil\.current\)/);
   assert.match(page, /next >= 100/);
