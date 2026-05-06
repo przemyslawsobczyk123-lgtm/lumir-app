@@ -169,23 +169,6 @@ export default function SettingsPage() {
           {pwdLoading ? t.savingPwd : t.changePwd}
         </button>
       </div>
-
-      <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-sm font-semibold text-indigo-700">{t.billingBanner}</div>
-            <p className="mt-1 text-sm text-indigo-600/80">
-              {t.billingBannerDesc}
-            </p>
-          </div>
-          <a
-            href="/dashboard/billing"
-            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-          >
-            {t.openBilling}
-          </a>
-        </div>
-      </div>
     </div>
   );
 }
