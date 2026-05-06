@@ -24,6 +24,7 @@ export type AssistantResponse = {
     creditsRemaining?: number;
     allegroValidAccounts?: number;
     recentJobs?: number;
+    aiStatus?: "ok" | "fallback";
   };
 };
 
@@ -97,8 +98,9 @@ export function normalizeAssistantResponse(payload: unknown): AssistantResponse 
   };
 }
 
-export function getAssistantStatusTone(status: "online" | "thinking" | "error") {
+export function getAssistantStatusTone(status: "online" | "thinking" | "fallback" | "error") {
   if (status === "thinking") return "bg-amber-400";
+  if (status === "fallback") return "bg-amber-400";
   if (status === "error") return "bg-rose-400";
   return "bg-emerald-400";
 }

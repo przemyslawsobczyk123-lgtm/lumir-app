@@ -129,10 +129,11 @@ export default function AssistantPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fallbackMode, setFallbackMode] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   const canSend = message.trim().length > 0 && !loading;
-  const status = error ? "error" : loading ? "thinking" : "online";
+  const status = error ? "error" : loading ? "thinking" : fallbackMode ? "fallback" : "online";
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -160,9 +161,11 @@ export default function AssistantPage() {
       setMessages([...nextMessages, { role: "assistant", content: normalized.reply }]);
       setSuggestions(normalized.suggestions.length ? normalized.suggestions : ASSISTANT_QUICK_PROMPTS);
       setActions(normalized.actions);
+      setFallbackMode(normalized.contextSummary?.aiStatus === "fallback");
     } catch (err) {
       const text = getErrorMessage(err);
       setError(text);
+      setFallbackMode(false);
       setMessages([...nextMessages, { role: "assistant", content: text }]);
     } finally {
       setLoading(false);
@@ -194,7 +197,7 @@ export default function AssistantPage() {
             </div>
             <div className="flex items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-card-hover)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)]">
               <span className={`h-2.5 w-2.5 rounded-full ${getAssistantStatusTone(status)}`} />
-              {loading ? "Analizuję" : error ? "Wymaga uwagi" : "Online"}
+              {loading ? "Analizuję" : error ? "Wymaga uwagi" : fallbackMode ? "Tryb awaryjny" : "Online"}
             </div>
           </div>
         </div>

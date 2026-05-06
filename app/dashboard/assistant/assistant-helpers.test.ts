@@ -39,12 +39,14 @@ test("normalizeAssistantResponse accepts backend data envelope", () => {
       reply: "Masz 3 produkty do poprawy.",
       suggestions: [{ label: "Popraw produkty", prompt: "co poprawić?" }],
       actions: [{ label: "Produkty", href: "/dashboard/products" }],
+      contextSummary: { aiStatus: "fallback" },
     },
   });
 
   assert.equal(response.reply, "Masz 3 produkty do poprawy.");
   assert.equal(response.suggestions[0].label, "Popraw produkty");
   assert.equal(response.actions[0].href, "/dashboard/products");
+  assert.equal(response.contextSummary?.aiStatus, "fallback");
 });
 
 test("assistant quick prompts cover core LuMir workflows", () => {
@@ -59,5 +61,6 @@ test("assistant quick prompts cover core LuMir workflows", () => {
 test("getAssistantStatusTone maps connected state to visible tone", () => {
   assert.equal(getAssistantStatusTone("online"), "bg-emerald-400");
   assert.equal(getAssistantStatusTone("thinking"), "bg-amber-400");
+  assert.equal(getAssistantStatusTone("fallback"), "bg-amber-400");
   assert.equal(getAssistantStatusTone("error"), "bg-rose-400");
 });
