@@ -53,7 +53,12 @@ test("landing comparison sliders auto-animate and pause after manual drag", () =
 test("landing photo comparison uses the same fixed-layer slider as text sections", () => {
   assert.doesNotMatch(page, /<BeforeAfterSlider \/>/);
   assert.match(page, /<CompareSlider before=\{item\.before\} after=\{item\.after\} variant=\{item\.variant\}/);
-  assert.match(page, /className="absolute inset-0 bg-white"/);
+  assert.match(page, /<ProductPhoto variant=\{isAfter \? "after" : "before"\} \/>/);
+});
+
+test("landing before photo fills the kitchen background without white letterbox", () => {
+  assert.match(page, /isAfter \? "object-contain" : "object-cover"/);
+  assert.match(page, /isAfter \? "absolute inset-0 bg-white" : "absolute inset-0 bg-slate-900"/);
 });
 
 test("landing is wired for exact microwave photo assets", () => {

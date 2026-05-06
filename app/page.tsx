@@ -495,7 +495,7 @@ function ProductPhoto({ variant }: { variant: "before" | "after" }) {
       alt={isAfter ? "Kuchenka mikrofalowa po LuMirAI na bialym tle" : "Kuchenka mikrofalowa przed LuMirAI w kuchni"}
       fill
       sizes="(max-width: 768px) 92vw, 560px"
-      className="object-contain"
+      className={isAfter ? "object-contain" : "object-cover"}
       onError={() => setFailed(true)}
       unoptimized
     />
@@ -514,7 +514,7 @@ function ComparePanel({ content, tone, variant }: { content: CompareContent; ton
   if (variant === "photos") {
     const isAfter = tone === "after";
     return (
-      <div className="absolute inset-0 bg-white">
+      <div className={isAfter ? "absolute inset-0 bg-white" : "absolute inset-0 bg-slate-900"}>
         <ProductPhoto variant={isAfter ? "after" : "before"} />
         <div className="pointer-events-none absolute left-4 top-4 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] shadow-sm" style={{ background: isAfter ? "#ccfbf1" : "rgba(15,23,42,.68)", color: isAfter ? "#0f766e" : "#fff" }}>
           {content.badge}
