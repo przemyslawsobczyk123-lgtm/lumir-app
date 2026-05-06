@@ -252,37 +252,65 @@ function AICard() {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Lamp SVG illustration (desk lamp, clean vs. room background)
-───────────────────────────────────────────────────────────── */
-function LampIllustration({ clean }: { clean: boolean }) {
-  const arm   = clean ? "#374151" : "#1c1308";
-  const joint = clean ? "#4b5563" : "#231a0c";
-  const shade = clean ? "#f3f4f6" : "#eee8dc";
-  const inner = clean ? "#ffffff"  : "#fdf5e4";
-  const base  = clean ? "#9ca3af" : "#100e08";
+/* Product SVG: microwave, raw seller photo vs marketplace-ready */
+function MicrowaveIllustration({ clean }: { clean: boolean }) {
+  const suffix = clean ? "clean" : "raw";
+  const metal = clean ? "#d7dde7" : "#9aa1aa";
+  const side = clean ? "#9ca3af" : "#707781";
+  const dark = clean ? "#111827" : "#1f2937";
+  const screen = clean ? "#98d82e" : "#84cc16";
 
   return (
-    <svg viewBox="0 0 200 310" className="relative z-10 w-44 h-64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Base */}
-      <ellipse cx="100" cy="293" rx="50" ry="13" fill={base} />
-      {/* Pole + arms */}
-      <path d="M100 293 L100 198 L72 126 L108 58" stroke={arm} strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Joints */}
-      <circle cx="100" cy="198" r="9" fill={joint} />
-      <circle cx="72"  cy="126" r="9" fill={joint} />
-      <circle cx="108" cy="58"  r="9" fill={joint} />
-      {/* Shade outer */}
-      <path d="M84 50 L54 106 L163 106 L133 50 Z" fill={shade} stroke={clean ? "#d1d5db" : "#c4bfb0"} strokeWidth="1.5" />
-      {/* Shade inner reflector */}
-      <path d="M88 55 L60 102 L158 102 L130 55 Z" fill={inner} />
-      {/* Bulb */}
-      <ellipse cx="109" cy="79" rx="10" ry="12" fill="rgba(255,225,70,0.95)" />
-      <ellipse cx="109" cy="76" rx="5"  ry="6"  fill="rgba(255,255,200,0.95)" />
-      {/* Light cone */}
-      <path d="M56 106 L24 292 L182 292 L150 106 Z" fill={clean ? "rgba(255,235,100,0.05)" : "rgba(255,200,50,0.15)"} />
-      {/* Warm floor glow (room only) */}
-      {!clean && <ellipse cx="103" cy="278" rx="58" ry="13" fill="rgba(255,175,30,0.18)" />}
+    <svg
+      viewBox="0 0 560 360"
+      className="relative z-10 w-[420px] max-w-[82%] h-auto"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="Kuchenka mikrofalowa"
+    >
+      <defs>
+        <linearGradient id={`microwave-metal-${suffix}`} x1="70" y1="72" x2="448" y2="288" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#f8fafc" />
+          <stop offset="0.42" stopColor={metal} />
+          <stop offset="1" stopColor="#8b93a1" />
+        </linearGradient>
+        <linearGradient id={`microwave-door-${suffix}`} x1="88" y1="115" x2="350" y2="242" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#111827" />
+          <stop offset="0.5" stopColor="#374151" />
+          <stop offset="1" stopColor="#0f172a" />
+        </linearGradient>
+        <pattern id={`microwave-mesh-${suffix}`} width="6" height="6" patternUnits="userSpaceOnUse">
+          <path d="M0 3H6M3 0V6" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
+        </pattern>
+      </defs>
+
+      <ellipse cx="284" cy="312" rx="205" ry="22" fill="rgba(15,23,42,0.18)" />
+      <path d="M418 80h86c18 0 30 14 30 31v156c0 17-12 31-30 31h-86V80Z" fill={side} />
+      <path d="M430 96h78c6 0 10 5 10 11v139c0 7-4 12-10 12h-78V96Z" fill="rgba(15,23,42,0.10)" />
+      <rect x="48" y="82" width="410" height="218" rx="16" fill={`url(#microwave-metal-${suffix})`} stroke={clean ? "#cbd5e1" : "#6b7280"} strokeWidth="3" />
+      <rect x="70" y="105" width="286" height="156" rx="13" fill={dark} />
+      <rect x="92" y="126" width="226" height="112" rx="8" fill={`url(#microwave-door-${suffix})`} />
+      <rect x="108" y="139" width="194" height="86" rx="6" fill={`url(#microwave-mesh-${suffix})`} opacity="0.72" />
+      <rect x="366" y="101" width="70" height="166" rx="11" fill="#0f172a" />
+      <text x="401" y="128" textAnchor="middle" fill={screen} fontFamily="monospace" fontSize="26" fontWeight="700">12:42</text>
+      <rect x="380" y="142" width="42" height="1" fill="rgba(255,255,255,0.22)" />
+      {["Power", "Def", "Grill", "1", "2", "3", "4", "5", "6", "Stop", "0", "Start"].map((label, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        return (
+          <g key={label}>
+            <rect x={376 + col * 18} y={154 + row * 24} width="14" height="14" rx="3" fill={i > 8 ? "rgba(248,250,252,0.16)" : "rgba(248,250,252,0.10)"} stroke="rgba(255,255,255,0.18)" />
+            <text x={383 + col * 18} y={164 + row * 24} textAnchor="middle" fill="rgba(255,255,255,0.82)" fontFamily="monospace" fontSize={i < 3 ? "4.5" : "8"}>
+              {label}
+            </text>
+          </g>
+        );
+      })}
+      <rect x="372" y="272" width="58" height="18" rx="5" fill="rgba(15,23,42,0.20)" stroke="rgba(255,255,255,0.25)" />
+      <rect x="92" y="294" width="38" height="12" rx="6" fill="#111827" opacity="0.82" />
+      <rect x="382" y="294" width="38" height="12" rx="6" fill="#111827" opacity="0.82" />
+      <path d="M62 90h382" stroke="rgba(255,255,255,0.55)" strokeWidth="2" />
+      <path d="M516 126v102" stroke="rgba(255,255,255,0.22)" strokeWidth="2" strokeLinecap="round" strokeDasharray="3 8" />
     </svg>
   );
 }
@@ -340,59 +368,108 @@ function BeforeAfterSlider() {
   return (
     <div
       ref={containerRef}
-      className="relative rounded-2xl overflow-hidden border border-white/10 select-none"
-      style={{ cursor: "col-resize", height: "460px" }}
+      className="relative rounded-2xl overflow-hidden select-none shadow-xl"
+      style={{ cursor: "col-resize", height: "480px", border: "1px solid #e5e7eb" }}
       onMouseDown={() => { dragging.current = true; }}
       onTouchStart={() => { dragging.current = true; }}
     >
-      {/* ── PO LUMIRAI — białe tło, gotowe do marketplace ── */}
-      <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ background: "#f8f9fa" }}>
-        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse 80% 50% at 50% 100%, rgba(200,200,230,0.35) 0%, #f8f9fa 55%)" }} />
-        {/* Shadow pod produktem */}
-        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-28 h-5 rounded-full" style={{ background: "#000", opacity: 0.12, filter: "blur(14px)" }} />
-        <LampIllustration clean />
-        <div className="absolute top-5 right-5 text-[9px] font-bold px-2.5 py-1 rounded text-white tracking-widest" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>PO LUMIRAI</div>
-        <div className="absolute bottom-5 right-5 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
-          <span className="text-[10px] text-slate-500 font-medium">Białe tło · gotowe do marketplace</span>
-        </div>
-      </div>
 
-      {/* ── PRZED — zdjęcie w pokoju, surowe ── */}
-      <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos}%` }}>
-        <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#1c1409", minWidth: "640px" }}>
-          {/* Tło pokoju */}
-          <div className="absolute inset-0" style={{ background: "linear-gradient(155deg,#2d1f10 0%,#110d07 45%,#1a1208 100%)" }} />
-          {/* Światło z okna */}
-          <div className="absolute top-0 right-0 w-72 h-72 rounded-full opacity-25" style={{ background: "radial-gradient(circle,rgba(240,200,120,0.7) 0%,transparent 70%)", filter: "blur(50px)" }} />
-          {/* Blat */}
-          <div className="absolute bottom-0 left-0 right-0 h-1/3" style={{ background: "linear-gradient(180deg,#2a1c0e 0%,#191008 100%)" }} />
-          {/* Książki */}
-          <div className="absolute" style={{ bottom: "28%", left: 40, width: 52, height: 72, background: "linear-gradient(150deg,#8b1a1a,#5a1010)", borderRadius: 3, transform: "rotate(-4deg)", opacity: 0.65 }} />
-          <div className="absolute" style={{ bottom: "28%", left: 88, width: 38, height: 60, background: "linear-gradient(150deg,#1a3a8b,#0f2060)", borderRadius: 3, transform: "rotate(2deg)", opacity: 0.65 }} />
-          <div className="absolute" style={{ bottom: "28%", left: 124, width: 30, height: 52, background: "linear-gradient(150deg,#2a6b2a,#1a4a1a)", borderRadius: 3, transform: "rotate(-1deg)", opacity: 0.55 }} />
-          {/* Kubek */}
-          <div className="absolute" style={{ bottom: "28%", right: 64, width: 36, height: 44, background: "#3a2a1a", border: "2px solid #4a3a2a", borderRadius: "4px 4px 50% 50%", opacity: 0.55 }} />
-          {/* Kartka */}
-          <div className="absolute" style={{ bottom: "29%", right: 16, width: 68, height: 14, background: "#e4d9c0", borderRadius: 2, transform: "rotate(2deg)", opacity: 0.4 }} />
-          <LampIllustration clean={false} />
-          <div className="absolute top-5 left-5 text-[9px] font-bold px-2.5 py-1 rounded tracking-widest" style={{ background: "rgba(0,0,0,0.5)", color: "#cbd5e1" }}>PRZED</div>
-          <div className="absolute bottom-5 left-5 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
-            <span className="text-[10px] text-slate-500 font-medium">Oryginalne zdjęcie sprzedawcy</span>
+      {/* ═══════════════════════════════════════════════════
+          PO LUMIRAI — białe tło RGB 255, standard Allegro
+      ═══════════════════════════════════════════════════ */}
+      <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ background: "#ffffff" }}>
+        {/* Bardzo subtelna winieta */}
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 90% 90% at 50% 50%, transparent 60%, rgba(0,0,0,0.04) 100%)" }} />
+        {/* Cień produktu */}
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-36 h-6 rounded-full" style={{ background: "#000", opacity: 0.08, filter: "blur(18px)" }} />
+
+        <MicrowaveIllustration clean />
+
+        {/* ── Specs overlay (top-right) ── */}
+        <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5 pointer-events-none">
+          <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}>
+            ✓ RGB 255,255,255
+          </div>
+          <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}>
+            ✓ 2560×2560 px
+          </div>
+          <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}>
+            ✓ Wycięta ramka
+          </div>
+        </div>
+
+        {/* ── PO LUMIRAI badge ── */}
+        <div className="absolute top-4 left-4 text-[9px] font-bold px-2.5 py-1 rounded-full tracking-widest" style={{ background: "linear-gradient(135deg,#059669,#10b981)", color: "#fff" }}>
+          PO LUMIRAI
+        </div>
+
+        {/* ── Bottom info bar ── */}
+        <div className="absolute bottom-0 left-0 right-0 px-5 py-3 flex items-center justify-between" style={{ background: "rgba(255,255,255,0.95)", borderTop: "1px solid #f0fdf4" }}>
+          <span className="text-[10px] text-gray-400 font-medium">Kuchenka mikrofalowa 20L · białe tło po LuMirAI</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-semibold" style={{ color: "#059669" }}>Allegro ✓</span>
+            <span className="text-[10px] font-semibold text-indigo-500">PNG</span>
           </div>
         </div>
       </div>
 
-      {/* Linia podziału */}
-      <div className="absolute top-0 bottom-0 w-px z-10" style={{ left: `${pos}%`, background: "rgba(255,255,255,0.6)", boxShadow: "0 0 10px rgba(255,255,255,0.4)" }} />
+      {/* ═══════════════════════════════════════════════════
+          PRZED — oryginalne zdjęcie sprzedawcy (kuchnia)
+      ═══════════════════════════════════════════════════ */}
+      <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos}%` }}>
+        <div className="absolute inset-0 flex items-center justify-center" style={{ minWidth: "640px" }}>
 
-      {/* Uchwyt */}
+          {/* Kuchnia sprzedawcy: tło, szafki, blat i kafelki */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#f3f4f6 0%,#d7dce4 46%,#c0a28a 100%)" }} />
+          <div className="absolute left-0 right-0 top-0 h-[30%]" style={{ background: "linear-gradient(180deg,#f8fafc,#dbe2ea)", borderBottom: "1px solid rgba(15,23,42,0.12)" }} />
+          {[0,1,2,3].map(i => (
+            <div key={i} className="absolute top-4 h-24 rounded-b-md" style={{ left: `${5 + i * 23}%`, width: "18%", background: i % 2 ? "#e5e7eb" : "#f8fafc", boxShadow: "inset 0 -10px 22px rgba(15,23,42,0.08)" }} />
+          ))}
+          <div className="absolute left-0 right-0 top-[30%] h-[18%]" style={{ background: "linear-gradient(90deg,#5b4034 0 12%,#a06142 12% 24%,#2f3943 24% 36%,#b8734a 36% 48%,#52392f 48% 60%,#c78356 60% 72%,#374151 72% 84%,#a06142 84% 100%)" }} />
+          <div className="absolute left-0 right-0 bottom-0 h-[35%]" style={{ background: "linear-gradient(180deg,#d3c0aa 0%,#b79c80 100%)" }} />
+          {[0,1,2,3,4].map(i => (
+            <div key={i} className="absolute left-0 right-0" style={{ bottom: `${30 + i*1.3}%`, height: 1, background: "rgba(15,23,42,0.08)" }} />
+          ))}
+          <div className="absolute bottom-[35%] left-1/2 -translate-x-1/2 w-72 h-12 rounded-full" style={{ background: "rgba(15,23,42,0.24)", filter: "blur(14px)" }} />
+          <div className="absolute top-[38%] right-12 w-20 h-20 rounded-full" style={{ background: "rgba(255,255,255,0.22)", filter: "blur(18px)" }} />
+
+          <MicrowaveIllustration clean={false} />
+
+          {/* ── PRZED badge ── */}
+          <div className="absolute top-4 left-4 text-[9px] font-bold px-2.5 py-1 rounded-full tracking-widest" style={{ background: "rgba(0,0,0,0.45)", color: "#fff", backdropFilter: "blur(4px)" }}>
+            PRZED
+          </div>
+
+          {/* ── Problemy z oryginalnym zdjęciem (top-right) ── */}
+          <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5 pointer-events-none">
+            <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.25)" }}>
+              ✗ Kolorowe tło
+            </div>
+            <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.25)" }}>
+              ✗ Nierówne oświetlenie
+            </div>
+            <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.25)" }}>
+              ✗ Brak standardu
+            </div>
+          </div>
+
+          {/* ── Bottom info bar ── */}
+          <div className="absolute bottom-0 left-0 right-0 px-5 py-3 flex items-center justify-between" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)" }}>
+            <span className="text-[10px] text-white/70 font-medium">Kuchenka mikrofalowa 20L · zdjęcie przed LuMirAI</span>
+            <span className="text-[10px] font-semibold text-red-400">Allegro ✗</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Linia podziału ── */}
+      <div className="absolute top-0 bottom-0 w-0.5 z-10" style={{ left: `${pos}%`, background: "rgba(255,255,255,0.85)", boxShadow: "0 0 12px rgba(0,0,0,0.2)" }} />
+
+      {/* ── Uchwyt ── */}
       <div
-        className="absolute top-1/2 z-20 -translate-y-1/2 -translate-x-1/2 w-11 h-11 rounded-full bg-white shadow-2xl flex items-center justify-center"
-        style={{ left: `${pos}%`, cursor: "col-resize" }}
+        className="absolute top-1/2 z-20 -translate-y-1/2 -translate-x-1/2 w-12 h-12 rounded-full shadow-2xl flex items-center justify-center"
+        style={{ left: `${pos}%`, cursor: "col-resize", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}
       >
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2.5}>
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2.5}>
           <path d="M9 18l-6-6 6-6M15 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
@@ -672,30 +749,86 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── BEFORE / AFTER ───────────────────────────────────── */}
-      <section className="py-40 px-6 bg-white">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16" data-animate>
-            <p className="eyebrow">Zdjęcia produktowe AI</p>
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 tracking-tight mb-4">
-              Masz 10–15 sekund.<br />
-              <span style={{ background: "linear-gradient(135deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                Każdy piksel musi pracować.
-              </span>
-            </h2>
-            <p className="text-gray-500 max-w-xl mx-auto">
-              AI usuwa tło, czyści zdjęcia i przygotowuje je zgodnie ze standardami każdego marketplace.
-            </p>
+      {/* ── BEFORE / AFTER OFFER TRANSFORMATION ───────────────── */}
+      <section className="py-32 md:py-40 px-6 bg-slate-950 text-white overflow-hidden">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid lg:grid-cols-[0.92fr_1.08fr] gap-12 lg:gap-16 items-start">
+            <div data-animate>
+              <p className="eyebrow text-emerald-300">Przed i po LuMirAI</p>
+              <h2 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-5">
+                Z chaotycznych danych do oferty gotowej na marketplace.
+              </h2>
+              <p className="text-slate-300 text-lg leading-relaxed mb-8">
+                Ten sam produkt: kuchenka mikrofalowa. LuMirAI porządkuje tytuł, opis produktu, atrybuty produktu i zdjęcia produktowe tak, żeby klient widział komplet, a nie surowy import.
+              </p>
+
+              <div className="grid gap-4">
+                {[
+                  {
+                    label: "Tytuł produktu",
+                    before: "Kuchenka mikrofalowa MW-20 srebrna",
+                    after: "Kuchenka mikrofalowa 20L 700W Srebrna Timer LED",
+                    note: "31 / 75 znaków → 55 / 75 znaków",
+                  },
+                  {
+                    label: "Opis produktu",
+                    before: "Mikrofala 20L. Kolor srebrny. Moc 700W. Timer. Talerz szklany. Do kuchni.",
+                    after: "Szybkie podgrzewanie i rozmrażanie w kompaktowej kuchence 20 l. Moc 700 W, czytelny panel LED i timer pomagają przygotować codzienne posiłki bez zgadywania ustawień.",
+                    note: "Surowe dane → opis sprzedażowy z benefitami",
+                  },
+                  {
+                    label: "Atrybuty produktu",
+                    before: "Braki: pojemność, moc, sterowanie, średnica talerza, gwarancja.",
+                    after: "Pojemność: 20 l · Moc: 700 W · Kolor: srebrny · Sterowanie: elektroniczne · Talerz: 25.5 cm · Gwarancja: 24 mies.",
+                    note: "Braki → komplet pól do walidacji",
+                  },
+                  {
+                    label: "Zdjęcia produktowe",
+                    before: "Zdjęcie z kuchni, kafelki w tle, nierówne światło.",
+                    after: "Białe tło RGB 255, produkt wycentrowany, czysty cień i format gotowy pod miniaturę.",
+                    note: "Zdjęcie robocze → marketplace-ready",
+                  },
+                ].map((item, idx) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5"
+                    data-animate
+                    data-animate-delay={String(Math.min(idx + 1, 5)) as "1" | "2" | "3" | "4" | "5"}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h3 className="text-white font-semibold">{item.label}</h3>
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-emerald-300">{item.note}</span>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2">PRZED</div>
+                        <p className="text-sm leading-relaxed text-slate-400">{item.before}</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300 mb-2">PO LUMIRAI</div>
+                        <p className="text-sm leading-relaxed text-slate-100">{item.after}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="lg:sticky lg:top-28" data-animate data-animate-delay="2">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Zdjęcie produktu</p>
+                  <p className="text-sm text-slate-300">Animacja automatyczna · przeciągnij suwak</p>
+                </div>
+                <div className="hidden sm:flex flex-wrap justify-end gap-2">
+                  {["RGB 255", "białe tło", "miniatura Allegro"].map(label => (
+                    <span key={label} className="px-3 py-1 rounded-full text-[11px] border border-emerald-400/25 text-emerald-200 bg-emerald-400/10">{label}</span>
+                  ))}
+                </div>
+              </div>
+              <BeforeAfterSlider />
+            </div>
           </div>
-          <div className="flex flex-wrap justify-center gap-2 mb-10" data-animate data-animate-delay="1">
-            {["Usuwanie tła", "Białe tło", "Standard marketplace", "Cichy kadr", "Auto-retusz"].map(label => (
-              <span key={label} className="px-3 py-1.5 rounded-full text-xs font-medium border border-indigo-200 text-indigo-600 bg-indigo-50">{label}</span>
-            ))}
-          </div>
-          <p className="text-center text-gray-400 text-xs mb-4" data-animate data-animate-delay="2">
-            Animacja automatyczna · przeciągnij suwak aby sterować
-          </p>
-          <div data-animate data-animate-delay="2"><BeforeAfterSlider /></div>
         </div>
       </section>
 
