@@ -14,9 +14,13 @@ test("LuMir brand assets use the new LM mark", () => {
   for (const file of [path.join(publicDir, "lumir-icon.svg"), path.join(appDir, "icon.svg")]) {
     const svg = fs.readFileSync(file, "utf8");
     assert.match(svg, /data-brand="lumir-logo"/);
+    assert.match(svg, /data-part="logo-border"/);
     assert.match(svg, /data-part="lm-monogram"/);
     assert.match(svg, /data-part="purple-dot"/);
+    assert.match(svg, /fill="#f8fafc"/);
+    assert.match(svg, /stroke="#111827"/);
     assert.doesNotMatch(svg, /data-old-l-shape/);
+    assert.doesNotMatch(svg, /<rect width="100" height="100" rx="22" fill="#050509"/);
   }
 });
 
