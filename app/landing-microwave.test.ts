@@ -36,3 +36,11 @@ test("landing is wired for exact microwave photo assets", () => {
     assert.equal(fs.existsSync(path.resolve("public", "landing", file)), true, `${file} missing`);
   }
 });
+
+test("landing hero has isolated fluid background and cursor glow", () => {
+  assert.match(page, /function HeroFluidBackground/);
+  assert.match(page, /hero-fluid-section/);
+  assert.match(page, /cursor-glow/);
+  assert.match(page, /handleHeroPointerMove/);
+  assert.match(page, /linear-gradient\(120deg, #1cc8ff/);
+});

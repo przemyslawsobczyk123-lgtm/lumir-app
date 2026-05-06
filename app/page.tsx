@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties, PointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
@@ -38,6 +39,120 @@ function useScrollReveal() {
 /* ─────────────────────────────────────────────────────────────
    Inline SVG icons
 ───────────────────────────────────────────────────────────── */
+type HeroFluidStyle = CSSProperties & {
+  "--mx": string;
+  "--my": string;
+  "--x": string;
+  "--y": string;
+};
+
+const HERO_FLUID_STYLE: HeroFluidStyle = {
+  "--mx": "50%",
+  "--my": "50%",
+  "--x": "50%",
+  "--y": "50%",
+  background:
+    "radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.18), transparent 0 8%, transparent 24%), radial-gradient(circle at calc(var(--mx) - 10%) calc(var(--my) + 8%), rgba(0,245,212,.75), transparent 0 15%, transparent 34%), radial-gradient(circle at calc(var(--mx) + 12%) calc(var(--my) - 8%), rgba(255,44,195,.85), transparent 0 16%, transparent 36%), linear-gradient(120deg, #1cc8ff 0%, #2133f3 34%, #7a00b8 66%, #ff19bc 100%)",
+};
+
+function useHeroFluidCursor() {
+  const heroRef = useRef<HTMLElement>(null);
+  const target = useRef({ x: 0, y: 0 });
+  const current = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const heroEl = heroRef.current;
+    if (!heroEl) return;
+    const heroNode: HTMLElement = heroEl;
+
+    function centerGlow() {
+      const rect = heroNode.getBoundingClientRect();
+      target.current = { x: rect.width / 2, y: rect.height / 2 };
+      current.current = target.current;
+      heroNode.style.setProperty("--mx", "50%");
+      heroNode.style.setProperty("--my", "50%");
+      heroNode.style.setProperty("--x", `${current.current.x}px`);
+      heroNode.style.setProperty("--y", `${current.current.y}px`);
+    }
+
+    centerGlow();
+    let frame = 0;
+    function animateGlow() {
+      current.current = {
+        x: current.current.x + (target.current.x - current.current.x) * 0.12,
+        y: current.current.y + (target.current.y - current.current.y) * 0.12,
+      };
+      heroNode.style.setProperty("--x", `${current.current.x}px`);
+      heroNode.style.setProperty("--y", `${current.current.y}px`);
+      frame = requestAnimationFrame(animateGlow);
+    }
+
+    frame = requestAnimationFrame(animateGlow);
+    window.addEventListener("resize", centerGlow);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", centerGlow);
+    };
+  }, []);
+
+  function handleHeroPointerMove(event: PointerEvent<HTMLElement>) {
+    const hero = heroRef.current;
+    if (!hero) return;
+    const rect = hero.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    target.current = { x, y };
+    hero.style.setProperty("--mx", `${(x / rect.width) * 100}%`);
+    hero.style.setProperty("--my", `${(y / rect.height) * 100}%`);
+  }
+
+  return { heroRef, handleHeroPointerMove };
+}
+
+function HeroFluidBackground() {
+  return (
+    <>
+      <div
+        className="hero-fluid-field pointer-events-none absolute -inset-[18%] z-0 opacity-[0.92]"
+        style={{
+          background:
+            "radial-gradient(ellipse at 12% 18%, rgba(0,255,255,.95), transparent 0 21%, transparent 38%), radial-gradient(ellipse at 76% 20%, rgba(255,43,202,.9), transparent 0 20%, transparent 42%), radial-gradient(ellipse at 72% 72%, rgba(0,206,255,.9), transparent 0 22%, transparent 44%), radial-gradient(ellipse at 28% 78%, rgba(255,0,208,.72), transparent 0 18%, transparent 38%), radial-gradient(ellipse at 48% 48%, rgba(72,35,255,.9), transparent 0 30%, transparent 52%)",
+          filter: "blur(54px) saturate(1.35)",
+          animation: "heroFluid 12s ease-in-out infinite alternate",
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at 76% 42%, rgba(24,0,62,.56), transparent 0 24%, transparent 42%), linear-gradient(168deg, transparent 0 42%, rgba(20,0,62,.42) 43% 62%, transparent 63%), rgba(255,255,255,.10)",
+          backdropFilter: "blur(2px) saturate(1.1)",
+        }}
+      />
+      <div
+        className="cursor-glow pointer-events-none absolute z-[1] h-[320px] w-[320px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 mix-blend-screen transition-all duration-200 group-hover/hero:h-[380px] group-hover/hero:w-[380px] group-hover/hero:opacity-100"
+        style={{
+          left: "var(--x)",
+          top: "var(--y)",
+          background:
+            "radial-gradient(circle, rgba(255,255,255,.34) 0 4%, transparent 9%), radial-gradient(circle, rgba(0,245,255,.95), rgba(0,117,255,.55) 22%, rgba(255,40,205,.55) 46%, transparent 70%)",
+          filter: "blur(22px) saturate(1.9) contrast(1.1)",
+        }}
+      />
+      <style jsx global>{`
+        @keyframes heroFluid {
+          0% { transform: translate3d(-2%, -2%, 0) scale(1) rotate(0deg); }
+          50% { transform: translate3d(3%, 1%, 0) scale(1.08) rotate(6deg); }
+          100% { transform: translate3d(-1%, 3%, 0) scale(1.12) rotate(-4deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .hero-fluid-field { animation: none !important; }
+        }
+      `}</style>
+    </>
+  );
+}
+
 function IconSparkle({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
@@ -687,6 +802,7 @@ function BeforeAfterSlider() {
 ───────────────────────────────────────────────────────────── */
 export default function Landing() {
   useScrollReveal();
+  const { heroRef, handleHeroPointerMove } = useHeroFluidCursor();
 
   return (
     <div className="min-h-screen bg-white text-gray-900 overflow-x-hidden relative">
@@ -752,15 +868,15 @@ export default function Landing() {
       </nav>
 
       {/* ── HERO ─────────────────────────────────────────────── */}
-      <section id="hero" className="relative min-h-screen flex items-center px-6 pt-20 overflow-hidden">
+      <section
+        id="hero"
+        ref={heroRef}
+        onPointerMove={handleHeroPointerMove}
+        className="hero-fluid-section group/hero relative isolate min-h-screen flex items-center px-6 pt-20 overflow-hidden"
+        style={HERO_FLUID_STYLE}
+      >
 
-        {/* Bokeh orbs — softer on white bg */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute w-[650px] h-[650px] rounded-full" style={{ background: "radial-gradient(circle, rgba(139,92,246,0.14) 0%, transparent 65%)", top: "-220px", left: "-180px", filter: "blur(80px)" }} />
-          <div className="absolute w-[520px] h-[520px] rounded-full" style={{ background: "radial-gradient(circle, rgba(249,115,22,0.10) 0%, transparent 65%)", top: "80px", right: "-120px", filter: "blur(100px)" }} />
-          <div className="absolute w-[420px] h-[420px] rounded-full" style={{ background: "radial-gradient(circle, rgba(236,72,153,0.09) 0%, transparent 65%)", bottom: "-60px", left: "35%", filter: "blur(90px)" }} />
-          <div className="absolute w-[280px] h-[280px] rounded-full" style={{ background: "radial-gradient(circle, rgba(99,102,241,0.11) 0%, transparent 65%)", top: "45%", left: "55%", filter: "blur(60px)" }} />
-        </div>
+        <HeroFluidBackground />
 
         <div className="relative z-10 max-w-6xl mx-auto w-full flex flex-col lg:flex-row items-center justify-between gap-16 py-24">
 
