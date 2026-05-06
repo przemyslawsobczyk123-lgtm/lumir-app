@@ -38,6 +38,17 @@ test("landing before-after sliders use full range professional handle", () => {
   assert.doesNotMatch(page, /next <= 18/);
 });
 
+test("landing comparison sliders auto-animate and pause after manual drag", () => {
+  assert.match(page, /const autoDirection = useRef/);
+  assert.match(page, /const pauseAutoUntil = useRef/);
+  assert.match(page, /function animateSlider/);
+  assert.match(page, /requestAnimationFrame\(animateSlider\)/);
+  assert.match(page, /pauseAutoUntil\.current = performance\.now\(\) \+ 3200/);
+  assert.match(page, /if \(dragging\.current \|\| time < pauseAutoUntil\.current\)/);
+  assert.match(page, /next >= 100/);
+  assert.match(page, /next <= 0/);
+});
+
 test("landing photo comparison uses the same fixed-layer slider as text sections", () => {
   assert.doesNotMatch(page, /<BeforeAfterSlider \/>/);
   assert.match(page, /<CompareSlider before=\{item\.before\} after=\{item\.after\} variant=\{item\.variant\}/);

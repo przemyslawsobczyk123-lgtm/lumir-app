@@ -580,11 +580,47 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
   const [pos, setPos] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const autoDirection = useRef(1);
+  const pauseAutoUntil = useRef(0);
   const heightClass = variant === "description" ? "h-[430px]" : variant === "attributes" ? "h-[390px]" : variant === "photos" ? "h-[430px]" : "h-[300px]";
   const sliderStyle: CompareSliderStyle = {
     "--split": `${pos}%`,
     "--handle-x": `clamp(24px, ${pos}%, calc(100% - 24px))`,
   };
+
+  useEffect(() => {
+    let frame = 0;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    function animateSlider(time: number) {
+      if (dragging.current || time < pauseAutoUntil.current) {
+        frame = requestAnimationFrame(animateSlider);
+        return;
+      }
+
+      if (!reduceMotion.matches) {
+        setPos((previous) => {
+          const next = previous + 0.16 * autoDirection.current;
+          if (next >= 100) {
+            autoDirection.current = -1;
+            pauseAutoUntil.current = time + 900;
+            return 100;
+          }
+          if (next <= 0) {
+            autoDirection.current = 1;
+            pauseAutoUntil.current = time + 900;
+            return 0;
+          }
+          return next;
+        });
+      }
+
+      frame = requestAnimationFrame(animateSlider);
+    }
+
+    frame = requestAnimationFrame(animateSlider);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   function updateFromPointer(clientX: number) {
     if (!containerRef.current) return;
@@ -593,6 +629,7 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
 
   function startDrag(event: PointerEvent<HTMLDivElement>) {
     dragging.current = true;
+    pauseAutoUntil.current = performance.now() + 3200;
     event.currentTarget.setPointerCapture(event.pointerId);
     updateFromPointer(event.clientX);
   }
@@ -604,6 +641,7 @@ function CompareSlider({ before, after, variant }: { before: CompareContent; aft
 
   function stopDrag(event: PointerEvent<HTMLDivElement>) {
     dragging.current = false;
+    pauseAutoUntil.current = performance.now() + 3200;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
