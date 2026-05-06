@@ -29,6 +29,21 @@ test("landing uses draggable before-after sliders for each artifact", () => {
   }
 });
 
+test("landing before-after sliders use full range professional handle", () => {
+  assert.match(page, /function getSliderPercentFromClientX/);
+  assert.match(page, /Math\.max\(0, Math\.min\(100/);
+  assert.match(page, /compare-slider-handle/);
+  assert.match(page, /--handle-x/);
+  assert.doesNotMatch(page, /next >= 82/);
+  assert.doesNotMatch(page, /next <= 18/);
+});
+
+test("landing photo comparison uses the same fixed-layer slider as text sections", () => {
+  assert.doesNotMatch(page, /<BeforeAfterSlider \/>/);
+  assert.match(page, /<CompareSlider before=\{item\.before\} after=\{item\.after\} variant=\{item\.variant\}/);
+  assert.match(page, /className="absolute inset-0 bg-white"/);
+});
+
 test("landing is wired for exact microwave photo assets", () => {
   assert.match(page, /\/landing\/microwave-before\.png/);
   assert.match(page, /\/landing\/microwave-after\.png/);
@@ -43,4 +58,14 @@ test("landing hero has isolated fluid background and cursor glow", () => {
   assert.match(page, /cursor-glow/);
   assert.match(page, /handleHeroPointerMove/);
   assert.match(page, /linear-gradient\(120deg, #1cc8ff/);
+});
+
+test("landing hero uses wave background with readable foreground", () => {
+  for (const token of ["hero-wave-band", "hero-orbit-ring", "hero-dot-grid", "hero-ring-row"]) {
+    assert.match(page, new RegExp(token));
+  }
+  assert.match(page, /text-white drop-shadow/);
+  assert.match(page, /text-white\/85/);
+  assert.match(page, /border-white\/45/);
+  assert.match(page, /bg-slate-950\/30/);
 });

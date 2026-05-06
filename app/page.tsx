@@ -52,7 +52,7 @@ const HERO_FLUID_STYLE: HeroFluidStyle = {
   "--x": "50%",
   "--y": "50%",
   background:
-    "radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.18), transparent 0 8%, transparent 24%), radial-gradient(circle at calc(var(--mx) - 10%) calc(var(--my) + 8%), rgba(0,245,212,.75), transparent 0 15%, transparent 34%), radial-gradient(circle at calc(var(--mx) + 12%) calc(var(--my) - 8%), rgba(255,44,195,.85), transparent 0 16%, transparent 36%), linear-gradient(120deg, #1cc8ff 0%, #2133f3 34%, #7a00b8 66%, #ff19bc 100%)",
+    "radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.22), transparent 0 7%, transparent 22%), radial-gradient(circle at calc(var(--mx) - 12%) calc(var(--my) + 10%), rgba(0,210,255,.72), transparent 0 16%, transparent 36%), radial-gradient(circle at calc(var(--mx) + 14%) calc(var(--my) - 8%), rgba(255,49,195,.78), transparent 0 17%, transparent 38%), linear-gradient(120deg, #1cc8ff 0%, #2563eb 29%, #4f22d8 53%, #a21caf 76%, #ff2db4 100%)",
 };
 
 function useHeroFluidCursor() {
@@ -113,24 +113,62 @@ function HeroFluidBackground() {
   return (
     <>
       <div
-        className="hero-fluid-field pointer-events-none absolute -inset-[18%] z-0 opacity-[0.92]"
+        className="hero-fluid-field pointer-events-none absolute -inset-[18%] z-0 opacity-95"
         style={{
           background:
-            "radial-gradient(ellipse at 12% 18%, rgba(0,255,255,.95), transparent 0 21%, transparent 38%), radial-gradient(ellipse at 76% 20%, rgba(255,43,202,.9), transparent 0 20%, transparent 42%), radial-gradient(ellipse at 72% 72%, rgba(0,206,255,.9), transparent 0 22%, transparent 44%), radial-gradient(ellipse at 28% 78%, rgba(255,0,208,.72), transparent 0 18%, transparent 38%), radial-gradient(ellipse at 48% 48%, rgba(72,35,255,.9), transparent 0 30%, transparent 52%)",
-          filter: "blur(54px) saturate(1.35)",
+            "radial-gradient(ellipse at 11% 18%, rgba(0,225,255,.92), transparent 0 20%, transparent 40%), radial-gradient(ellipse at 83% 18%, rgba(255,39,194,.92), transparent 0 24%, transparent 46%), radial-gradient(ellipse at 78% 76%, rgba(0,194,255,.85), transparent 0 20%, transparent 44%), radial-gradient(ellipse at 30% 77%, rgba(255,0,208,.75), transparent 0 18%, transparent 39%), radial-gradient(ellipse at 52% 48%, rgba(62,42,255,.9), transparent 0 32%, transparent 56%)",
+          filter: "blur(42px) saturate(1.45)",
           animation: "heroFluid 12s ease-in-out infinite alternate",
         }}
       />
       <div
-        className="pointer-events-none absolute inset-0 z-0"
+        className="hero-wave-band pointer-events-none absolute left-[-12%] right-[-12%] top-[34%] z-[1] h-[38%]"
+        style={{
+          transform: "rotate(-9deg)",
+          background:
+            "linear-gradient(90deg, rgba(8,18,74,.70), rgba(38,16,109,.78) 45%, rgba(85,18,132,.68) 74%, rgba(151,18,129,.54))",
+          boxShadow: "0 28px 80px rgba(20,0,80,.38), inset 0 1px 0 rgba(255,255,255,.12)",
+          filter: "blur(1px)",
+        }}
+      />
+      <div
+        className="hero-orbit-ring pointer-events-none absolute left-[10%] top-[12%] z-[2] h-36 w-36 rounded-full opacity-75"
+        style={{
+          background: "repeating-radial-gradient(circle, rgba(255,255,255,.42) 0 2px, transparent 2px 8px)",
+          maskImage: "radial-gradient(circle, transparent 0 42%, #000 43% 72%, transparent 73%)",
+          WebkitMaskImage: "radial-gradient(circle, transparent 0 42%, #000 43% 72%, transparent 73%)",
+        }}
+      />
+      <div
+        className="hero-orbit-ring pointer-events-none absolute right-[30%] top-[34%] z-[2] h-56 w-56 rounded-full opacity-65"
+        style={{
+          background: "repeating-radial-gradient(circle, rgba(255,255,255,.36) 0 2px, transparent 2px 11px)",
+          maskImage: "radial-gradient(circle, transparent 0 34%, #000 35% 72%, transparent 73%)",
+          WebkitMaskImage: "radial-gradient(circle, transparent 0 34%, #000 35% 72%, transparent 73%)",
+        }}
+      />
+      <div
+        className="hero-dot-grid pointer-events-none absolute right-[6%] top-[24%] z-[2] h-44 w-44 opacity-85"
+        style={{
+          backgroundImage: "radial-gradient(circle, rgba(255,255,255,.92) 0 3px, transparent 4px)",
+          backgroundSize: "34px 34px",
+        }}
+      />
+      <div className="hero-ring-row pointer-events-none absolute bottom-[15%] left-[34%] z-[2] flex gap-6 opacity-70">
+        {Array.from({ length: 7 }).map((_, index) => (
+          <span key={index} className="h-5 w-5 rounded-full border-2 border-white/45" />
+        ))}
+      </div>
+      <div
+        className="pointer-events-none absolute inset-0 z-[3]"
         style={{
           background:
-            "radial-gradient(ellipse at 76% 42%, rgba(24,0,62,.56), transparent 0 24%, transparent 42%), linear-gradient(168deg, transparent 0 42%, rgba(20,0,62,.42) 43% 62%, transparent 63%), rgba(255,255,255,.10)",
+            "linear-gradient(90deg, rgba(5,10,45,.30) 0%, rgba(5,10,45,.18) 42%, rgba(5,10,45,.10) 100%), radial-gradient(ellipse at 68% 46%, rgba(11,0,55,.44), transparent 0 24%, transparent 44%)",
           backdropFilter: "blur(2px) saturate(1.1)",
         }}
       />
       <div
-        className="cursor-glow pointer-events-none absolute z-[1] h-[320px] w-[320px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 mix-blend-screen transition-all duration-200 group-hover/hero:h-[380px] group-hover/hero:w-[380px] group-hover/hero:opacity-100"
+        className="cursor-glow pointer-events-none absolute z-[4] h-[320px] w-[320px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 mix-blend-screen transition-all duration-200 group-hover/hero:h-[380px] group-hover/hero:w-[380px] group-hover/hero:opacity-100"
         style={{
           left: "var(--x)",
           top: "var(--y)",
@@ -285,7 +323,7 @@ function AICard() {
   const demo = DEMOS[demoIdx];
 
   return (
-    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="bg-slate-950/30 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden">
       <div
         className="px-5 py-3 border-b border-white/10 flex items-center justify-between"
         style={{
@@ -294,12 +332,12 @@ function AICard() {
         }}
       >
         <div>
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-0.5">Produkt</div>
+          <div className="text-xs text-white/55 uppercase tracking-wider mb-0.5">Produkt</div>
           <div className="text-white text-sm font-medium">{demo.product}</div>
         </div>
         <div className="text-right">
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-0.5">Kategoria</div>
-          <div className="text-indigo-400 text-xs">{demo.category}</div>
+          <div className="text-xs text-white/55 uppercase tracking-wider mb-0.5">Kategoria</div>
+          <div className="text-cyan-200 text-xs">{demo.category}</div>
         </div>
       </div>
 
@@ -336,7 +374,7 @@ function AICard() {
 
       <div className="px-5 py-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-xs text-slate-500 uppercase tracking-wider">Wynik AI</div>
+          <div className="text-xs text-white/55 uppercase tracking-wider">Wynik AI</div>
           {phase === "done" && (
             <span className="text-[10px] text-green-400 font-medium flex items-center gap-1">
               <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}>
@@ -432,7 +470,7 @@ function MicrowaveIllustration({ clean }: { clean: boolean }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   BeforeAfterSlider — auto-plays, drag to control
+   CompareSlider - full range before/after reveal
 ───────────────────────────────────────────────────────────── */
 const MICROWAVE_PHOTOS = {
   before: "/landing/microwave-before.png",
@@ -474,9 +512,22 @@ type CompareContent = {
 
 function ComparePanel({ content, tone, variant }: { content: CompareContent; tone: "before" | "after"; variant: "title" | "description" | "attributes" | "photos" }) {
   if (variant === "photos") {
+    const isAfter = tone === "after";
     return (
       <div className="absolute inset-0 bg-white">
-        <ProductPhoto variant={tone === "after" ? "after" : "before"} />
+        <ProductPhoto variant={isAfter ? "after" : "before"} />
+        <div className="pointer-events-none absolute left-4 top-4 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] shadow-sm" style={{ background: isAfter ? "#ccfbf1" : "rgba(15,23,42,.68)", color: isAfter ? "#0f766e" : "#fff" }}>
+          {content.badge}
+        </div>
+        {isAfter && (
+          <div className="pointer-events-none absolute right-4 top-4 flex flex-col items-end gap-1.5">
+            {["RGB 255", "2560x2560", "Gotowe Allegro"].map((label) => (
+              <span key={label} className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[9px] font-bold text-teal-700 shadow-sm">
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -515,49 +566,73 @@ function ComparePanel({ content, tone, variant }: { content: CompareContent; ton
   );
 }
 
+function getSliderPercentFromClientX(rect: DOMRect, clientX: number) {
+  const x = clientX - rect.left;
+  return Math.max(0, Math.min(100, Math.round((x / rect.width) * 100)));
+}
+
+type CompareSliderStyle = CSSProperties & {
+  "--split": string;
+  "--handle-x": string;
+};
+
 function CompareSlider({ before, after, variant }: { before: CompareContent; after: CompareContent; variant: "title" | "description" | "attributes" | "photos" }) {
-  const [pos, setPos] = useState(46);
+  const [pos, setPos] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const heightClass = variant === "description" ? "h-[430px]" : variant === "attributes" ? "h-[390px]" : variant === "photos" ? "h-[430px]" : "h-[300px]";
+  const sliderStyle: CompareSliderStyle = {
+    "--split": `${pos}%`,
+    "--handle-x": `clamp(24px, ${pos}%, calc(100% - 24px))`,
+  };
 
-  useEffect(() => {
-    function onMove(e: MouseEvent | TouchEvent) {
-      if (!dragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-      const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-      setPos(Math.round((x / rect.width) * 100));
+  function updateFromPointer(clientX: number) {
+    if (!containerRef.current) return;
+    setPos(getSliderPercentFromClientX(containerRef.current.getBoundingClientRect(), clientX));
+  }
+
+  function startDrag(event: PointerEvent<HTMLDivElement>) {
+    dragging.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateFromPointer(event.clientX);
+  }
+
+  function moveDrag(event: PointerEvent<HTMLDivElement>) {
+    if (!dragging.current) return;
+    updateFromPointer(event.clientX);
+  }
+
+  function stopDrag(event: PointerEvent<HTMLDivElement>) {
+    dragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    function onUp() { dragging.current = false; }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onUp);
-    };
-  }, []);
+  }
 
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.10)] ${heightClass}`}
-      style={{ cursor: "col-resize" }}
-      onMouseDown={() => { dragging.current = true; }}
-      onTouchStart={() => { dragging.current = true; }}
+      className={`compare-slider relative overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.10)] ${heightClass}`}
+      style={sliderStyle}
+      onPointerDown={startDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={stopDrag}
+      onPointerCancel={stopDrag}
+      role="slider"
+      aria-label="Porownanie przed i po LuMirAI"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pos}
     >
       <ComparePanel content={after} tone="after" variant={variant} />
-      <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}>
+      <div className="absolute inset-0 overflow-hidden will-change-[clip-path]" style={{ clipPath: "inset(0 calc(100% - var(--split)) 0 0)" }}>
         <ComparePanel content={before} tone="before" variant={variant} />
       </div>
-      <div className="absolute inset-y-0 z-10 w-0.5 bg-slate-900 shadow-[0_0_18px_rgba(15,23,42,0.35)]" style={{ left: `${pos}%` }} />
-      <div className="absolute top-1/2 z-20 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-xl" style={{ left: `${pos}%` }}>
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.5}>
-          <path d="M9 18l-6-6 6-6M15 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+      <div className="pointer-events-none absolute inset-y-0 z-20 w-[2px] bg-gradient-to-b from-transparent via-slate-950 to-transparent shadow-[0_0_26px_rgba(15,23,42,0.35)]" style={{ left: "var(--split)" }} />
+      <div className="compare-slider-handle pointer-events-none absolute top-1/2 z-30 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-white/95 text-slate-600 shadow-[0_18px_45px_rgba(15,23,42,0.22)] ring-8 ring-white/35 backdrop-blur-xl transition-transform duration-200" style={{ left: "var(--handle-x)" }}>
+        <span className="absolute inset-2 rounded-full border border-slate-100" />
+        <svg viewBox="0 0 24 24" className="relative h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2.5}>
+          <path d="M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
     </div>
@@ -638,168 +713,7 @@ const TRANSFORMATION_SECTIONS = [
   },
 ];
 
-function BeforeAfterSlider() {
-  const [pos, setPos]   = useState(22);
-  const containerRef    = useRef<HTMLDivElement>(null);
-  const dragging        = useRef(false);
-  const animDir         = useRef(1);   // 1 = right (revealing PO), -1 = left
-  const pauseUntil      = useRef(0);
 
-  /* Auto-animation via requestAnimationFrame */
-  useEffect(() => {
-    let rafId: number;
-    function frame(time: number) {
-      if (!dragging.current && time > pauseUntil.current) {
-        setPos(prev => {
-          const next = prev + 0.22 * animDir.current;
-          if (next >= 82) { animDir.current = -1; pauseUntil.current = time + 2200; return 82; }
-          if (next <= 18) { animDir.current =  1; pauseUntil.current = time + 2200; return 18; }
-          return next;
-        });
-      }
-      rafId = requestAnimationFrame(frame);
-    }
-    rafId = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
-  /* Drag handling */
-  useEffect(() => {
-    function onMove(e: MouseEvent | TouchEvent) {
-      if (!dragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-      const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-      setPos(Math.round((x / rect.width) * 100));
-    }
-    function onUp() { dragging.current = false; }
-    window.addEventListener("mousemove",  onMove);
-    window.addEventListener("mouseup",    onUp);
-    window.addEventListener("touchmove",  onMove, { passive: true });
-    window.addEventListener("touchend",   onUp);
-    return () => {
-      window.removeEventListener("mousemove",  onMove);
-      window.removeEventListener("mouseup",    onUp);
-      window.removeEventListener("touchmove",  onMove);
-      window.removeEventListener("touchend",   onUp);
-    };
-  }, []);
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative rounded-2xl overflow-hidden select-none shadow-xl"
-      style={{ cursor: "col-resize", height: "480px", border: "1px solid #e5e7eb" }}
-      onMouseDown={() => { dragging.current = true; }}
-      onTouchStart={() => { dragging.current = true; }}
-    >
-
-      {/* ═══════════════════════════════════════════════════
-          PO LUMIRAI — białe tło RGB 255, standard Allegro
-      ═══════════════════════════════════════════════════ */}
-      <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ background: "#ffffff" }}>
-        {/* Bardzo subtelna winieta */}
-        <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 90% 90% at 50% 50%, transparent 60%, rgba(0,0,0,0.04) 100%)" }} />
-        {/* Cień produktu */}
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-36 h-6 rounded-full" style={{ background: "#000", opacity: 0.08, filter: "blur(18px)" }} />
-
-        <ProductPhoto variant="after" />
-
-        {/* ── Specs overlay (top-right) ── */}
-        <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5 pointer-events-none">
-          <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}>
-            ✓ RGB 255,255,255
-          </div>
-          <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}>
-            ✓ 2560×2560 px
-          </div>
-          <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.25)" }}>
-            ✓ Wycięta ramka
-          </div>
-        </div>
-
-        {/* ── PO LUMIRAI badge ── */}
-        <div className="absolute top-4 left-4 text-[9px] font-bold px-2.5 py-1 rounded-full tracking-widest" style={{ background: "linear-gradient(135deg,#059669,#10b981)", color: "#fff" }}>
-          PO LUMIRAI
-        </div>
-
-        {/* ── Bottom info bar ── */}
-        <div className="absolute bottom-0 left-0 right-0 px-5 py-3 flex items-center justify-between" style={{ background: "rgba(255,255,255,0.95)", borderTop: "1px solid #f0fdf4" }}>
-          <span className="text-[10px] text-gray-400 font-medium">Kuchenka mikrofalowa 20L · białe tło po LuMirAI</span>
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-semibold" style={{ color: "#059669" }}>Allegro ✓</span>
-            <span className="text-[10px] font-semibold text-indigo-500">PNG</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ═══════════════════════════════════════════════════
-          PRZED — oryginalne zdjęcie sprzedawcy (kuchnia)
-      ═══════════════════════════════════════════════════ */}
-      <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos}%` }}>
-        <div className="absolute inset-0 flex items-center justify-center" style={{ minWidth: "640px" }}>
-
-          {/* Kuchnia sprzedawcy: tło, szafki, blat i kafelki */}
-          <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#f3f4f6 0%,#d7dce4 46%,#c0a28a 100%)" }} />
-          <div className="absolute left-0 right-0 top-0 h-[30%]" style={{ background: "linear-gradient(180deg,#f8fafc,#dbe2ea)", borderBottom: "1px solid rgba(15,23,42,0.12)" }} />
-          {[0,1,2,3].map(i => (
-            <div key={i} className="absolute top-4 h-24 rounded-b-md" style={{ left: `${5 + i * 23}%`, width: "18%", background: i % 2 ? "#e5e7eb" : "#f8fafc", boxShadow: "inset 0 -10px 22px rgba(15,23,42,0.08)" }} />
-          ))}
-          <div className="absolute left-0 right-0 top-[30%] h-[18%]" style={{ background: "linear-gradient(90deg,#5b4034 0 12%,#a06142 12% 24%,#2f3943 24% 36%,#b8734a 36% 48%,#52392f 48% 60%,#c78356 60% 72%,#374151 72% 84%,#a06142 84% 100%)" }} />
-          <div className="absolute left-0 right-0 bottom-0 h-[35%]" style={{ background: "linear-gradient(180deg,#d3c0aa 0%,#b79c80 100%)" }} />
-          {[0,1,2,3,4].map(i => (
-            <div key={i} className="absolute left-0 right-0" style={{ bottom: `${30 + i*1.3}%`, height: 1, background: "rgba(15,23,42,0.08)" }} />
-          ))}
-          <div className="absolute bottom-[35%] left-1/2 -translate-x-1/2 w-72 h-12 rounded-full" style={{ background: "rgba(15,23,42,0.24)", filter: "blur(14px)" }} />
-          <div className="absolute top-[38%] right-12 w-20 h-20 rounded-full" style={{ background: "rgba(255,255,255,0.22)", filter: "blur(18px)" }} />
-
-          <ProductPhoto variant="before" />
-
-          {/* ── PRZED badge ── */}
-          <div className="absolute top-4 left-4 text-[9px] font-bold px-2.5 py-1 rounded-full tracking-widest" style={{ background: "rgba(0,0,0,0.45)", color: "#fff", backdropFilter: "blur(4px)" }}>
-            PRZED
-          </div>
-
-          {/* ── Problemy z oryginalnym zdjęciem (top-right) ── */}
-          <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5 pointer-events-none">
-            <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.25)" }}>
-              ✗ Kolorowe tło
-            </div>
-            <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.25)" }}>
-              ✗ Nierówne oświetlenie
-            </div>
-            <div className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.25)" }}>
-              ✗ Brak standardu
-            </div>
-          </div>
-
-          {/* ── Bottom info bar ── */}
-          <div className="absolute bottom-0 left-0 right-0 px-5 py-3 flex items-center justify-between" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)" }}>
-            <span className="text-[10px] text-white/70 font-medium">Kuchenka mikrofalowa 20L · zdjęcie przed LuMirAI</span>
-            <span className="text-[10px] font-semibold text-red-400">Allegro ✗</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Linia podziału ── */}
-      <div className="absolute top-0 bottom-0 w-0.5 z-10" style={{ left: `${pos}%`, background: "rgba(255,255,255,0.85)", boxShadow: "0 0 12px rgba(0,0,0,0.2)" }} />
-
-      {/* ── Uchwyt ── */}
-      <div
-        className="absolute top-1/2 z-20 -translate-y-1/2 -translate-x-1/2 w-12 h-12 rounded-full shadow-2xl flex items-center justify-center"
-        style={{ left: `${pos}%`, cursor: "col-resize", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}
-      >
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2.5}>
-          <path d="M9 18l-6-6 6-6M15 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Main page
-───────────────────────────────────────────────────────────── */
 export default function Landing() {
   useScrollReveal();
   const { heroRef, handleHeroPointerMove } = useHeroFluidCursor();
@@ -884,30 +798,30 @@ export default function Landing() {
           <div className="max-w-2xl">
             {/* Badge */}
             <div
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 text-xs font-medium mb-8"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/45 bg-white/90 text-indigo-700 text-xs font-semibold mb-8 shadow-lg shadow-slate-950/10"
               data-animate
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
               Generator ofert zasilany AI
             </div>
 
             {/* H1 */}
             <h1
-              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight mb-6 text-gray-900"
+              className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight mb-6 text-white drop-shadow-[0_5px_26px_rgba(15,23,42,0.45)]"
               data-animate
               data-animate-delay="1"
             >
               Twoje oferty{" "}
               <span style={{ background: "linear-gradient(135deg, #f97316, #fb923c)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>generowane</span>
               <br />
-              <span style={{ background: "linear-gradient(135deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              <span style={{ background: "linear-gradient(135deg, #ffffff, #c4b5fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 przez AI.
               </span>
             </h1>
 
             {/* Subheadline */}
             <p
-              className="text-gray-500 text-lg leading-relaxed mb-10 max-w-xl"
+              className="text-white/85 text-lg leading-relaxed mb-10 max-w-xl drop-shadow-[0_2px_12px_rgba(15,23,42,0.35)]"
               data-animate
               data-animate-delay="2"
             >
@@ -919,24 +833,24 @@ export default function Landing() {
             <div className="flex flex-wrap gap-4 mb-10" data-animate data-animate-delay="3">
               <a
                 href="/register"
-                className="px-8 py-3.5 rounded-xl text-white font-semibold text-sm transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-indigo-500/30"
-                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+                className="px-8 py-3.5 rounded-xl text-white font-semibold text-sm transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-pink-500/30"
+                style={{ background: "linear-gradient(135deg, #ff7a1a, #ff3dbd)" }}
               >
                 Zacznij za darmo →
               </a>
               <button
                 onClick={() => scrollTo("jak-dziala")}
-                className="px-8 py-3.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
+                className="px-8 py-3.5 rounded-xl text-sm font-semibold text-white hover:text-white border border-white/45 hover:border-white/75 hover:bg-white/15 transition-all duration-200 backdrop-blur"
               >
                 Zobacz jak działa ↓
               </button>
             </div>
 
             {/* Trust row */}
-            <div className="flex flex-wrap items-center gap-6 text-gray-500 text-sm" data-animate data-animate-delay="4">
+            <div className="flex flex-wrap items-center gap-6 text-white/85 text-sm drop-shadow-[0_2px_10px_rgba(15,23,42,0.30)]" data-animate data-animate-delay="4">
               {["Bezpłatna rejestracja", "Pierwsze generacje gratis", "Bez karty kredytowej"].map((f) => (
                 <div key={f} className="flex items-center gap-1.5">
-                  <IconCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                  <IconCheck className="w-3.5 h-3.5 text-cyan-200 flex-shrink-0" />
                   {f}
                 </div>
               ))}
@@ -1099,11 +1013,7 @@ export default function Landing() {
                   <p className="mb-3 text-center text-xs font-medium text-slate-400">
                     Przeciagaj suwak: PRZED / PO LUMIRAI
                   </p>
-                  {item.variant === "photos" ? (
-                    <BeforeAfterSlider />
-                  ) : (
-                    <CompareSlider before={item.before} after={item.after} variant={item.variant} />
-                  )}
+                  <CompareSlider before={item.before} after={item.after} variant={item.variant} />
                 </div>
               </div>
             );
