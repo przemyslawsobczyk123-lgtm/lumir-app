@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getProductListPrimaryActions, getProductPaginationWindow } from "./page-layout-helpers.ts";
+import {
+  getProductListPrimaryActions,
+  getProductPaginationWindow,
+  normalizeProductPageSize,
+  PRODUCT_PAGE_SIZE_OPTIONS,
+} from "./page-layout-helpers.ts";
 
 test("product listing primary actions keep only Add product after imports move to sidebar", () => {
   const actions = getProductListPrimaryActions({
@@ -17,4 +22,11 @@ test("product listing primary actions keep only Add product after imports move t
 test("product pagination window keeps current page visible for large result sets", () => {
   assert.deepEqual(getProductPaginationWindow(49, 80), [1, "ellipsis-start", 47, 48, 49, 50, 51, "ellipsis-end", 80]);
   assert.deepEqual(getProductPaginationWindow(1, 3), [1, 2, 3]);
+});
+
+test("product page size options stay bounded for large seller catalogs", () => {
+  assert.deepEqual(PRODUCT_PAGE_SIZE_OPTIONS, [100, 250, 500]);
+  assert.equal(normalizeProductPageSize(250), 250);
+  assert.equal(normalizeProductPageSize(999), 500);
+  assert.equal(normalizeProductPageSize(0), 100);
 });

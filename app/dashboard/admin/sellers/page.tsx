@@ -7,6 +7,8 @@ import {
   ADMIN_SELLERS_PAGE_SIZE,
   buildAdminSellersQuery,
   getAdminSellerPermissionOptions,
+  getAdminSellerPermissionIconPath,
+  getAdminSellersLightViewClasses,
   canEditSellerPermissions,
   canImpersonateSeller,
   isProtectedOwnerSeller,
@@ -33,6 +35,7 @@ type Seller = AdminSellerRow & {
   can_view_admin_sellers: boolean;
   can_impersonate_sellers: boolean;
   can_grant_admin_permissions: boolean;
+  can_view_billing_stats: boolean;
 };
 
 type SellersResponse = {
@@ -164,6 +167,7 @@ function normalizeSeller(seller: Seller): Seller {
     can_view_admin_sellers: boolValue(seller.can_view_admin_sellers),
     can_impersonate_sellers: boolValue(seller.can_impersonate_sellers),
     can_grant_admin_permissions: boolValue(seller.can_grant_admin_permissions),
+    can_view_billing_stats: boolValue(seller.can_view_billing_stats),
   };
 }
 
@@ -218,6 +222,7 @@ function getPermissionPayload(seller: Seller) {
     can_view_admin_sellers: seller.can_view_admin_sellers,
     can_impersonate_sellers: seller.can_impersonate_sellers,
     can_grant_admin_permissions: seller.can_grant_admin_permissions,
+    can_view_billing_stats: seller.can_view_billing_stats,
   };
 }
 
@@ -239,6 +244,7 @@ export default function AdminSellersPage() {
 
   const canGrant = Boolean(currentUser?.can_grant_admin_permissions);
   const hasAccess = canViewAdminSellers(currentUser);
+  const lightClasses = getAdminSellersLightViewClasses();
 
   useEffect(() => {
     let disposed = false;
@@ -404,7 +410,11 @@ export default function AdminSellersPage() {
           impersonatingId !== null ? "cursor-wait opacity-70" : "cursor-pointer"
         }`}
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+          <path d="M10 17l5-5-5-5" />
+          <path d="M15 12H3" />
+        </svg>
         {impersonatingId === seller.id ? copy.impersonating : copy.impersonate}
       </button>
     );
@@ -412,16 +422,16 @@ export default function AdminSellersPage() {
 
   const renderAccountBadges = (seller: Seller) => (
     <div className="flex flex-wrap gap-2">
-      <span className="rounded-full bg-indigo-500/12 px-2.5 py-1 text-xs font-semibold text-indigo-300">
+      <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-700 [html.dark_&]:bg-indigo-500/15 [html.dark_&]:text-indigo-200">
         {seller.role || "seller"}
       </span>
       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        seller.is_active ? "bg-emerald-500/12 text-emerald-300" : "bg-slate-500/12 text-slate-400"
+        seller.is_active ? "bg-emerald-100 text-emerald-700 [html.dark_&]:bg-emerald-500/15 [html.dark_&]:text-emerald-200" : "bg-slate-100 text-slate-600 [html.dark_&]:bg-slate-700/50 [html.dark_&]:text-slate-300"
       }`}>
         {seller.is_active ? copy.active : copy.inactive}
       </span>
       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        boolValue(seller.email_verified) ? "bg-sky-500/12 text-sky-300" : "bg-amber-500/12 text-amber-300"
+        boolValue(seller.email_verified) ? "bg-sky-100 text-sky-700 [html.dark_&]:bg-sky-500/15 [html.dark_&]:text-sky-200" : "bg-amber-100 text-amber-700 [html.dark_&]:bg-amber-500/15 [html.dark_&]:text-amber-200"
       }`}>
         {boolValue(seller.email_verified) ? copy.yes : copy.no}
       </span>
@@ -443,10 +453,8 @@ export default function AdminSellersPage() {
             return (
               <label
                 key={permission.key}
-                className={`group flex min-w-0 items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
-                  locked
-                    ? "cursor-not-allowed border-slate-700/80 bg-slate-950/30 opacity-70"
-                    : "cursor-pointer border-indigo-400/20 bg-indigo-500/5 hover:border-indigo-300/50 hover:bg-indigo-500/10"
+                className={`${locked ? lightClasses.permissionCardLocked : lightClasses.permissionCard} ${
+                  locked ? "cursor-not-allowed" : "cursor-pointer"
                 }`}
               >
                 <input
@@ -464,12 +472,17 @@ export default function AdminSellersPage() {
                   }}
                   className="peer sr-only"
                 />
-                <span className="mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center justify-start rounded-full border border-slate-600 bg-slate-800 px-0.5 transition peer-checked:justify-end peer-checked:border-indigo-300 peer-checked:bg-indigo-500">
-                  <span className="h-3.5 w-3.5 rounded-full bg-white transition" />
+                <span className={lightClasses.permissionIcon} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d={getAdminSellerPermissionIconPath(permission.key)} />
+                  </svg>
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-semibold text-slate-100">{permission.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-4 text-slate-400">{permission.description}</span>
+                <span className="min-w-0 flex-1">
+                  <span className={lightClasses.permissionLabel}>{permission.label}</span>
+                  <span className={lightClasses.permissionDescription}>{permission.description}</span>
+                </span>
+                <span className={lightClasses.switchTrack} aria-hidden="true">
+                  <span className="h-3.5 w-3.5 rounded-full bg-white shadow-sm transition" />
                 </span>
               </label>
             );
@@ -477,13 +490,13 @@ export default function AdminSellersPage() {
         </div>
         <div className="mt-2 min-h-4 text-xs">
           {isProtectedOwnerSeller(seller) && (
-            <span className="text-amber-400">{copy.ownerLocked}</span>
+            <span className="text-amber-600">{copy.ownerLocked}</span>
           )}
           {!canGrant && !isProtectedOwnerSeller(seller) && (
             <span style={{ color: "var(--text-tertiary)" }}>{copy.readOnly}</span>
           )}
           {rowMessage && (
-            <span className={rowMessage.ok ? "text-emerald-400" : "text-rose-400"}>
+            <span className={rowMessage.ok ? "text-emerald-600" : "text-rose-600"}>
               {rowMessage.text}
             </span>
           )}
@@ -497,8 +510,8 @@ export default function AdminSellersPage() {
     const canGoNext = !loading && pagination.hasNextPage;
 
     return (
-      <div className="flex flex-col gap-3 border-t border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-xs text-slate-400">
+      <div className="flex flex-col gap-3 border-t border-[var(--border-default)] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-xs text-[var(--text-tertiary)]">
           {copy.page} {pagination.page} {copy.of} {pagination.totalPages} · {pagination.limit} {copy.perPage} · {copy.results}: {pagination.total}
         </div>
         <div className="flex gap-2">
@@ -509,8 +522,8 @@ export default function AdminSellersPage() {
               if (!canGoPrevious) return;
               goToPage(pagination.page - 1);
             }}
-            className={`rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-100 transition ${
-              canGoPrevious ? "bg-white/5 hover:bg-white/10" : "cursor-not-allowed bg-slate-950/30 opacity-50"
+            className={`rounded-xl border border-[var(--border-default)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition ${
+              canGoPrevious ? "bg-[var(--bg-card)] hover:border-indigo-400/60 hover:bg-[var(--bg-card-hover)] hover:text-indigo-500" : "cursor-not-allowed bg-[var(--bg-input-alt)] opacity-50"
             }`}
           >
             {copy.previous}
@@ -522,8 +535,8 @@ export default function AdminSellersPage() {
               if (!canGoNext) return;
               goToPage(pagination.page + 1);
             }}
-            className={`rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-100 transition ${
-              canGoNext ? "bg-white/5 hover:bg-white/10" : "cursor-not-allowed bg-slate-950/30 opacity-50"
+            className={`rounded-xl border border-[var(--border-default)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition ${
+              canGoNext ? "bg-[var(--bg-card)] hover:border-indigo-400/60 hover:bg-[var(--bg-card-hover)] hover:text-indigo-500" : "cursor-not-allowed bg-[var(--bg-input-alt)] opacity-50"
             }`}
           >
             {copy.next}
@@ -535,47 +548,47 @@ export default function AdminSellersPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <div className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.96),rgba(15,23,42,0.98))] p-6 shadow-2xl shadow-indigo-950/20">
+      <div className={lightClasses.hero}>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.26em] text-indigo-300">
+            <div className={lightClasses.heroEyebrow}>
               Admin
             </div>
-            <h1 className="mt-3 text-3xl font-semibold text-white">{copy.title}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{copy.subtitle}</p>
+            <h1 className={lightClasses.heroTitle}>{copy.title}</h1>
+            <p className={lightClasses.heroSubtitle}>{copy.subtitle}</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:min-w-[280px]">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{copy.results}</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{pagination.total}</div>
+            <div className={lightClasses.statCard}>
+              <div className={lightClasses.statLabel}>{copy.results}</div>
+              <div className={lightClasses.statValue}>{pagination.total}</div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{copy.shown}</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{sellers.length}</div>
+            <div className={lightClasses.statCard}>
+              <div className={lightClasses.statLabel}>{copy.shown}</div>
+              <div className={lightClasses.statValue}>{sellers.length}</div>
             </div>
           </div>
         </div>
       </div>
 
       {!hasAccess && !loading ? (
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-100">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
           {copy.noAccess}
         </div>
       ) : null}
 
       {error ? (
-        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-5 text-sm text-rose-100">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-800">
           {error}
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-[1.5rem] shadow-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+      <section className={lightClasses.panel}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             submitSearch();
           }}
-          className="flex flex-col gap-3 border-b border-white/10 p-4 lg:flex-row lg:items-center lg:justify-between"
+          className={lightClasses.toolbar}
         >
           <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
             <input
@@ -583,7 +596,7 @@ export default function AdminSellersPage() {
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder={copy.searchPlaceholder}
-              className="min-h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/40 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-indigo-300/70 focus:bg-slate-950/70"
+              className={lightClasses.input}
             />
             <div className="flex gap-2">
               <button
@@ -596,15 +609,15 @@ export default function AdminSellersPage() {
                 type="button"
                 aria-disabled={!searchInput.trim() && !submittedSearch}
                 onClick={clearSearch}
-                className={`rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-100 transition ${
-                  searchInput.trim() || submittedSearch ? "bg-white/5 hover:bg-white/10" : "cursor-not-allowed bg-slate-950/30 opacity-50"
+                className={`${lightClasses.secondaryButton} ${
+                  searchInput.trim() || submittedSearch ? "bg-[var(--bg-card)] hover:border-indigo-400/60 hover:bg-[var(--bg-card-hover)] hover:text-indigo-500" : "cursor-not-allowed bg-[var(--bg-input-alt)] opacity-50"
                 }`}
               >
                 {copy.clear}
               </button>
             </div>
           </div>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-[var(--text-tertiary)]">
             {copy.page} {pagination.page} {copy.of} {pagination.totalPages} · {pagination.limit} {copy.perPage}
           </div>
         </form>
@@ -619,7 +632,7 @@ export default function AdminSellersPage() {
               {sellers.map((seller) => (
                 <article
                   key={seller.id}
-                  className="rounded-2xl border border-white/10 bg-slate-950/25 p-4"
+                  className={lightClasses.mobileCard}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
@@ -633,14 +646,14 @@ export default function AdminSellersPage() {
                     </div>
                     <div className="flex-shrink-0">{renderAccountBadges(seller)}</div>
                   </div>
-                  <div className="mt-4 grid gap-3 text-xs text-slate-400 sm:grid-cols-2">
+                  <div className="mt-4 grid gap-3 text-xs text-[var(--text-tertiary)] sm:grid-cols-2">
                     <div>
-                      <span className="block font-semibold uppercase tracking-[0.16em] text-slate-500">{copy.company}</span>
-                      <span className="mt-1 block text-sm text-slate-200">{seller.company || copy.noCompany}</span>
+                      <span className="block font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">{copy.company}</span>
+                      <span className="mt-1 block text-sm text-[var(--text-primary)]">{seller.company || copy.noCompany}</span>
                     </div>
                     <div>
-                      <span className="block font-semibold uppercase tracking-[0.16em] text-slate-500">{copy.lastLogin}</span>
-                      <span className="mt-1 block text-sm text-slate-200">{formatDateTime(seller.last_login, copy.never)}</span>
+                      <span className="block font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">{copy.lastLogin}</span>
+                      <span className="mt-1 block text-sm text-[var(--text-primary)]">{formatDateTime(seller.last_login, copy.never)}</span>
                     </div>
                   </div>
                   <div className="mt-4">{renderPermissionControls(seller)}</div>
@@ -650,9 +663,9 @@ export default function AdminSellersPage() {
 
             <div className="hidden overflow-x-auto lg:block">
               <table className="min-w-[980px] w-full text-left text-sm" style={{ borderCollapse: "collapse" }}>
-              <thead className="text-xs uppercase tracking-[0.2em]" style={{ background: "var(--bg-table-header)", color: "var(--text-secondary)" }}>
+              <thead className={`text-xs uppercase tracking-[0.2em] ${lightClasses.tableHeader}`}>
                 <tr>
-                  <th className="sticky left-0 z-10 min-w-[260px] px-4 py-3 font-semibold" style={{ background: "var(--bg-table-header)" }}>{copy.seller}</th>
+                  <th className="sticky left-0 z-10 min-w-[260px] bg-[var(--bg-table-header)] px-4 py-3 font-semibold">{copy.seller}</th>
                   <th className="px-4 py-3 font-semibold">{copy.company}</th>
                   <th className="px-4 py-3 font-semibold">{copy.account}</th>
                   <th className="px-4 py-3 font-semibold">{copy.lastLogin}</th>
@@ -662,8 +675,8 @@ export default function AdminSellersPage() {
               <tbody>
                 {sellers.map((seller) => {
                   return (
-                    <tr key={seller.id} style={{ borderTop: "1px solid var(--border-default)" }}>
-                      <td className="sticky left-0 z-[1] px-4 py-4 align-top" style={{ background: "var(--bg-card)" }}>
+                    <tr key={seller.id} className="border-t border-[var(--border-default)]">
+                      <td className="sticky left-0 z-[1] bg-[var(--bg-card)] px-4 py-4 align-top">
                         <div className="min-w-0">
                           <div className="break-words font-semibold" style={{ color: "var(--text-primary)" }}>
                             {seller.name || seller.email || `#${seller.id}`}
@@ -676,13 +689,13 @@ export default function AdminSellersPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4 align-top" style={{ color: "var(--text-secondary)" }}>
+                      <td className="px-4 py-4 align-top text-[var(--text-primary)]">
                         {seller.company || copy.noCompany}
                       </td>
                       <td className="px-4 py-4 align-top">
                         {renderAccountBadges(seller)}
                       </td>
-                      <td className="px-4 py-4 align-top whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                      <td className="whitespace-nowrap px-4 py-4 align-top text-[var(--text-primary)]">
                         {formatDateTime(seller.last_login, copy.never)}
                       </td>
                       <td className="px-4 py-4 align-top">

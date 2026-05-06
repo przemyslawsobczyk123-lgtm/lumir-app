@@ -284,7 +284,10 @@ export default function RegisterPage() {
           </div>
 
           <p className="text-slate-600 text-xs text-center mt-4">
-            Rejestrując się, akceptujesz regulamin i politykę prywatności.
+            Rejestrując się, akceptujesz{" "}
+            <a href="/regulamin" className="text-indigo-400 hover:text-indigo-300">regulamin</a>
+            {" "}i{" "}
+            <a href="/privacy" className="text-indigo-400 hover:text-indigo-300">politykę prywatności</a>.
           </p>
         </div>
 

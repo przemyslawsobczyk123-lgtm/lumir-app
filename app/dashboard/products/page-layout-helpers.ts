@@ -14,6 +14,18 @@ export function getProductListPrimaryActions(labels: {
 }
 
 export type ProductPaginationToken = number | "ellipsis-start" | "ellipsis-end";
+export const PRODUCT_PAGE_SIZE_OPTIONS = [100, 250, 500] as const;
+export type ProductPageSize = (typeof PRODUCT_PAGE_SIZE_OPTIONS)[number];
+
+export function normalizeProductPageSize(value: number): ProductPageSize {
+  if (PRODUCT_PAGE_SIZE_OPTIONS.includes(value as ProductPageSize)) {
+    return value as ProductPageSize;
+  }
+  if (value > PRODUCT_PAGE_SIZE_OPTIONS[PRODUCT_PAGE_SIZE_OPTIONS.length - 1]) {
+    return PRODUCT_PAGE_SIZE_OPTIONS[PRODUCT_PAGE_SIZE_OPTIONS.length - 1];
+  }
+  return 100;
+}
 
 export function getProductPaginationWindow(page: number, totalPages: number): ProductPaginationToken[] {
   const total = Math.max(0, Math.floor(totalPages));

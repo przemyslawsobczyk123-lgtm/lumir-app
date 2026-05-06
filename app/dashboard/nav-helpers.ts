@@ -4,6 +4,7 @@ export type DashboardNavLabels = {
   imports: string;
   exportApi: string;
   sellers: string;
+  billingStats: string;
   billing: string;
   settings: string;
 };
@@ -25,6 +26,7 @@ export type DashboardUser = {
   can_view_admin_sellers?: boolean;
   can_impersonate_sellers?: boolean;
   can_grant_admin_permissions?: boolean;
+  can_view_billing_stats?: boolean;
 };
 
 function readString(value: unknown) {
@@ -49,6 +51,7 @@ export function parseDashboardUser(raw: string | null | undefined): DashboardUse
       can_view_admin_sellers: readBooleanFlag(candidate.can_view_admin_sellers),
       can_impersonate_sellers: readBooleanFlag(candidate.can_impersonate_sellers),
       can_grant_admin_permissions: readBooleanFlag(candidate.can_grant_admin_permissions),
+      can_view_billing_stats: readBooleanFlag(candidate.can_view_billing_stats),
     };
   } catch {
     return null;
@@ -58,6 +61,11 @@ export function parseDashboardUser(raw: string | null | undefined): DashboardUse
 export function canViewAdminSellers(user?: DashboardUser | null) {
   const role = user?.role?.toLowerCase();
   return Boolean(user?.can_view_admin_sellers && (role === "admin" || role === "owner"));
+}
+
+export function canViewBillingStats(user?: DashboardUser | null) {
+  const role = user?.role?.toLowerCase();
+  return Boolean(user?.can_view_billing_stats && (role === "admin" || role === "owner"));
 }
 
 export function getDashboardNavItems(labels: DashboardNavLabels, user?: DashboardUser | null): DashboardNavItem[] {
@@ -76,6 +84,14 @@ export function getDashboardNavItems(labels: DashboardNavLabels, user?: Dashboar
       label: labels.sellers,
       exact: false,
       icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+    });
+  }
+  if (canViewBillingStats(user)) {
+    items.splice(5, 0, {
+      href: "/dashboard/admin/billing-stats",
+      label: labels.billingStats,
+      exact: false,
+      icon: "M4 19V5m0 14h16M8 16V9m4 7V7m4 9v-4",
     });
   }
 

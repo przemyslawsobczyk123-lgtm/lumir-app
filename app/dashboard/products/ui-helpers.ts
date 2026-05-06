@@ -25,8 +25,74 @@ type ProductListingInput = {
   integrations: string | null;
 };
 
-export function hasActiveProductFilters(search: string, statusFilter: string, marketplaceFilter: string) {
-  return Boolean(search.trim() || statusFilter || marketplaceFilter);
+export type ProductListingBadgeKind = "ready" | "partial" | "review" | "unmapped" | "attributes";
+export type ActiveProductFilterSummaryKey = "search" | "focus" | "status" | "marketplace";
+export type ActiveProductFilterSummaryItem = {
+  key: ActiveProductFilterSummaryKey;
+  label: string;
+  value: string;
+};
+export type ActiveProductFilterSummaryInput = {
+  search: string;
+  statusFilter: string;
+  marketplaceFilter: string;
+  listingFocus: ProductListingFocus;
+};
+export type ActiveProductFilterSummaryLabels = {
+  search: string;
+  status: string;
+  marketplace: string;
+  focus: string;
+  statusLabels: Partial<Record<string, string>>;
+  marketplaceLabels: Partial<Record<string, string>>;
+  focusLabels: Partial<Record<string, string>>;
+};
+
+export function hasActiveProductFilters(
+  search: string,
+  statusFilter: string,
+  marketplaceFilter: string,
+  listingFocus: ProductListingFocus = "all"
+) {
+  return Boolean(search.trim() || statusFilter || marketplaceFilter || listingFocus !== "all");
+}
+
+export function getActiveProductFilterSummary(
+  input: ActiveProductFilterSummaryInput,
+  labels: ActiveProductFilterSummaryLabels
+): ActiveProductFilterSummaryItem[] {
+  const items: ActiveProductFilterSummaryItem[] = [];
+  const search = input.search.trim();
+
+  if (search) {
+    items.push({ key: "search", label: labels.search, value: search });
+  }
+
+  if (input.listingFocus !== "all") {
+    items.push({
+      key: "focus",
+      label: labels.focus,
+      value: labels.focusLabels[input.listingFocus] ?? input.listingFocus,
+    });
+  }
+
+  if (input.statusFilter) {
+    items.push({
+      key: "status",
+      label: labels.status,
+      value: labels.statusLabels[input.statusFilter] ?? input.statusFilter,
+    });
+  }
+
+  if (input.marketplaceFilter) {
+    items.push({
+      key: "marketplace",
+      label: labels.marketplace,
+      value: labels.marketplaceLabels[input.marketplaceFilter] ?? input.marketplaceFilter,
+    });
+  }
+
+  return items;
 }
 
 export function canAutoAssignCategory(marketplaceSlug?: string | null) {
@@ -95,6 +161,14 @@ export function getProductListingState(input: ProductListingInput) {
     missingMarketplaceCount,
     integrationCount,
   };
+}
+
+export function getProductListingBadgeKind(state: ReturnType<typeof getProductListingState>): ProductListingBadgeKind {
+  if (state.focus === "review") return "review";
+  if (state.blockerKind === "unmapped") return "unmapped";
+  if (state.blockerKind === "attributes") return "attributes";
+  if (state.missingMarketplaceCount > 0) return "partial";
+  return "ready";
 }
 
 export function getProductListingStats<T extends ProductListingInput>(products: T[]) {

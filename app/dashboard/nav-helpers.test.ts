@@ -11,6 +11,7 @@ test("dashboard nav keeps products clean and moves imports to its own sidebar it
     imports: "Importy",
     exportApi: "Export",
     sellers: "Sprzedawcy",
+    billingStats: "Statystyki",
     billing: "Billing",
     settings: "Ustawienia",
   });
@@ -40,6 +41,7 @@ test("dashboard nav gives import and export vivid dashboard tones", () => {
     imports: "Importy",
     exportApi: "Export",
     sellers: "Sprzedawcy",
+    billingStats: "Statystyki",
     billing: "Billing",
     settings: "Ustawienia",
   });
@@ -58,13 +60,14 @@ test("dashboard nav gives import and export vivid dashboard tones", () => {
   assert.match(getClass?.(false, "export") ?? "", /text-violet-200/);
 });
 
-test("dashboard nav hides sellers for non-admin and admin without flag", () => {
+test("dashboard nav hides admin modules for non-admin and admin without flags", () => {
   const labels = {
     dashboard: "Dashboard",
     products: "Products",
     imports: "Import",
     exportApi: "Export",
     sellers: "Sellers",
+    billingStats: "Stats",
     billing: "Billing",
     settings: "Settings",
   };
@@ -82,9 +85,15 @@ test("dashboard nav hides sellers for non-admin and admin without flag", () => {
     ),
     false,
   );
+  assert.equal(
+    getDashboardNavItems(labels, { role: "admin", can_view_billing_stats: false }).some(
+      (item) => item.href === "/dashboard/admin/billing-stats",
+    ),
+    false,
+  );
 });
 
-test("dashboard nav shows sellers for admin with permission flag", () => {
+test("dashboard nav shows admin modules for admin with matching permission flags", () => {
   const items = getDashboardNavItems(
     {
       dashboard: "Dashboard",
@@ -92,15 +101,19 @@ test("dashboard nav shows sellers for admin with permission flag", () => {
       imports: "Import",
       exportApi: "Export",
       sellers: "Sellers",
+      billingStats: "Stats",
       billing: "Billing",
       settings: "Settings",
     },
-    { role: "admin", can_view_admin_sellers: true },
+    { role: "admin", can_view_admin_sellers: true, can_view_billing_stats: true },
   );
 
   const sellers = items.find((item) => item.href === "/dashboard/admin/sellers");
   assert.equal(sellers?.label, "Sellers");
   assert.equal(sellers?.exact, false);
+  const stats = items.find((item) => item.href === "/dashboard/admin/billing-stats");
+  assert.equal(stats?.label, "Stats");
+  assert.equal(stats?.exact, false);
 });
 
 test("parseDashboardUser keeps role and coerces admin permission flags", () => {
@@ -112,6 +125,7 @@ test("parseDashboardUser keeps role and coerces admin permission flags", () => {
       can_view_admin_sellers: 1,
       can_impersonate_sellers: "true",
       can_grant_admin_permissions: false,
+      can_view_billing_stats: "1",
     }),
   );
 
@@ -122,5 +136,6 @@ test("parseDashboardUser keeps role and coerces admin permission flags", () => {
     can_view_admin_sellers: true,
     can_impersonate_sellers: true,
     can_grant_admin_permissions: false,
+    can_view_billing_stats: true,
   });
 });

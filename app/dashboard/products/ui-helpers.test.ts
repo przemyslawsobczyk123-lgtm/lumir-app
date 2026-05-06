@@ -13,6 +13,8 @@ import {
   getProductExportSummary,
   getRetryableProductExportGroups,
   getDraftCategoryHint,
+  getActiveProductFilterSummary,
+  getProductListingBadgeKind,
   getProductListingStats,
   getProductListingState,
   hasActiveProductFilters,
@@ -30,6 +32,55 @@ test("hasActiveProductFilters returns true when marketplace filter exists", () =
 
 test("hasActiveProductFilters returns false when all filters are empty", () => {
   assert.equal(hasActiveProductFilters("   ", "", ""), false);
+});
+
+test("hasActiveProductFilters returns true when listing focus is active", () => {
+  assert.equal(hasActiveProductFilters("", "", "", "blocked"), true);
+});
+
+test("getActiveProductFilterSummary describes active filters for transparent toolbar state", () => {
+  assert.deepEqual(
+    getActiveProductFilterSummary(
+      {
+        search: "lampa",
+        statusFilter: "needs_review",
+        marketplaceFilter: "mediaexpert",
+        listingFocus: "blocked",
+      },
+      {
+        search: "Szukasz",
+        status: "Status",
+        marketplace: "Kanal",
+        focus: "Etap",
+        statusLabels: { needs_review: "Do sprawdzenia" },
+        marketplaceLabels: { mediaexpert: "Media Expert" },
+        focusLabels: { blocked: "Zablokowane" },
+      }
+    ),
+    [
+      { key: "search", label: "Szukasz", value: "lampa" },
+      { key: "focus", label: "Etap", value: "Zablokowane" },
+      { key: "status", label: "Status", value: "Do sprawdzenia" },
+      { key: "marketplace", label: "Kanal", value: "Media Expert" },
+    ]
+  );
+});
+
+test("getProductListingBadgeKind maps listing state to user-facing issue kind", () => {
+  assert.equal(getProductListingBadgeKind(getProductListingState({ status: "needs_review", integrations: null })), "review");
+  assert.equal(getProductListingBadgeKind(getProductListingState({ status: "pending", integrations: null })), "unmapped");
+  assert.equal(
+    getProductListingBadgeKind(getProductListingState({ status: "pending", integrations: "empik\x01Empik\x012" })),
+    "attributes"
+  );
+  assert.equal(
+    getProductListingBadgeKind(getProductListingState({ status: "mapped", integrations: "empik\x01Empik\x010|||mediaexpert\x01Media Expert\x012" })),
+    "partial"
+  );
+  assert.equal(
+    getProductListingBadgeKind(getProductListingState({ status: "mapped", integrations: "empik\x01Empik\x010" })),
+    "ready"
+  );
 });
 
 test("canAutoAssignCategory enables only stage-1 marketplaces", () => {

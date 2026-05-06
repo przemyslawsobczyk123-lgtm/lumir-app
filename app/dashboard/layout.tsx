@@ -8,6 +8,7 @@ import { fetchBillingSummary, formatCredits, type BillingSummary } from "./billi
 import { fetchActiveJobs, formatJobDuration, jobTypeLabel, jobStepLabel, type SellerJob } from "./jobs/job-client";
 import { LangProvider, useLang } from "./LangContext";
 import { translations } from "./i18n";
+import { getDashboardSessionRefreshKey, getImpersonationBannerClasses } from "./layout-helpers";
 import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "./mvp-feature-flags";
 import {
   getDashboardNavItemClass,
@@ -124,6 +125,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
   const impersonationSession = getImpersonationSessionFromSnapshot(impersonationRaw);
   const impersonatedName = readUserLabel(impersonationSession?.currentUser?.name);
   const impersonatedEmail = readUserLabel(impersonationSession?.currentUser?.email);
+  const sessionRefreshKey = getDashboardSessionRefreshKey(userRaw, impersonationRaw);
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [activeJobs, setActiveJobs] = useState<SellerJob[]>([]);
@@ -180,7 +182,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
     loadAllegroAccounts();
     if (AMAZON_UI_ENABLED) loadAmazonAccounts();
     loadBillingSummary();
-  }, [loadAllegroAccounts, loadAmazonAccounts, loadBillingSummary, router]);
+  }, [loadAllegroAccounts, loadAmazonAccounts, loadBillingSummary, router, sessionRefreshKey]);
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
@@ -205,7 +207,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [sessionRefreshKey]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -279,6 +281,7 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
 
   const NAV_ITEMS = getDashboardNavItems(t.nav, user);
   const impersonatedLabel = impersonatedName || impersonatedEmail || (lang === "pl" ? "sprzedawca" : "seller");
+  const impersonationBannerClasses = getImpersonationBannerClasses();
 
   function returnToAdmin() {
     const restored = stopSellerImpersonation();
@@ -449,22 +452,22 @@ function DashboardLayoutInner({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      {/* MAIN */}
-      <div className="ml-[220px] w-full">
-        {impersonationSession && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-400/20 bg-amber-500/10 px-8 py-2 text-xs text-amber-100">
+        {/* MAIN */}
+        <div className="ml-[220px] w-full">
+          {impersonationSession && (
+          <div className={impersonationBannerClasses.container}>
             <div className="min-w-0">
-              <span className="font-semibold uppercase tracking-[0.18em] text-amber-200">
+              <span className={impersonationBannerClasses.eyebrow}>
                 {lang === "pl" ? "Impersonacja" : "Impersonating"}
               </span>
-              <span className="ml-3 text-amber-100/90">
+              <span className={impersonationBannerClasses.identity}>
                 {impersonatedLabel}
                 {impersonatedEmail && impersonatedEmail !== impersonatedLabel ? ` (${impersonatedEmail})` : ""}
               </span>
             </div>
             <button
               onClick={returnToAdmin}
-              className="rounded-lg border border-amber-300/30 bg-amber-300/15 px-3 py-1.5 font-semibold text-amber-50 transition hover:bg-amber-300/25"
+              className={impersonationBannerClasses.button}
             >
               {lang === "pl" ? "Wroc do admina" : "Return to admin"}
             </button>

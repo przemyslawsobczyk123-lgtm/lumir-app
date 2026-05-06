@@ -8,14 +8,14 @@ import { translations } from "../i18n";
 import {
   createProductExportBatchGroups,
   findProductExportCategoryGroup,
+  getActiveProductFilterSummary,
   getExportableProductIds,
   getProductExportBatchSummary,
-  filterProductsByListingFocus,
   getProductExportCategoryGroups,
   getProductExportPreflight,
   getProductExportSummary,
+  getProductListingBadgeKind,
   getProductListingState,
-  getProductListingStats,
   getRetryableProductExportGroups,
   hasActiveProductFilters,
   parseProductIntegrations,
@@ -26,7 +26,13 @@ import {
   type ProductExportPreflightRow,
 } from "./ui-helpers";
 import { buildExportApiHref } from "../export-api/export-api-helpers";
-import { getProductListPrimaryActions, getProductPaginationWindow } from "./page-layout-helpers";
+import {
+  getProductListPrimaryActions,
+  getProductPaginationWindow,
+  normalizeProductPageSize,
+  PRODUCT_PAGE_SIZE_OPTIONS,
+  type ProductPageSize,
+} from "./page-layout-helpers";
 import {
   extractBulkReportItemState,
   normalizeListAIDraftBadge,
@@ -90,6 +96,14 @@ type Product = {
   rawData?: unknown;
   raw_data?: unknown;
   importMeta?: unknown;
+};
+type ProductListingStats = {
+  all: number;
+  ready: number;
+  review: number;
+  blocked: number;
+  unmapped: number;
+  attributesMissing: number;
 };
 type MarketplaceOption = { slug: string; name: string };
 type JobSummary = {
@@ -161,6 +175,14 @@ type CompletedBulkReport = {
 type ProductExportResult =
   | { ok: true }
   | { ok: false; error: string };
+const EMPTY_PRODUCT_LISTING_STATS: ProductListingStats = {
+  all: 0,
+  ready: 0,
+  review: 0,
+  blocked: 0,
+  unmapped: 0,
+  attributesMissing: 0,
+};
 const STATUS_META_KEYS = {
   pending: "statusPending",
   mapped: "statusMapped",
@@ -176,24 +198,62 @@ function getStatusLabel(t: Record<ProductStatusTranslationKeys, string>, status:
   return key ? t[key] : t.statusUnknown;
 }
 
+function normalizeProductListingStats(value: unknown): ProductListingStats {
+  const input = typeof value === "object" && value !== null ? value as Partial<Record<keyof ProductListingStats, unknown>> : {};
+  return {
+    all: Number(input.all || 0),
+    ready: Number(input.ready || 0),
+    review: Number(input.review || 0),
+    blocked: Number(input.blocked || 0),
+    unmapped: Number(input.unmapped || 0),
+    attributesMissing: Number(input.attributesMissing || 0),
+  };
+}
+
 const PRODUCTS_PAGE_COPY = {
   pl: {
-    focusAll: "Widoczne",
-    focusReady: "Gotowe",
-    focusReview: "Do review",
+    filterPanelTitle: "Filtry listy",
+    filterPanelHint: "Wybierz etap pracy, status i kanal. Aktywne filtry widac od razu nizej.",
+    filterSearchLabel: "Szukaj produktu",
+    filterStageLabel: "Etap pracy",
+    filterStatusLabel: "Status produktu",
+    filterMarketplaceLabel: "Kanal sprzedazy",
+    filterMarketplaceAll: "Wszystkie kanaly",
+    statusFilterAll: "Kazdy status",
+    statusFilterMapped: "Gotowe",
+    statusFilterPending: "Oczekuje na dane",
+    statusFilterReview: "Do sprawdzenia",
+    statusFilterExported: "Wyeksportowane",
+    filterActiveSearch: "Szukasz",
+    filterActiveFocus: "Etap",
+    filterActiveStatus: "Status",
+    filterActiveMarketplace: "Kanal",
+    badgeStatusPrefix: "Status",
+    badgeBrandPrefix: "Marka",
+    marketplaceReady: "gotowe",
+    marketplaceMissing: "brak {count}",
+    marketplaceReadyTitle: "Komplet wymaganych atrybutow w tym kanale.",
+    marketplaceMissingTitle: "Brakuje {count} atrybutow w tym kanale.",
+    pageSizeLabel: "Na stronie",
+    pageJumpLabel: "Idz do strony",
+    pageJumpButton: "Idz",
+    selectedPageScope: "Zaznaczenie obejmuje tylko aktualna strone.",
+    focusAll: "Wszystkie",
+    focusReady: "Gotowe do eksportu",
+    focusReview: "Do sprawdzenia",
     focusBlocked: "Zablokowane",
-    focusAllHint: "po aktualnych filtrach",
-    focusReadyHint: "maja min. 1 gotowy marketplace",
-    focusReviewHint: "wymagaja sprawdzenia",
-    focusBlockedHint: "brakuje mapowania lub atrybutow",
-    blockedMixHint: "bez marketplace: {unmapped} • braki atrybutow: {attributes}",
-    focusEmpty: "Brak pozycji dla wybranego focusu.",
+    focusAllHint: "pelna lista po filtrach",
+    focusReadyHint: "maja min. 1 gotowy kanal",
+    focusReviewHint: "czekaja na decyzje",
+    focusBlockedHint: "brakuje kanalu lub atrybutow",
+    blockedMixHint: "bez kanalu: {unmapped} / braki atrybutow: {attributes}",
+    focusEmpty: "Brak pozycji dla wybranego etapu.",
     focusReset: "Pokaz wszystko",
-    issueReady: "Gotowe",
-    issuePartial: "Czesciowo gotowe",
-    issueReview: "Review",
-    issueUnmapped: "Brak marketplace",
-    issueMissingAttrs: "Braki atrybutow",
+    issueReady: "Gotowy do wysylki",
+    issuePartial: "Czesciowo gotowy",
+    issueReview: "Wymaga sprawdzenia",
+    issueUnmapped: "Nie przypisano kanalu",
+    issueMissingAttrs: "Uzupelnij atrybuty",
     exportPreflightTitle: "Preflight eksportu",
     exportPreflightDesc: "Przed eksportem sprawdzam, co jest gotowe dla wybranego marketplace.",
     exportPreflightReady: "Gotowe",
@@ -228,22 +288,48 @@ const PRODUCTS_PAGE_COPY = {
     listLoadError: "Nie udalo sie zaladowac listy produktow.",
   },
   en: {
-    focusAll: "Visible",
-    focusReady: "Ready",
-    focusReview: "Review",
+    filterPanelTitle: "List filters",
+    filterPanelHint: "Choose workflow stage, status, and channel. Active filters stay visible below.",
+    filterSearchLabel: "Search product",
+    filterStageLabel: "Workflow stage",
+    filterStatusLabel: "Product status",
+    filterMarketplaceLabel: "Sales channel",
+    filterMarketplaceAll: "All channels",
+    statusFilterAll: "Any status",
+    statusFilterMapped: "Ready",
+    statusFilterPending: "Waiting for data",
+    statusFilterReview: "Needs check",
+    statusFilterExported: "Exported",
+    filterActiveSearch: "Search",
+    filterActiveFocus: "Stage",
+    filterActiveStatus: "Status",
+    filterActiveMarketplace: "Channel",
+    badgeStatusPrefix: "Status",
+    badgeBrandPrefix: "Brand",
+    marketplaceReady: "ready",
+    marketplaceMissing: "missing {count}",
+    marketplaceReadyTitle: "All required attributes are filled for this channel.",
+    marketplaceMissingTitle: "Missing {count} attributes for this channel.",
+    pageSizeLabel: "Per page",
+    pageJumpLabel: "Go to page",
+    pageJumpButton: "Go",
+    selectedPageScope: "Selection covers the current page only.",
+    focusAll: "All",
+    focusReady: "Ready to export",
+    focusReview: "Needs check",
     focusBlocked: "Blocked",
-    focusAllHint: "after current filters",
-    focusReadyHint: "have at least 1 ready marketplace",
+    focusAllHint: "full list after filters",
+    focusReadyHint: "have at least 1 ready channel",
     focusReviewHint: "need manual check",
-    focusBlockedHint: "missing mapping or attributes",
-    blockedMixHint: "no marketplace: {unmapped} • attr gaps: {attributes}",
-    focusEmpty: "No rows for selected focus.",
+    focusBlockedHint: "missing channel or attributes",
+    blockedMixHint: "no channel: {unmapped} / attr gaps: {attributes}",
+    focusEmpty: "No rows for selected stage.",
     focusReset: "Show all",
-    issueReady: "Ready",
+    issueReady: "Ready to send",
     issuePartial: "Partially ready",
-    issueReview: "Review",
-    issueUnmapped: "No marketplace",
-    issueMissingAttrs: "Attr gaps",
+    issueReview: "Needs check",
+    issueUnmapped: "No channel assigned",
+    issueMissingAttrs: "Fill attributes",
     exportPreflightTitle: "Export preflight",
     exportPreflightDesc: "Before export, check what is ready for the selected marketplace.",
     exportPreflightReady: "Ready",
@@ -281,11 +367,11 @@ const PRODUCTS_PAGE_COPY = {
 
 const PRODUCTS_AI_COPY = {
   pl: {
-    queued: "AI queued",
-    processing: "AI processing",
-    ready: "AI ready",
-    review: "AI review",
-    blocked: "AI blocked",
+    queued: "AI w kolejce",
+    processing: "AI generuje",
+    ready: "AI gotowe",
+    review: "AI do sprawdzenia",
+    blocked: "AI wymaga danych",
     attentionTitle: "Pozycje do sprawdzenia",
     attentionEmpty: "Brak pozycji wymagajacych uwagi.",
     reviewCount: "Do review",
@@ -296,10 +382,10 @@ const PRODUCTS_AI_COPY = {
   },
   en: {
     queued: "AI queued",
-    processing: "AI processing",
+    processing: "AI generating",
     ready: "AI ready",
-    review: "AI review",
-    blocked: "AI blocked",
+    review: "AI needs review",
+    blocked: "AI needs data",
     attentionTitle: "Items needing attention",
     attentionEmpty: "No items need attention.",
     reviewCount: "Review",
@@ -315,20 +401,38 @@ function getListingIssueMeta(
   state: ReturnType<typeof getProductListingState>
 ) {
   const copy = PRODUCTS_PAGE_COPY[lang];
+  const kind = getProductListingBadgeKind(state);
 
-  if (state.focus === "review") {
+  if (kind === "review") {
     return { label: copy.issueReview, className: "border-rose-200 bg-rose-50 text-rose-700" };
   }
-  if (state.blockerKind === "unmapped") {
+  if (kind === "unmapped") {
     return { label: copy.issueUnmapped, className: "border-slate-200 bg-slate-100 text-slate-700" };
   }
-  if (state.blockerKind === "attributes") {
+  if (kind === "attributes") {
     return { label: copy.issueMissingAttrs, className: "border-amber-200 bg-amber-50 text-amber-700" };
   }
-  if (state.missingMarketplaceCount > 0) {
+  if (kind === "partial") {
     return { label: copy.issuePartial, className: "border-sky-200 bg-sky-50 text-sky-700" };
   }
   return { label: copy.issueReady, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+}
+
+function getMarketplaceIntegrationMeta(lang: keyof typeof PRODUCTS_PAGE_COPY, name: string, missing: number) {
+  const copy = PRODUCTS_PAGE_COPY[lang];
+  const count = String(missing);
+
+  if (missing === 0) {
+    return {
+      label: `${name}: ${copy.marketplaceReady}`,
+      title: copy.marketplaceReadyTitle,
+    };
+  }
+
+  return {
+    label: `${name}: ${copy.marketplaceMissing.replace("{count}", count)}`,
+    title: copy.marketplaceMissingTitle.replace("{count}", count),
+  };
 }
 
 function getAIDraftBadgeMeta(
@@ -594,7 +698,7 @@ function formatDurationLabel(seconds: number | null | undefined) {
 }
 
 // ── Import modal ──────────────────────────────────────────────────
-const LIMIT = 100;
+const DEFAULT_PAGE_SIZE: ProductPageSize = 100;
 
 // Parsuj integracje z formatu "slug\x01name\x01missingCount|||..."
 type Integration = { slug: string; name: string; missing: number };
@@ -1360,17 +1464,19 @@ export default function ProductsPage() {
   const router = useRouter();
   const { lang } = useLang();
   const t = translations[lang].products;
+  const pageCopy = PRODUCTS_PAGE_COPY[lang];
 
   const STATUS_FILTER = [
-    { value: "",             label: t.filterAll     },
-    { value: "mapped",       label: t.filterActive  },
-    { value: "pending",      label: t.filterPending },
-    { value: "needs_review", label: t.filterReview  },
-    { value: "exported",     label: t.filterExported},
+    { value: "",             label: pageCopy.statusFilterAll      },
+    { value: "mapped",       label: pageCopy.statusFilterMapped   },
+    { value: "pending",      label: pageCopy.statusFilterPending  },
+    { value: "needs_review", label: pageCopy.statusFilterReview   },
+    { value: "exported",     label: pageCopy.statusFilterExported },
   ];
 
   const [products, setProducts]           = useState<Product[]>([]);
   const [total, setTotal]                 = useState(0);
+  const [listingStats, setListingStats]   = useState<ProductListingStats>(EMPTY_PRODUCT_LISTING_STATS);
   const [loading, setLoading]             = useState(true);
   const [listError, setListError]         = useState<string | null>(null);
   const [search, setSearch]               = useState("");
@@ -1378,6 +1484,8 @@ export default function ProductsPage() {
   const [mpFilter, setMpFilter]           = useState("");
   const [marketplaces, setMarketplaces]   = useState<{slug:string;name:string}[]>([]);
   const [page, setPage]                   = useState(1);
+  const [pageSize, setPageSize]           = useState<ProductPageSize>(DEFAULT_PAGE_SIZE);
+  const [pageJump, setPageJump]           = useState("");
   const [showBulkAI, setShowBulkAI]       = useState(false);
   const [showExportPreflight, setShowExportPreflight] = useState(false);
   const [selected, setSelected]           = useState<Set<number>>(new Set());
@@ -1396,22 +1504,38 @@ export default function ProductsPage() {
   const inlineJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestSeq = useRef(0);
 
-  const loadProducts = useCallback(async (s: string, p: number, st: string, mp: string) => {
+  const loadProducts = useCallback(async (
+    s: string,
+    p: number,
+    st: string,
+    mp: string,
+    focus: ProductListingFocus,
+    limit: ProductPageSize
+  ) => {
     const requestId = ++requestSeq.current;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ search: s, page: String(p), limit: String(LIMIT), status: st, marketplace: mp });
+      const params = new URLSearchParams({
+        search: s,
+        page: String(p),
+        limit: String(limit),
+        status: st,
+        marketplace: mp,
+        listingFocus: focus,
+      });
       const res = await fetch(`${API}/api/products/list?${params}`, { headers: authHeaders() });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Blad ladowania produktow");
       if (requestSeq.current !== requestId) return;
       setProducts(json.data || []);
       setTotal(json.total || 0);
+      setListingStats(normalizeProductListingStats(json.listingStats));
       setListError(null);
     } catch (err: unknown) {
       if (requestSeq.current !== requestId) return;
       setProducts([]);
       setTotal(0);
+      setListingStats(EMPTY_PRODUCT_LISTING_STATS);
       setListError(getErrorMessage(err, PRODUCTS_PAGE_COPY.pl.listLoadError));
     } finally {
       if (requestSeq.current === requestId) setLoading(false);
@@ -1484,10 +1608,10 @@ export default function ProductsPage() {
       const report = buildCompletedBulkReport(job, items);
       setCompletedBulkReport(report);
       setShowBulkAI(false);
-      await loadProducts(search, page, statusFilter, mpFilter);
+      await loadProducts(search, page, statusFilter, mpFilter, listingFocus, pageSize);
       setSelected(new Set(report.failedProductIds));
     })();
-  }, [loadJobItems, loadProducts, mpFilter, page, search, statusFilter]);
+  }, [listingFocus, loadJobItems, loadProducts, mpFilter, page, pageSize, search, statusFilter]);
 
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
@@ -1507,10 +1631,13 @@ export default function ProductsPage() {
   useEffect(() => {
     const timeout = setTimeout(() => {
       setPage(1);
-      loadProducts(search, 1, statusFilter, mpFilter);
+      setPageJump("");
+      setSelected(new Set());
+      setSplitSelectionGroups([]);
+      loadProducts(search, 1, statusFilter, mpFilter, listingFocus, pageSize);
     }, 300);
     return () => clearTimeout(timeout);
-  }, [loadProducts, search, statusFilter, mpFilter]);
+  }, [listingFocus, loadProducts, search, statusFilter, mpFilter, pageSize]);
 
   useEffect(() => {
     const handler = () => setOpenMenu(null);
@@ -1652,7 +1779,7 @@ export default function ProductsPage() {
       }
       setShowExportPreflight(false);
       await Promise.all([
-        loadProducts(search, page, statusFilter, mpFilter),
+        loadProducts(search, page, statusFilter, mpFilter, listingFocus, pageSize),
       ]);
       return { ok: true };
     } catch (err: unknown) {
@@ -1686,7 +1813,7 @@ export default function ProductsPage() {
       setExportBatchGroups([]);
       setShowDeleteConfirm(false);
       await Promise.all([
-        loadProducts(search, page, statusFilter, mpFilter),
+        loadProducts(search, page, statusFilter, mpFilter, listingFocus, pageSize),
         loadActiveBackgroundJobs(),
       ]);
     } finally {
@@ -1848,19 +1975,39 @@ export default function ProductsPage() {
     return title || `${t.bulkReport.unnamedProduct} #${productId}`;
   }, [products, t.bulkReport.unnamedProduct]);
 
-  const visibleProducts = filterProductsByListingFocus(products, listingFocus);
-  const listingStats = getProductListingStats(products);
-  const totalPages  = Math.ceil(total / LIMIT);
+  const visibleProducts = products;
+  const totalPages  = Math.max(1, Math.ceil(total / pageSize));
   const allChecked  = visibleProducts.length > 0 && visibleProducts.every((product) => selected.has(product.id));
   const someChecked = visibleProducts.some((product) => selected.has(product.id)) && !allChecked;
-  const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter);
+  const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter, listingFocus);
+  const hasBaseFilters = hasActiveProductFilters(search, statusFilter, mpFilter, "all");
   const focusLabels: Record<ProductListingFocus, string> = {
-    all: PRODUCTS_PAGE_COPY[lang].focusAll,
-    ready: PRODUCTS_PAGE_COPY[lang].focusReady,
-    review: PRODUCTS_PAGE_COPY[lang].focusReview,
-    blocked: PRODUCTS_PAGE_COPY[lang].focusBlocked,
+    all: pageCopy.focusAll,
+    ready: pageCopy.focusReady,
+    review: pageCopy.focusReview,
+    blocked: pageCopy.focusBlocked,
   };
-  const hasListViewFilters = hasFilters || listingFocus !== "all";
+  const statusFilterLabels = STATUS_FILTER.reduce<Record<string, string>>((acc, item) => {
+    if (item.value) acc[item.value] = item.label;
+    return acc;
+  }, {});
+  const marketplaceFilterLabels = marketplaces.reduce<Record<string, string>>((acc, marketplace) => {
+    acc[marketplace.slug] = marketplace.name;
+    return acc;
+  }, {});
+  const activeFilterSummary = getActiveProductFilterSummary(
+    { search, statusFilter, marketplaceFilter: mpFilter, listingFocus },
+    {
+      search: pageCopy.filterActiveSearch,
+      focus: pageCopy.filterActiveFocus,
+      status: pageCopy.filterActiveStatus,
+      marketplace: pageCopy.filterActiveMarketplace,
+      statusLabels: statusFilterLabels,
+      marketplaceLabels: marketplaceFilterLabels,
+      focusLabels,
+    }
+  );
+  const hasListViewFilters = hasFilters;
   const exportPreflightRows = mpFilter ? getProductExportPreflight(products, [...selected], mpFilter) : [];
   const exportSummary = getProductExportSummary(exportPreflightRows);
   const exportReadyIds = getExportableProductIds(exportPreflightRows);
@@ -1878,6 +2025,15 @@ export default function ProductsPage() {
     addProduct: t.addBtn,
     importProducts: t.importBtn,
   });
+  const goToProductPage = useCallback((targetPage: number) => {
+    const safeTotalPages = Math.max(1, totalPages);
+    const nextPage = Math.min(Math.max(1, Math.floor(targetPage)), safeTotalPages);
+    setPage(nextPage);
+    setPageJump("");
+    setSelected(new Set());
+    setSplitSelectionGroups([]);
+    loadProducts(search, nextPage, statusFilter, mpFilter, listingFocus, pageSize);
+  }, [listingFocus, loadProducts, mpFilter, pageSize, search, statusFilter, totalPages]);
 
   return (
     <div>
@@ -1952,18 +2108,33 @@ export default function ProductsPage() {
       <div className={`mb-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-3 shadow-sm sm:p-4 ${
         batchExporting ? "pointer-events-none opacity-70" : ""
       }`}>
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative flex-1 lg:max-w-md">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                <SearchIcon />
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <div
+              title={pageCopy.filterPanelHint}
+              className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]"
+            >
+              {pageCopy.filterPanelTitle}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 flex-1 lg:max-w-xl">
+              <label htmlFor="products-search" className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
+                {pageCopy.filterSearchLabel}
+              </label>
+              <div className="relative">
+                <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <SearchIcon />
+                </div>
+                <input
+                  id="products-search"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={t.searchPlaceholder}
+                  className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] py-2 pl-9 pr-4 text-sm text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                />
               </div>
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder={t.searchPlaceholder}
-                className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] py-2 pl-9 pr-4 text-sm text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
-              />
             </div>
             {hasFilters && (
               <button
@@ -1975,90 +2146,88 @@ export default function ProductsPage() {
             )}
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              { focus: "all" as const, label: PRODUCTS_PAGE_COPY[lang].focusAll, value: listingStats.all },
-              { focus: "ready" as const, label: PRODUCTS_PAGE_COPY[lang].focusReady, value: listingStats.ready },
-              { focus: "review" as const, label: PRODUCTS_PAGE_COPY[lang].focusReview, value: listingStats.review },
-              { focus: "blocked" as const, label: PRODUCTS_PAGE_COPY[lang].focusBlocked, value: listingStats.blocked },
-            ].map((item) => (
-              <button
-                key={item.focus}
-                onClick={() => setListingFocus(item.focus)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  listingFocus === item.focus
-                    ? "bg-indigo-600 text-white"
-                    : "border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
-                }`}
-              >
-                {item.label} <span className="ml-1 opacity-75">{item.value}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {STATUS_FILTER.map(f => (
-              <button
-                key={f.value}
-                onClick={() => setStatusFilter(f.value)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                  statusFilter === f.value
-                    ? "bg-indigo-600 text-white"
-                    : "border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Filtr marketplace */}
-          {marketplaces.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">{t.marketplace}</span>
-            <button onClick={() => setMpFilter("")}
-              className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
-                mpFilter === ""
-                  ? "border-[var(--text-primary)] bg-[var(--text-primary)] text-[var(--bg-card)]"
-                  : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
-              }`}
-            >
-              {t.allMarketplaces}
-            </button>
-            {marketplaces.map(mp => (
-              <button
-                key={mp.slug}
-                onClick={() => setMpFilter(mp.slug)}
-                className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
-                  mpFilter === mp.slug
-                    ? "border-[var(--text-primary)] bg-[var(--text-primary)] text-[var(--bg-card)]"
-                    : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
-                }`}
-              >
-                {mp.name}
-              </button>
-            ))}
+          <div className="grid gap-3">
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
+                  {pageCopy.filterStageLabel}
+                </span>
+                {listingFocus === "blocked" && listingStats.blocked > 0 && (
+                  <span className="text-[10px] font-semibold text-[var(--text-tertiary)]">
+                    {pageCopy.blockedMixHint
+                      .replace("{unmapped}", String(listingStats.unmapped))
+                      .replace("{attributes}", String(listingStats.attributesMissing))}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 md:grid-cols-4">
+                {[
+                  { focus: "all" as const, label: pageCopy.focusAll, value: listingStats.all, hint: pageCopy.focusAllHint },
+                  { focus: "ready" as const, label: pageCopy.focusReady, value: listingStats.ready, hint: pageCopy.focusReadyHint },
+                  { focus: "review" as const, label: pageCopy.focusReview, value: listingStats.review, hint: pageCopy.focusReviewHint },
+                  { focus: "blocked" as const, label: pageCopy.focusBlocked, value: listingStats.blocked, hint: pageCopy.focusBlockedHint },
+                ].map((item) => (
+                  <button
+                    key={item.focus}
+                    type="button"
+                    aria-pressed={listingFocus === item.focus}
+                    title={item.hint}
+                    onClick={() => { setListingFocus(item.focus); setPage(1); }}
+                    className={`min-h-10 rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
+                      listingFocus === item.focus
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-body)]"
+                    }`}
+                  >
+                    <span className="block leading-tight">{item.label}</span>
+                    <span className="mt-0.5 block text-[11px] opacity-75">{item.value}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
 
-          {hasFilters && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:max-w-3xl lg:grid-cols-[minmax(170px,240px)_minmax(220px,300px)]">
+              <label className="flex min-w-0 flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
+                  {pageCopy.filterStatusLabel}
+                </span>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className="h-10 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  {STATUS_FILTER.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex min-w-0 flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
+                  {pageCopy.filterMarketplaceLabel}
+                </span>
+                <select
+                  value={mpFilter}
+                  onChange={(event) => setMpFilter(event.target.value)}
+                  className="h-10 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">{pageCopy.filterMarketplaceAll}</option>
+                  {marketplaces.map(mp => (
+                    <option key={mp.slug} value={mp.slug}>{mp.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          {activeFilterSummary.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl bg-[var(--bg-body)] px-3 py-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">{t.filtersActive}</span>
-              {search.trim() && (
-                <span className="rounded-full bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                  &quot;{search.trim()}&quot;
+              {activeFilterSummary.map((item) => (
+                <span key={item.key} className="rounded-full bg-[var(--bg-card)] px-2.5 py-1 text-[11px] font-semibold text-[var(--text-secondary)]">
+                  <span className="text-[var(--text-tertiary)]">{item.label}:</span> {item.value}
                 </span>
-              )}
-              {statusFilter && (
-                <span className="rounded-full bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                  {STATUS_FILTER.find(f => f.value === statusFilter)?.label ?? statusFilter}
-                </span>
-              )}
-              {mpFilter && (
-                <span className="rounded-full bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                  {marketplaces.find(mp => mp.slug === mpFilter)?.name ?? mpFilter}
-                </span>
-              )}
+              ))}
             </div>
           )}
         </div>
@@ -2071,6 +2240,9 @@ export default function ProductsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-indigo-700">
                 {selected.size} {t.selectedCount}
+              </span>
+              <span className="text-xs font-medium text-indigo-700">
+                {pageCopy.selectedPageScope}
               </span>
               {mpFilter && selectedReadyCount > 0 && (
                 <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-green-700">
@@ -2333,7 +2505,7 @@ export default function ProductsPage() {
                 {hasListViewFilters ? t.noResults : t.noProducts}
               </div>
               <div className="text-sm text-[var(--text-tertiary)]">
-                {hasFilters
+                {hasBaseFilters
                   ? t.emptyFilterHint
                   : listingFocus !== "all"
                     ? PRODUCTS_PAGE_COPY[lang].focusEmpty
@@ -2344,49 +2516,24 @@ export default function ProductsPage() {
             {hasListViewFilters && (
               <>
                 <div className="flex flex-wrap justify-center gap-2">
-                  {search.trim() && (
-                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      &quot;{search.trim()}&quot;
+                  {activeFilterSummary.map((item) => (
+                    <span key={item.key} className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
+                      <span className="text-[var(--text-tertiary)]">{item.label}:</span> {item.value}
                     </span>
-                  )}
-                  {statusFilter && (
-                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      {STATUS_FILTER.find(f => f.value === statusFilter)?.label ?? statusFilter}
-                    </span>
-                  )}
-                  {mpFilter && (
-                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      {marketplaces.find(mp => mp.slug === mpFilter)?.name ?? mpFilter}
-                    </span>
-                  )}
-                  {listingFocus !== "all" && (
-                    <span className="rounded-full bg-[var(--bg-body)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      {focusLabels[listingFocus]}
-                    </span>
-                  )}
+                  ))}
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  {listingFocus !== "all" && (
-                    <button
-                      onClick={() => setListingFocus("all")}
-                      className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
-                    >
-                      {PRODUCTS_PAGE_COPY[lang].focusReset}
-                    </button>
-                  )}
-                  {hasFilters && (
-                    <button
-                      onClick={clearFilters}
-                      className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
-                    >
-                      {t.clearFilters}
-                    </button>
-                  )}
+                  <button
+                    onClick={clearFilters}
+                    className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--bg-input)]"
+                  >
+                    {t.clearFilters}
+                  </button>
                 </div>
               </>
             )}
 
-            {!hasFilters && listingFocus === "all" && (
+            {!hasBaseFilters && listingFocus === "all" && (
               <div className="mt-1 flex flex-col gap-2 sm:flex-row">
                 <button onClick={() => router.push("/dashboard/imports")}
                   className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-100">
@@ -2472,11 +2619,11 @@ export default function ProductsPage() {
                                     ? "border-slate-200 bg-slate-100 text-slate-700"
                                     : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)]"
                           }`}>
-                            {statusLabel}
+                            {pageCopy.badgeStatusPrefix}: {statusLabel}
                           </span>
                           {p.brand && (
                             <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
-                              {p.brand}
+                              {pageCopy.badgeBrandPrefix}: {p.brand}
                             </span>
                           )}
                           {importedBadgeMeta && (
@@ -2499,10 +2646,11 @@ export default function ProductsPage() {
                         ? integList.map(integ => {
                             const ready = integ.missing === 0;
                             const isFiltered = mpFilter === integ.slug;
+                            const integrationMeta = getMarketplaceIntegrationMeta(lang, integ.name, integ.missing);
                             return (
                               <span
                                 key={integ.slug}
-                                title={ready ? "Wszystkie wymagane atrybuty uzupełnione" : `Brakuje ${integ.missing} atrybutów`}
+                                title={integrationMeta.title}
                                 className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-semibold transition ${
                                   ready
                                     ? isFiltered
@@ -2514,7 +2662,7 @@ export default function ProductsPage() {
                                 }`}
                               >
                                 <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${ready ? "bg-green-500" : "bg-amber-400"}`} />
-                                {integ.name}{ready ? "" : ` / ${integ.missing}`}
+                                {integrationMeta.label}
                               </span>
                             );
                           })
@@ -2613,12 +2761,12 @@ export default function ProductsPage() {
                                   ? "bg-slate-100 text-slate-700 border-slate-200"
                                   : "bg-[var(--bg-input)] text-[var(--text-secondary)] border-[var(--border-default)]"
                         }`}>
-                          {statusLabel}
+                          {pageCopy.badgeStatusPrefix}: {statusLabel}
                         </span>
                         {p.brand && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0
                             text-indigo-600 bg-indigo-50">
-                            {p.brand}
+                            {pageCopy.badgeBrandPrefix}: {p.brand}
                           </span>
                         )}
                         {importedBadgeMeta && (
@@ -2641,9 +2789,10 @@ export default function ProductsPage() {
                         ? integList.map(integ => {
                             const ready = integ.missing === 0;
                             const isFiltered = mpFilter === integ.slug;
+                            const integrationMeta = getMarketplaceIntegrationMeta(lang, integ.name, integ.missing);
                             return (
                               <span key={integ.slug}
-                                title={ready ? "Wszystkie wymagane atrybuty uzupełnione" : `Brakuje ${integ.missing} atrybutów`}
+                                title={integrationMeta.title}
                                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
                                   ready
                                     ? isFiltered
@@ -2654,7 +2803,7 @@ export default function ProductsPage() {
                                       : "bg-[var(--bg-input)] text-[var(--text-secondary)] border-[var(--border-default)]"
                                 }`}>
                                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ready ? "bg-green-500" : "bg-amber-400"}`} />
-                                {integ.name}{ready ? "" : ` / ${integ.missing}`}
+                                {integrationMeta.label}
                               </span>
                             );
                           })
@@ -2689,43 +2838,99 @@ export default function ProductsPage() {
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex flex-col gap-2 border-t border-[var(--border-light)] bg-[var(--bg-table-header)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-xs text-[var(--text-tertiary)]">
-                  {t.page} {page} {t.of} {totalPages} &middot; {total} {t.productCount}
+            {total > 0 && (
+              <div className="flex flex-col gap-3 border-t border-[var(--border-light)] bg-[var(--bg-table-header)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-tertiary)]">
+                  <span>
+                    {t.page} {page} {t.of} {totalPages} &middot; {total} {t.productCount}
+                  </span>
+                  <label className="flex items-center gap-2">
+                    <span>{pageCopy.pageSizeLabel}</span>
+                    <select
+                      value={pageSize}
+                      onChange={(event) => {
+                        const nextSize = normalizeProductPageSize(Number(event.target.value));
+                        setPageSize(nextSize);
+                        setPage(1);
+                        setSelected(new Set());
+                        setSplitSelectionGroups([]);
+                      }}
+                      className="h-8 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-xs font-semibold text-[var(--text-secondary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                    >
+                      {PRODUCT_PAGE_SIZE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  <button
-                    disabled={page === 1}
-                    onClick={() => { const np = page - 1; setPage(np); loadProducts(search, np, statusFilter, mpFilter); }}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border-default)]
-                      text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)] disabled:opacity-40 transition">
-                    &larr;
-                  </button>
-                  {getProductPaginationWindow(page, totalPages).map((token) => (
-                    typeof token === "number" ? (
-                      <button key={token}
-                        onClick={() => { setPage(token); loadProducts(search, token, statusFilter, mpFilter); }}
-                        className={`w-8 h-8 text-xs rounded-lg border transition font-medium ${
-                          page === token
-                            ? "bg-indigo-600 border-indigo-600 text-white"
-                            : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)]"
-                        }`}>
-                        {token}
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                  {totalPages > 1 && (
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const targetPage = Number.parseInt(pageJump, 10);
+                        if (Number.isInteger(targetPage)) goToProductPage(targetPage);
+                      }}
+                    >
+                      <label htmlFor="products-page-jump" className="text-xs text-[var(--text-tertiary)]">
+                        {pageCopy.pageJumpLabel}
+                      </label>
+                      <input
+                        id="products-page-jump"
+                        value={pageJump}
+                        onChange={(event) => setPageJump(event.target.value.replace(/[^\d]/g, ""))}
+                        inputMode="numeric"
+                        placeholder={String(page)}
+                        className="h-8 w-20 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-2 text-xs font-semibold text-[var(--text-secondary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                      <button
+                        type="submit"
+                        className="h-8 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--pagination-bg)]"
+                      >
+                        {pageCopy.pageJumpButton}
                       </button>
-                    ) : (
-                      <span key={token} className="flex h-8 w-8 items-center justify-center text-xs text-[var(--text-tertiary)]">
-                        ...
-                      </span>
-                    )
-                  ))}
-                  <button
-                    disabled={page === totalPages}
-                    onClick={() => { const np = page + 1; setPage(np); loadProducts(search, np, statusFilter, mpFilter); }}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border-default)]
-                      text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)] disabled:opacity-40 transition">
-                    &rarr;
-                  </button>
+                    </form>
+                  )}
+
+                  {totalPages > 1 && (
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        aria-disabled={page === 1}
+                        onClick={() => { if (page > 1) goToProductPage(page - 1); }}
+                        className={`rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition ${
+                          page === 1 ? "cursor-not-allowed opacity-40" : "hover:bg-[var(--pagination-bg)]"
+                        }`}>
+                        &larr;
+                      </button>
+                      {getProductPaginationWindow(page, totalPages).map((token) => (
+                        typeof token === "number" ? (
+                          <button key={token}
+                            onClick={() => goToProductPage(token)}
+                            className={`h-8 w-8 rounded-lg border text-xs font-medium transition ${
+                              page === token
+                                ? "border-indigo-600 bg-indigo-600 text-white"
+                                : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--pagination-bg)]"
+                            }`}>
+                            {token}
+                          </button>
+                        ) : (
+                          <span key={token} className="flex h-8 w-8 items-center justify-center text-xs text-[var(--text-tertiary)]">
+                            ...
+                          </span>
+                        )
+                      ))}
+                      <button
+                        aria-disabled={page === totalPages}
+                        onClick={() => { if (page < totalPages) goToProductPage(page + 1); }}
+                        className={`rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition ${
+                          page === totalPages ? "cursor-not-allowed opacity-40" : "hover:bg-[var(--pagination-bg)]"
+                        }`}>
+                        &rarr;
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
