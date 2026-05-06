@@ -29,10 +29,10 @@ export type AssistantResponse = {
 };
 
 export const ASSISTANT_QUICK_PROMPTS: AssistantSuggestion[] = [
-  { label: "Co poprawic najpierw?", prompt: "Co powinienem poprawic najpierw w produktach?" },
-  { label: "Import produktow", prompt: "Jak najlepiej zaimportowac nowe produkty i uruchomic AI?" },
-  { label: "Przygotuj eksport", prompt: "Jak przygotowac produkty do eksportu na marketplace?" },
-  { label: "Kredyty AI", prompt: "Ile kredytow potrzebuje do kolejnej serii ofert?" },
+  { label: "Co poprawić najpierw?", prompt: "Co powinienem poprawić najpierw w produktach?" },
+  { label: "Import produktów", prompt: "Jak najlepiej zaimportować nowe produkty i uruchomić AI?" },
+  { label: "Przygotuj eksport", prompt: "Jak przygotować produkty do eksportu na marketplace?" },
+  { label: "Kredyty AI", prompt: "Ile kredytów potrzebuję do kolejnej serii ofert?" },
 ];
 
 function cleanText(value: unknown, maxLength = 2000) {
