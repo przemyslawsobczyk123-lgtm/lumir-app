@@ -4,6 +4,7 @@ export const translations = {
   pl: {
     nav: {
       dashboard: "Dashboard",
+      assistant: "Asystent AI",
       products: "Produkty",
       imports: "Import",
       exportApi: "Export",
@@ -36,6 +37,7 @@ export const translations = {
     dropdown: {
       settings: "Ustawienia",
       logout: "Wyloguj",
+      themeToggle: "Motyw",
     },
     logoutModal: {
       title: "Wylogować się?",
@@ -316,6 +318,7 @@ export const translations = {
   en: {
     nav: {
       dashboard: "Dashboard",
+      assistant: "AI Assistant",
       products: "Products",
       imports: "Import",
       exportApi: "Export",
@@ -348,6 +351,7 @@ export const translations = {
     dropdown: {
       settings: "Settings",
       logout: "Log out",
+      themeToggle: "Theme",
     },
     logoutModal: {
       title: "Log out?",

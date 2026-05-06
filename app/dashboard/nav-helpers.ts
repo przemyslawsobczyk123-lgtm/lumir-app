@@ -1,6 +1,7 @@
 export type DashboardNavLabels = {
   dashboard: string;
   products: string;
+  assistant: string;
   imports: string;
   exportApi: string;
   sellers: string;
@@ -17,7 +18,7 @@ export type DashboardNavItem = {
   tone?: DashboardNavTone;
 };
 
-export type DashboardNavTone = "default" | "import" | "export";
+export type DashboardNavTone = "default" | "assistant" | "import" | "export";
 
 export type DashboardUser = {
   name?: string;
@@ -71,6 +72,7 @@ export function canViewBillingStats(user?: DashboardUser | null) {
 export function getDashboardNavItems(labels: DashboardNavLabels, user?: DashboardUser | null): DashboardNavItem[] {
   const items: DashboardNavItem[] = [
     { href: "/dashboard", label: labels.dashboard, exact: true, icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+    { href: "/dashboard/assistant", label: labels.assistant, exact: false, icon: "M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8L12 3zM19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14zM5 14l.8 1.8L8 16.5l-2.2.7L5 19l-.8-1.8L2 16.5l2.2-.7L5 14z", tone: "assistant" },
     { href: "/dashboard/products", label: labels.products, exact: false, icon: "M4 6h16M4 10h16M4 14h16M4 18h16" },
     { href: "/dashboard/imports", label: labels.imports, exact: false, icon: "M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2", tone: "import" },
     { href: "/dashboard/export-api", label: labels.exportApi, exact: false, icon: "M5 7h14M5 12h14M5 17h14", tone: "export" },
@@ -102,6 +104,9 @@ export function getDashboardNavItemClass(active: boolean, tone: DashboardNavTone
   const base = "flex items-center gap-2.5 px-4 py-3 rounded-xl font-medium cursor-pointer transition-all";
 
   if (active) {
+    if (tone === "assistant") {
+      return `${base} bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-sm shadow-indigo-950/30 ring-1 ring-indigo-200/30`;
+    }
     if (tone === "import") {
       return `${base} bg-sky-500 text-white shadow-sm shadow-sky-950/30 ring-1 ring-sky-200/30`;
     }
@@ -111,6 +116,9 @@ export function getDashboardNavItemClass(active: boolean, tone: DashboardNavTone
     return `${base} bg-green-500 text-white shadow-sm shadow-green-900/30`;
   }
 
+  if (tone === "assistant") {
+    return `${base} text-indigo-200 ring-1 ring-indigo-400/10 hover:bg-indigo-500/15 hover:text-white hover:ring-indigo-300/30`;
+  }
   if (tone === "import") {
     return `${base} text-sky-200 ring-1 ring-sky-400/10 hover:bg-sky-500/15 hover:text-white hover:ring-sky-300/30`;
   }

@@ -8,6 +8,7 @@ test("dashboard nav keeps products clean and moves imports to its own sidebar it
   const items = getDashboardNavItems({
     dashboard: "Dashboard",
     products: "Produkty",
+    assistant: "Asystent",
     imports: "Importy",
     exportApi: "Export",
     sellers: "Sprzedawcy",
@@ -20,6 +21,7 @@ test("dashboard nav keeps products clean and moves imports to its own sidebar it
     items.map((item) => item.href),
     [
       "/dashboard",
+      "/dashboard/assistant",
       "/dashboard/products",
       "/dashboard/imports",
       "/dashboard/export-api",
@@ -38,6 +40,7 @@ test("dashboard nav gives import and export vivid dashboard tones", () => {
   const items = getDashboardNavItems({
     dashboard: "Dashboard",
     products: "Produkty",
+    assistant: "Asystent",
     imports: "Importy",
     exportApi: "Export",
     sellers: "Sprzedawcy",
@@ -49,21 +52,26 @@ test("dashboard nav gives import and export vivid dashboard tones", () => {
   assert.equal(items.find((item) => item.href === "/dashboard/imports")?.tone, "import");
   assert.equal(items.find((item) => item.href === "/dashboard/export-api")?.tone, "export");
 
+  assert.equal(items.find((item) => item.href === "/dashboard/assistant")?.tone, "assistant");
+
   const getClass = (navHelpers as {
-    getDashboardNavItemClass?: (active: boolean, tone?: "default" | "import" | "export") => string;
+    getDashboardNavItemClass?: (active: boolean, tone?: "default" | "assistant" | "import" | "export") => string;
   }).getDashboardNavItemClass;
 
   assert.equal(typeof getClass, "function");
   assert.match(getClass?.(true, "import") ?? "", /bg-sky-500/);
   assert.match(getClass?.(true, "export") ?? "", /bg-violet-500/);
+  assert.match(getClass?.(true, "assistant") ?? "", /from-indigo-500/);
   assert.match(getClass?.(false, "import") ?? "", /text-sky-200/);
   assert.match(getClass?.(false, "export") ?? "", /text-violet-200/);
+  assert.match(getClass?.(false, "assistant") ?? "", /text-indigo-200/);
 });
 
 test("dashboard nav hides admin modules for non-admin and admin without flags", () => {
   const labels = {
     dashboard: "Dashboard",
     products: "Products",
+    assistant: "Assistant",
     imports: "Import",
     exportApi: "Export",
     sellers: "Sellers",
@@ -98,6 +106,7 @@ test("dashboard nav shows admin modules for admin with matching permission flags
     {
       dashboard: "Dashboard",
       products: "Products",
+      assistant: "Assistant",
       imports: "Import",
       exportApi: "Export",
       sellers: "Sellers",
