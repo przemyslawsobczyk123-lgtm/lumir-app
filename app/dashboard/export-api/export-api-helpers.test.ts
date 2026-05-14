@@ -600,3 +600,404 @@ test("buildExportApiHref keeps selected product ids and marketplace", () => {
     "/dashboard/export-api?marketplace=allegro&productIds=74&accountId=13&fields=title%2Cstock"
   );
 });
+
+
+import {
+  buildExportProductSummaryMap,
+  classifyExportReviewSignals,
+  enrichExportReadinessRows,
+  filterExportReadinessRowsForMarketplace,
+  getExportProductDisplayLabel,
+  getExportProductIdentifierBadges,
+  normalizeExportProductSummaries,
+  shouldConfirmReviewForSelection,
+} from "./export-api-helpers.ts";
+
+test("normalizeExportReadinessRows preserves product display fields when backend includes them", () => {
+  const rows = normalizeExportReadinessRows([
+    {
+      productId: 200,
+      status: "ready",
+      classification: "existing-offer-update",
+      productTitle: "Patelnia Tefal Unlimited 24cm",
+      productEan: "5901234123457",
+      productSku: "TF-UN-24",
+      marketplaceCategoryPath: "Dom/Kuchnia/Patelnie",
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "18527975262" },
+    },
+    {
+      productId: 201,
+      status: "blocked",
+      classification: "new-offer-create",
+      product: { title: "Lampa stojaca", ean: "5905555000000", sku: "LMP-1" },
+      categoryPath: "Dom/Lampy",
+    },
+    {
+      productId: 202,
+      status: "ready",
+      classification: "existing-offer-update",
+    },
+  ]);
+
+  assert.equal(rows[0]?.productTitle, "Patelnia Tefal Unlimited 24cm");
+  assert.equal(rows[0]?.productEan, "5901234123457");
+  assert.equal(rows[0]?.productSku, "TF-UN-24");
+  assert.equal(rows[0]?.marketplaceCategoryPath, "Dom/Kuchnia/Patelnie");
+  assert.equal(rows[0]?.hasMarketplaceMapping, true);
+
+  assert.equal(rows[1]?.productTitle, "Lampa stojaca");
+  assert.equal(rows[1]?.productEan, "5905555000000");
+  assert.equal(rows[1]?.marketplaceCategoryPath, "Dom/Lampy");
+  assert.equal(rows[1]?.hasMarketplaceMapping, true);
+
+  assert.equal(rows[2]?.productTitle, null);
+  assert.equal(rows[2]?.hasMarketplaceMapping, false);
+});
+
+test("getExportProductDisplayLabel and getExportProductIdentifierBadges format card metadata", () => {
+  const row = normalizeExportReadinessRows([
+    {
+      productId: 101,
+      status: "ready",
+      classification: "existing-offer-update",
+      productTitle: "Garnek emaliowany 5L",
+      productEan: "5901234567890",
+      productSku: "GA-5L",
+      marketplaceCategoryPath: "Dom/Kuchnia/Garnki",
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "9999" },
+    },
+  ])[0];
+
+  assert.equal(getExportProductDisplayLabel(row), "Garnek emaliowany 5L");
+  assert.deepEqual(getExportProductIdentifierBadges(row), [
+    "#101",
+    "EAN 5901234567890",
+    "Dom/Kuchnia/Garnki",
+  ]);
+
+  const fallback = normalizeExportReadinessRows([
+    { productId: 999, status: "ready", classification: "existing-offer-update" },
+  ])[0];
+  assert.equal(getExportProductDisplayLabel(fallback), "Produkt #999");
+  assert.deepEqual(getExportProductIdentifierBadges(fallback), ["#999"]);
+
+  const skuOnly = normalizeExportReadinessRows([
+    {
+      productId: 102,
+      status: "ready",
+      classification: "existing-offer-update",
+      productSku: "FALLBACK",
+    },
+  ])[0];
+  assert.deepEqual(getExportProductIdentifierBadges(skuOnly), ["#102", "SKU FALLBACK"]);
+});
+
+test("normalizeExportProductSummaries parses product list payload and decodes integrations", () => {
+  const summaries = normalizeExportProductSummaries([
+    {
+      id: 70,
+      title: "Patelnia",
+      ean: "5901111000001",
+      sku: "PA-1",
+      integrations: "allegro\x01Allegro\x010\x01Dom/Kuchnia/Patelnie|||empik\x01Empik\x011\x01Dom/Akcesoria",
+    },
+    {
+      id: 71,
+      title: "Garnek",
+      integrations: "",
+    },
+    { id: 0, title: "skip" },
+    { id: 70, title: "duplicate" },
+  ]);
+
+  assert.equal(summaries.length, 2);
+  assert.equal(summaries[0]?.id, 70);
+  assert.equal(summaries[0]?.integrations.length, 2);
+  assert.equal(summaries[0]?.integrations[0]?.slug, "allegro");
+  assert.equal(summaries[0]?.integrations[0]?.categoryPath, "Dom/Kuchnia/Patelnie");
+  assert.equal(summaries[0]?.integrations[1]?.slug, "empik");
+  assert.equal(summaries[1]?.integrations.length, 0);
+});
+
+test("enrichExportReadinessRows fills product name, EAN and marketplace category from product list", () => {
+  const rows = normalizeExportReadinessRows([
+    {
+      productId: 70,
+      marketplaceSlug: "allegro",
+      status: "ready",
+      classification: "existing-offer-update",
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "9999" },
+    },
+    {
+      productId: 71,
+      marketplaceSlug: "allegro",
+      status: "ready",
+      classification: "existing-offer-update",
+    },
+  ]);
+  const summaries = normalizeExportProductSummaries([
+    {
+      id: 70,
+      title: "Patelnia",
+      ean: "5901111000001",
+      sku: "PA-1",
+      integrations: "allegro\x01Allegro\x010\x01Dom/Kuchnia/Patelnie|||empik\x01Empik\x010\x01Dom/Akcesoria",
+    },
+  ]);
+
+  const enriched = enrichExportReadinessRows(rows, summaries);
+  assert.equal(enriched[0]?.productTitle, "Patelnia");
+  assert.equal(enriched[0]?.productEan, "5901111000001");
+  assert.equal(enriched[0]?.marketplaceCategoryPath, "Dom/Kuchnia/Patelnie");
+  assert.equal(enriched[0]?.hasMarketplaceMapping, true);
+  // Row without a matching summary stays unchanged but without mapping.
+  assert.equal(enriched[1]?.productTitle, null);
+  assert.equal(enriched[1]?.hasMarketplaceMapping, false);
+});
+
+test("enrichExportReadinessRows respects multi-marketplace product mapping", () => {
+  const summaries = normalizeExportProductSummaries([
+    {
+      id: 80,
+      title: "Glosnik",
+      integrations: "allegro\x01Allegro\x010\x01Elektronika/Audio|||mediaexpert\x01MediaExpert\x010\x01AV/Glosniki",
+    },
+  ]);
+  const lookup = buildExportProductSummaryMap(summaries);
+
+  const allegroRow = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 80, marketplaceSlug: "allegro", status: "ready", classification: "existing-offer-update" },
+    ]),
+    lookup
+  )[0];
+  const mediaRow = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 80, marketplaceSlug: "mediaexpert", status: "ready", classification: "mirakl-xlsx-category" },
+    ]),
+    lookup
+  )[0];
+  const empikRow = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 80, marketplaceSlug: "empik", status: "ready", classification: "mirakl-xlsx-category" },
+    ]),
+    lookup
+  )[0];
+
+  assert.equal(allegroRow?.marketplaceCategoryPath, "Elektronika/Audio");
+  assert.equal(allegroRow?.hasMarketplaceMapping, true);
+  assert.equal(mediaRow?.marketplaceCategoryPath, "AV/Glosniki");
+  assert.equal(mediaRow?.hasMarketplaceMapping, true);
+  // empik isn't mapped on this product -> filter must drop the row.
+  assert.equal(empikRow?.marketplaceCategoryPath, null);
+  assert.equal(empikRow?.hasMarketplaceMapping, false);
+});
+
+test("filterExportReadinessRowsForMarketplace keeps only rows with a category for that marketplace", () => {
+  const summaries = normalizeExportProductSummaries([
+    {
+      id: 80,
+      title: "Glosnik",
+      integrations: "allegro\x01Allegro\x010\x01Elektronika/Audio|||mediaexpert\x01MediaExpert\x010\x01AV/Glosniki",
+    },
+    {
+      id: 81,
+      title: "Lampa",
+      integrations: "allegro\x01Allegro\x010\x01Dom/Lampy",
+    },
+    {
+      id: 82,
+      title: "Tylko Empik",
+      integrations: "empik\x01Empik\x010\x01Ksiazki/Beletrystyka",
+    },
+  ]);
+
+  const allegroRows = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 80, marketplaceSlug: "allegro", status: "ready", classification: "existing-offer-update" },
+      { productId: 81, marketplaceSlug: "allegro", status: "ready", classification: "existing-offer-update" },
+      { productId: 82, marketplaceSlug: "allegro", status: "ready", classification: "existing-offer-update" },
+    ]),
+    summaries
+  );
+
+  const visibleAllegro = filterExportReadinessRowsForMarketplace(allegroRows, "allegro", { enrichmentReady: true });
+  assert.deepEqual(visibleAllegro.map((row) => row.productId), [80, 81]);
+
+  const mediaRows = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 80, marketplaceSlug: "mediaexpert", status: "ready", classification: "mirakl-xlsx-category" },
+      { productId: 81, marketplaceSlug: "mediaexpert", status: "ready", classification: "mirakl-xlsx-category" },
+      { productId: 82, marketplaceSlug: "mediaexpert", status: "ready", classification: "mirakl-xlsx-category" },
+    ]),
+    summaries
+  );
+  const visibleMedia = filterExportReadinessRowsForMarketplace(mediaRows, "mediaexpert", { enrichmentReady: true });
+  assert.deepEqual(visibleMedia.map((row) => row.productId), [80]);
+
+  const empikRows = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 82, marketplaceSlug: "empik", status: "ready", classification: "mirakl-xlsx-category" },
+    ]),
+    summaries
+  );
+  const visibleEmpik = filterExportReadinessRowsForMarketplace(empikRows, "empik", { enrichmentReady: true });
+  assert.deepEqual(visibleEmpik.map((row) => row.productId), [82]);
+});
+
+test("filterExportReadinessRowsForMarketplace is a noop when enrichment did not load", () => {
+  const rows = normalizeExportReadinessRows([
+    { productId: 80, marketplaceSlug: "allegro", status: "ready", classification: "existing-offer-update" },
+    { productId: 81, marketplaceSlug: "allegro", status: "ready", classification: "existing-offer-update" },
+  ]);
+  const result = filterExportReadinessRowsForMarketplace(rows, "allegro", { enrichmentReady: false });
+  assert.deepEqual(result.map((row) => row.productId), [80, 81]);
+});
+
+test("classifyExportReviewSignals separates soft review confirms from hard blockers", () => {
+  const softOnly = normalizeExportReadinessRows([
+    {
+      productId: 90,
+      status: "needs_review",
+      classification: "existing-offer-update",
+      blockers: ["delivery_confirmed", "margin_confirmed"],
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "111" },
+    },
+  ])[0];
+  const hardMixed = normalizeExportReadinessRows([
+    {
+      productId: 91,
+      status: "needs_review",
+      classification: "new-offer-create",
+      blockers: ["delivery_confirmed", "title_keyword_coverage", "minimum_image_count"],
+    },
+  ])[0];
+
+  const softClassification = classifyExportReviewSignals(softOnly);
+  assert.equal(softClassification.hasHardBlocker, false);
+  assert.equal(softClassification.hasSoftReview, true);
+  assert.deepEqual(softClassification.softLabels, [
+    "Dostawa wymaga potwierdzenia",
+    "Marza wymaga potwierdzenia",
+  ]);
+
+  const hardClassification = classifyExportReviewSignals(hardMixed);
+  assert.equal(hardClassification.hasHardBlocker, true);
+  assert.deepEqual(hardClassification.hardLabels, [
+    "Tytul wymaga lepszego SEO",
+    "Za malo zdjec",
+  ]);
+});
+
+test("getExportReadinessPresentation demotes review rows that still have hard blockers (Allegro)", () => {
+  const reviewWithSoftOnly = normalizeExportReadinessRows([
+    {
+      productId: 92,
+      status: "needs_review",
+      classification: "existing-offer-update",
+      blockers: ["delivery_confirmed", "margin_confirmed"],
+      requiresConfirmation: true,
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "222" },
+    },
+  ])[0];
+  const reviewWithHardSeo = normalizeExportReadinessRows([
+    {
+      productId: 93,
+      status: "needs_review",
+      classification: "existing-offer-update",
+      blockers: ["title_keyword_coverage", "manufacturer_code_support", "minimum_image_count"],
+      requiresConfirmation: true,
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "333" },
+    },
+  ])[0];
+  const newOfferReviewWithHard = normalizeExportReadinessRows([
+    {
+      productId: 94,
+      status: "needs_review",
+      classification: "new-offer-create",
+      blockers: ["title_keyword_coverage", "minimum_image_count"],
+      requiresConfirmation: true,
+    },
+  ])[0];
+  const newOfferReviewSoft = normalizeExportReadinessRows([
+    {
+      productId: 95,
+      status: "needs_review",
+      classification: "new-offer-create",
+      blockers: ["delivery_confirmed"],
+      requiresConfirmation: true,
+    },
+  ])[0];
+
+  assert.equal(getExportReadinessPresentation(reviewWithSoftOnly).bucket, "needs_review");
+  assert.equal(getExportReadinessPresentation(reviewWithSoftOnly).selectable, true);
+  assert.equal(getExportReadinessPresentation(reviewWithHardSeo).bucket, "blocked");
+  assert.equal(getExportReadinessPresentation(reviewWithHardSeo).selectable, false);
+  assert.equal(getExportReadinessPresentation(newOfferReviewWithHard).bucket, "blocked");
+  assert.equal(getExportReadinessPresentation(newOfferReviewSoft).bucket, "needs_review");
+});
+
+test("shouldConfirmReviewForSelection auto-confirms when any selected row is needs_review", () => {
+  const rows = normalizeExportReadinessRows([
+    {
+      productId: 100,
+      status: "ready",
+      classification: "existing-offer-update",
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "x" },
+    },
+    {
+      productId: 101,
+      status: "needs_review",
+      classification: "existing-offer-update",
+      blockers: ["delivery_confirmed"],
+      requiresConfirmation: true,
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "y" },
+    },
+  ]);
+
+  // No needs_review in selection -> no confirm
+  assert.equal(shouldConfirmReviewForSelection(rows, [100], false), false);
+  // Selecting the needs_review row should auto-confirm
+  assert.equal(shouldConfirmReviewForSelection(rows, [100, 101], false), true);
+  // Global flag wins regardless of selection
+  assert.equal(shouldConfirmReviewForSelection(rows, [], true), true);
+});
+
+test("Mirakl marketplaces (mediaexpert/empik) honour category filter and never need review confirm", () => {
+  const summaries = normalizeExportProductSummaries([
+    {
+      id: 200,
+      title: "Plyta winylowa",
+      ean: "5905555555555",
+      integrations: "empik\x01Empik\x010\x01Muzyka/Plyty",
+    },
+    {
+      id: 201,
+      title: "Telewizor",
+      integrations: "mediaexpert\x01MediaExpert\x010\x01AV/Telewizory",
+    },
+  ]);
+
+  const empikRows = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 200, marketplaceSlug: "empik", status: "ready", classification: "mirakl-xlsx-category" },
+      { productId: 201, marketplaceSlug: "empik", status: "ready", classification: "mirakl-xlsx-category" },
+    ]),
+    summaries
+  );
+  const visibleEmpik = filterExportReadinessRowsForMarketplace(empikRows, "empik", { enrichmentReady: true });
+  assert.deepEqual(visibleEmpik.map((row) => row.productId), [200]);
+  // Mirakl XLSX flow has no needs_review semantics in our presentation logic
+  assert.equal(getExportReadinessPresentation(visibleEmpik[0]!).bucket, "ready");
+  assert.equal(shouldConfirmReviewForSelection(visibleEmpik, [200], false), false);
+
+  const mediaRows = enrichExportReadinessRows(
+    normalizeExportReadinessRows([
+      { productId: 200, marketplaceSlug: "mediaexpert", status: "ready", classification: "mirakl-xlsx-category" },
+      { productId: 201, marketplaceSlug: "mediaexpert", status: "ready", classification: "mirakl-xlsx-category" },
+    ]),
+    summaries
+  );
+  const visibleMedia = filterExportReadinessRowsForMarketplace(mediaRows, "mediaexpert", { enrichmentReady: true });
+  assert.deepEqual(visibleMedia.map((row) => row.productId), [201]);
+});

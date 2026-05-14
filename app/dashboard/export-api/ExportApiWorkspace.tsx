@@ -11,16 +11,21 @@ import {
   canRunMarketplacePreflight,
   canStartExportRun,
   DEFAULT_ALLEGRO_EXPORT_FIELDS,
+  enrichExportReadinessRows,
+  filterExportReadinessRowsForMarketplace,
   getExportMarketplaceTabClass,
   getVisibleExportMarketplaceOptions,
   getSelectableExportReadinessIds,
   normalizeExportPreflightResult,
+  normalizeExportProductSummaries,
   normalizeExportReadinessRows,
   normalizeExportRunRows,
   parseExportApiSelection,
+  shouldConfirmReviewForSelection,
   type AllegroExportField,
   type AllegroExportFields,
   type ExportPreflightResult,
+  type ExportProductSummary,
   type ExportRunRow,
 } from "./export-api-helpers";
 
@@ -167,6 +172,8 @@ export function ExportApiWorkspace() {
   const [scopedProductIds, setScopedProductIds] = useState<number[]>(initialSelection.productIds);
   const [selectedIds, setSelectedIds] = useState<number[]>(initialSelection.productIds);
   const [rows, setRows] = useState(() => normalizeExportReadinessRows([]));
+  const [productSummaries, setProductSummaries] = useState<ExportProductSummary[]>([]);
+  const [productSummariesReady, setProductSummariesReady] = useState(false);
   const [readinessPage, setReadinessPage] = useState(1);
   const [runs, setRuns] = useState(() => normalizeExportRunRows([]));
   const [allegroAccounts, setAllegroAccounts] = useState<AllegroAccountOption[]>([]);
@@ -259,6 +266,7 @@ export function ExportApiWorkspace() {
     const load = async () => {
       setLoading(true);
       setError(null);
+      setProductSummariesReady(false);
 
       try {
         const readinessUrl = new URL(`${API}/api/marketplace-export/readiness`);
@@ -288,10 +296,46 @@ export function ExportApiWorkspace() {
         setRows(nextRows);
         setRuns(nextRuns);
         setSelectedIds((current) => getSelectableExportReadinessIds(nextRows, current));
+
+        // Enrich rows with product names, EAN and marketplace category mapping.
+        // We fetch a focused list scoped to the readiness rows so the request stays bounded.
+        const productIdsForEnrichment = nextRows.map((row) => row.productId);
+        if (productIdsForEnrichment.length === 0) {
+          setProductSummaries([]);
+          setProductSummariesReady(true);
+        } else {
+          try {
+            const productsUrl = new URL(`${API}/api/products/list`);
+            productsUrl.searchParams.set("marketplace", marketplaceSlug);
+            productsUrl.searchParams.set("page", "1");
+            productsUrl.searchParams.set("limit", String(Math.max(productIdsForEnrichment.length, 50)));
+            const productsPayload = await fetch(productsUrl.toString(), {
+              headers: authHeaders(),
+              cache: "no-store",
+            }).then(readJsonOrThrow);
+
+            if (cancelled) return;
+
+            const summaries = normalizeExportProductSummaries(
+              typeof productsPayload === "object" && productsPayload && "data" in productsPayload
+                ? (productsPayload as { data?: unknown }).data
+                : []
+            );
+            setProductSummaries(summaries);
+            setProductSummariesReady(true);
+          } catch {
+            if (cancelled) return;
+            // Enrichment is best-effort; rows still render with ID fallback.
+            setProductSummaries([]);
+            setProductSummariesReady(false);
+          }
+        }
       } catch (loadError) {
         if (cancelled) return;
         setRows([]);
         setRuns([]);
+        setProductSummaries([]);
+        setProductSummariesReady(false);
         setError(loadError instanceof Error ? loadError.message : "Nie udalo sie zaladowac Export");
       } finally {
         if (!cancelled) {
@@ -311,6 +355,25 @@ export function ExportApiWorkspace() {
   const miraklMode = isMiraklMarketplace(marketplaceSlug);
   const selectedCount = selectedIds.length;
   const activePreset = ALLEGRO_FIELD_PRESETS.find((preset) => fieldsEqual(preset.fields, allegroFields));
+
+  const enrichedRows = useMemo(
+    () => enrichExportReadinessRows(rows, productSummaries),
+    [rows, productSummaries]
+  );
+
+  const visibleRows = useMemo(
+    () => filterExportReadinessRowsForMarketplace(enrichedRows, marketplaceSlug, {
+      enrichmentReady: productSummariesReady && productSummaries.length > 0,
+    }),
+    [enrichedRows, marketplaceSlug, productSummariesReady, productSummaries.length]
+  );
+
+  const filteredOutByCategory = enrichedRows.length - visibleRows.length;
+
+  const effectiveConfirmNeedsReview = useMemo(
+    () => shouldConfirmReviewForSelection(visibleRows, selectedIds, confirmNeedsReview),
+    [visibleRows, selectedIds, confirmNeedsReview]
+  );
 
   const canRunPreflight = canRunMarketplacePreflight({
     marketplaceSlug,
@@ -347,8 +410,8 @@ export function ExportApiWorkspace() {
         body: JSON.stringify({
           marketplaceSlug,
           accountId: marketplaceSlug === "allegro" ? selectedAllegroAccountId : null,
-          productIds: getSelectableExportReadinessIds(rows, selectedIds),
-          confirmNeedsReview,
+          productIds: getSelectableExportReadinessIds(visibleRows, selectedIds),
+          confirmNeedsReview: effectiveConfirmNeedsReview,
           fields: marketplaceSlug === "allegro" ? allegroFields : null,
         }),
       }).then(readJsonOrThrow);
@@ -394,7 +457,7 @@ export function ExportApiWorkspace() {
           accountId: selectedAllegroAccountId,
           productIds,
           mode: "publish",
-          confirmNeedsReview,
+          confirmNeedsReview: effectiveConfirmNeedsReview,
           fields: marketplaceSlug === "allegro" ? allegroFields : null,
         }),
       }).then(readJsonOrThrow);
@@ -732,7 +795,7 @@ export function ExportApiWorkspace() {
           <ExportProductsBoard
             marketplaceSlug={marketplaceSlug}
             marketplaceLabel={marketplaceLabel}
-            rows={rows}
+            rows={visibleRows}
             loading={loading}
             selectedIds={selectedIds}
             onSelectedIdsChange={(nextIds) => {
@@ -743,6 +806,7 @@ export function ExportApiWorkspace() {
             onGenerateAi={handleGenerateAi}
             aiBusyIds={aiBusyIds}
             aiError={aiError}
+            filteredOutByCategoryCount={filteredOutByCategory}
           />
 
           {scopedProductIds.length > 0 && (

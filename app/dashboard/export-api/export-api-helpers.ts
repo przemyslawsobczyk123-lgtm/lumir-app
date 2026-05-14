@@ -1,4 +1,5 @@
 import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "../mvp-feature-flags.ts";
+import { parseProductIntegrations, type ProductIntegration } from "../products/ui-helpers.ts";
 
 export type ExportReadinessStatus = "ready" | "needs_review" | "blocked";
 export type ExportReadinessFilter = "all" | ExportReadinessStatus;
@@ -136,6 +137,11 @@ export type ExportReadinessRow = {
   remoteListingRef: string | null;
   externalId: string | null;
   diffCount: number;
+  productTitle: string | null;
+  productEan: string | null;
+  productSku: string | null;
+  marketplaceCategoryPath: string | null;
+  hasMarketplaceMapping: boolean;
 };
 
 export type ExportReadinessPresentation = {
@@ -413,6 +419,20 @@ export function normalizeExportReadinessRows(input: unknown): ExportReadinessRow
             ? data.externalId.trim()
             : null,
         diffCount: diffRows.length,
+        productTitle: normalizeOptionalString(data.productTitle)
+          ?? normalizeOptionalString((data.product as Record<string, unknown> | null | undefined)?.title)
+          ?? null,
+        productEan: normalizeOptionalString(data.productEan)
+          ?? normalizeOptionalString((data.product as Record<string, unknown> | null | undefined)?.ean)
+          ?? null,
+        productSku: normalizeOptionalString(data.productSku)
+          ?? normalizeOptionalString((data.product as Record<string, unknown> | null | undefined)?.sku)
+          ?? null,
+        marketplaceCategoryPath: normalizeOptionalString(data.marketplaceCategoryPath)
+          ?? normalizeOptionalString(data.categoryPath),
+        hasMarketplaceMapping: typeof data.hasMarketplaceMapping === "boolean"
+          ? data.hasMarketplaceMapping
+          : Boolean(normalizeOptionalString(data.marketplaceCategoryPath) ?? normalizeOptionalString(data.categoryPath)),
       };
     })
     .filter((row) => Number.isInteger(row.productId) && row.productId > 0);
@@ -437,6 +457,64 @@ function hasDiagnostic(row: ExportReadinessRow, token: string) {
   const normalized = normalizedLower(token);
   return [...row.blockers, ...row.warnings, ...row.missingRequiredFields]
     .some((entry) => normalizedLower(entry).includes(normalized));
+}
+
+const SOFT_REVIEW_LABELS = new Set([
+  "Wymaga potwierdzenia review",
+  "Dostawa wymaga potwierdzenia",
+  "Marza wymaga potwierdzenia",
+  "Brak zmian w wybranych polach",
+].map((value) => normalizedLower(value)));
+
+const SOFT_REVIEW_KEYWORDS = [
+  "potwierdzenia",
+  "potwierdzenie",
+  "draft wymaga",
+  "draft publish",
+  "ai_review_status",
+  "ai review",
+];
+
+function isSoftReviewLabel(label: string) {
+  const normalized = normalizedLower(label);
+  if (!normalized) return false;
+  if (SOFT_REVIEW_LABELS.has(normalized)) return true;
+  return SOFT_REVIEW_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+export type ExportReviewClassification = {
+  softLabels: string[];
+  hardLabels: string[];
+  hasSoftReview: boolean;
+  hasHardBlocker: boolean;
+};
+
+export function classifyExportReviewSignals(row: ExportReadinessRow): ExportReviewClassification {
+  const seen = new Set<string>();
+  const candidates = [...row.blockers, ...row.warnings, ...row.missingRequiredFields].filter((label) => {
+    if (!label) return false;
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+
+  const softLabels: string[] = [];
+  const hardLabels: string[] = [];
+
+  for (const label of candidates) {
+    if (isSoftReviewLabel(label)) {
+      softLabels.push(label);
+    } else {
+      hardLabels.push(label);
+    }
+  }
+
+  return {
+    softLabels,
+    hardLabels,
+    hasSoftReview: softLabels.length > 0 || row.requiresConfirmation,
+    hasHardBlocker: hardLabels.length > 0,
+  };
 }
 
 export function getExportOperationFilter(row: ExportReadinessRow): ExportReadinessOperation {
@@ -555,6 +633,17 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
 
   if (isExistingUpdate && hasRemoteOffer) {
     if (row.requiresConfirmation || row.status === "needs_review") {
+      const review = classifyExportReviewSignals(row);
+      if (review.hasHardBlocker) {
+        return {
+          bucket: "blocked",
+          label: "Braki przed review",
+          description: review.hardLabels[0] || row.summary || "Uzupelnij wymagane pola, zanim trafi do review.",
+          actionLabel: "Otworz produkt",
+          tone: "danger",
+          selectable: false,
+        };
+      }
       return {
         bucket: "needs_review",
         label: "Wymaga potwierdzenia",
@@ -599,6 +688,17 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
     }
 
     if (row.status === "needs_review" || row.requiresConfirmation) {
+      const review = classifyExportReviewSignals(row);
+      if (review.hasHardBlocker) {
+        return {
+          bucket: "blocked",
+          label: "Braki przed review",
+          description: review.hardLabels[0] || row.summary || "Uzupelnij wymagane pola, zanim trafi do review.",
+          actionLabel: "Otworz produkt",
+          tone: "danger",
+          selectable: false,
+        };
+      }
       return {
         bucket: "needs_review",
         label: "Wymaga potwierdzenia",
@@ -631,6 +731,17 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
   }
 
   if (row.status === "needs_review") {
+    const review = classifyExportReviewSignals(row);
+    if (review.hasHardBlocker) {
+      return {
+        bucket: "blocked",
+        label: "Braki przed review",
+        description: review.hardLabels[0] || row.summary || "Uzupelnij wymagane pola, zanim trafi do review.",
+        actionLabel: "Otworz produkt",
+        tone: "danger",
+        selectable: false,
+      };
+    }
     return {
       bucket: "needs_review",
       label: "Wymaga potwierdzenia",
@@ -858,4 +969,118 @@ export function getExportRunTone(status: string): ExportRunTone {
   }
 
   return "info";
+}
+
+
+export type ExportProductSummary = {
+  id: number;
+  title: string | null;
+  ean: string | null;
+  sku: string | null;
+  integrations: ProductIntegration[];
+};
+
+function toProductSummary(input: unknown): ExportProductSummary | null {
+  if (typeof input !== "object" || !input) return null;
+  const data = input as Record<string, unknown>;
+  const id = Number(data.id || 0);
+  if (!Number.isInteger(id) || id <= 0) return null;
+
+  return {
+    id,
+    title: normalizeOptionalString(data.title),
+    ean: normalizeOptionalString(data.ean),
+    sku: normalizeOptionalString(data.sku),
+    integrations: parseProductIntegrations(typeof data.integrations === "string" ? data.integrations : null),
+  };
+}
+
+export function normalizeExportProductSummaries(input: unknown): ExportProductSummary[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<number>();
+  const result: ExportProductSummary[] = [];
+  for (const entry of input) {
+    const summary = toProductSummary(entry);
+    if (!summary) continue;
+    if (seen.has(summary.id)) continue;
+    seen.add(summary.id);
+    result.push(summary);
+  }
+  return result;
+}
+
+export function buildExportProductSummaryMap(summaries: ExportProductSummary[]): Map<number, ExportProductSummary> {
+  const map = new Map<number, ExportProductSummary>();
+  for (const summary of summaries) {
+    map.set(summary.id, summary);
+  }
+  return map;
+}
+
+export function enrichExportReadinessRows(
+  rows: ExportReadinessRow[],
+  summaries: ExportProductSummary[] | Map<number, ExportProductSummary>
+): ExportReadinessRow[] {
+  const lookup = summaries instanceof Map ? summaries : buildExportProductSummaryMap(summaries);
+  return rows.map((row) => {
+    const summary = lookup.get(row.productId);
+    if (!summary) return row;
+
+    const integration = summary.integrations.find((entry) => entry.slug === row.marketplaceSlug);
+    const categoryPath = integration?.categoryPath?.trim() || row.marketplaceCategoryPath || null;
+    return {
+      ...row,
+      productTitle: row.productTitle || summary.title,
+      productEan: row.productEan || summary.ean,
+      productSku: row.productSku || summary.sku,
+      marketplaceCategoryPath: categoryPath,
+      hasMarketplaceMapping: row.hasMarketplaceMapping
+        || Boolean(integration && integration.categoryPath && integration.categoryPath.trim())
+        || Boolean(categoryPath),
+    };
+  });
+}
+
+export type ExportReadinessRowsForMarketplaceOptions = {
+  enrichmentReady: boolean;
+};
+
+export function filterExportReadinessRowsForMarketplace(
+  rows: ExportReadinessRow[],
+  marketplaceSlug: string,
+  options: ExportReadinessRowsForMarketplaceOptions = { enrichmentReady: false }
+): ExportReadinessRow[] {
+  if (!options.enrichmentReady) return rows;
+  if (!marketplaceSlug) return rows;
+  return rows.filter((row) => {
+    if (row.marketplaceSlug && row.marketplaceSlug !== marketplaceSlug) return false;
+    return row.hasMarketplaceMapping;
+  });
+}
+
+export function getExportProductDisplayLabel(row: ExportReadinessRow): string {
+  if (row.productTitle) return row.productTitle;
+  return `Produkt #${row.productId}`;
+}
+
+export function getExportProductIdentifierBadges(row: ExportReadinessRow): string[] {
+  const badges: string[] = [`#${row.productId}`];
+  if (row.productEan) badges.push(`EAN ${row.productEan}`);
+  else if (row.productSku) badges.push(`SKU ${row.productSku}`);
+  if (row.marketplaceCategoryPath) badges.push(row.marketplaceCategoryPath);
+  return badges;
+}
+
+export function shouldConfirmReviewForSelection(
+  rows: ExportReadinessRow[],
+  selectedIds: number[],
+  globalConfirm: boolean
+): boolean {
+  if (globalConfirm) return true;
+  if (selectedIds.length === 0) return false;
+  const selectedSet = new Set(selectedIds);
+  return rows.some((row) => {
+    if (!selectedSet.has(row.productId)) return false;
+    return getExportReadinessPresentation(row).bucket === "needs_review";
+  });
 }
