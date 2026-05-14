@@ -551,6 +551,10 @@ function getExportReadinessSearchHaystack(row: ExportReadinessRow) {
     row.remoteListingRef,
     row.externalId,
     row.diffCount,
+    row.productTitle,
+    row.productEan,
+    row.productSku,
+    row.marketplaceCategoryPath,
     presentation.label,
     presentation.description,
     getExportOperationFilter(row),
@@ -1083,4 +1087,31 @@ export function shouldConfirmReviewForSelection(
     if (!selectedSet.has(row.productId)) return false;
     return getExportReadinessPresentation(row).bucket === "needs_review";
   });
+}
+
+
+export const EXPORT_BUCKET_PAGE_SIZE = 50;
+
+export type ExportBucketSlice<T> = {
+  visible: T[];
+  hiddenCount: number;
+  total: number;
+  hasMore: boolean;
+};
+
+export function paginateExportBucket<T>(items: T[], visibleCount: number, pageSize: number = EXPORT_BUCKET_PAGE_SIZE): ExportBucketSlice<T> {
+  const total = items.length;
+  const safeVisible = Math.max(pageSize, Math.min(visibleCount || pageSize, total));
+  const visible = items.slice(0, safeVisible);
+  return {
+    visible,
+    hiddenCount: Math.max(0, total - visible.length),
+    total,
+    hasMore: visible.length < total,
+  };
+}
+
+export function clampSearchQuery(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, 200);
 }

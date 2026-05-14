@@ -14,6 +14,8 @@ import {
   enrichExportReadinessRows,
   filterExportReadinessRowsForMarketplace,
   getExportMarketplaceTabClass,
+  getExportProductDisplayLabel,
+  getExportProductIdentifierBadges,
   getVisibleExportMarketplaceOptions,
   getSelectableExportReadinessIds,
   normalizeExportPreflightResult,
@@ -988,10 +990,91 @@ export function ExportApiWorkspace() {
 
               {preflight.blockedItems.length > 0 && (
                 <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
-                  <div className="font-semibold">{preflight.blockedItems.length} produktow zablokowanych w preflight</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold">
+                      {preflight.blockedItems.length} produktow zablokowanych w preflight
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStep("products")}
+                      className="shrink-0 rounded-lg border border-rose-300/40 bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
+                    >
+                      Wroc do kroku 2
+                    </button>
+                  </div>
                   <p className="mt-1 text-rose-100/80">
-                    Wroc do kroku 2 i uzyj <strong>Generuj AI</strong> albo otworz produkty recznie.
+                    Powody blokad ponizej. Otworz produkt aby go naprawic, albo uzyj Generuj AI.
                   </p>
+                  <ul className="mt-3 space-y-2">
+                    {preflight.blockedItems.map((item) => {
+                      const matchingRow = enrichedRows.find((row) => row.productId === item.productId);
+                      const displayName = matchingRow ? getExportProductDisplayLabel(matchingRow) : `Produkt #${item.productId}`;
+                      const badges = matchingRow ? getExportProductIdentifierBadges(matchingRow) : [`#${item.productId}`];
+                      const reasons = item.blockers.length > 0
+                        ? item.blockers
+                        : matchingRow
+                          ? [...matchingRow.blockers, ...matchingRow.missingRequiredFields].slice(0, 3)
+                          : [];
+                      const aiBusy = aiBusyIds.includes(item.productId);
+                      return (
+                        <li
+                          key={item.productId}
+                          className="rounded-xl border border-rose-300/30 bg-rose-500/15 px-3 py-2"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-semibold text-rose-50" title={displayName}>
+                                {displayName}
+                              </div>
+                              {badges.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-rose-100/80">
+                                  {badges.map((badge) => (
+                                    <span
+                                      key={badge}
+                                      className="rounded-full border border-rose-300/30 bg-rose-500/20 px-2 py-0.5 font-mono"
+                                    >
+                                      {badge}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {reasons.length > 0 && (
+                                <ul className="mt-2 space-y-0.5 text-xs text-rose-50/90">
+                                  {reasons.slice(0, 4).map((reason) => (
+                                    <li key={reason}>• {reason}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                aria-disabled={aiBusy}
+                                onClick={() => {
+                                  if (aiBusy) return;
+                                  void handleGenerateAi([item.productId]);
+                                }}
+                                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                                  aiBusy
+                                    ? "cursor-not-allowed bg-violet-200 text-violet-500"
+                                    : "bg-violet-600 text-white hover:bg-violet-700"
+                                }`}
+                              >
+                                {aiBusy ? "AI..." : "Generuj AI"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/dashboard/products/${item.productId}`)}
+                                className="rounded-lg border border-rose-300/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-50 hover:bg-rose-500/30"
+                              >
+                                Otworz
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               )}
 

@@ -1001,3 +1001,97 @@ test("Mirakl marketplaces (mediaexpert/empik) honour category filter and never n
   const visibleMedia = filterExportReadinessRowsForMarketplace(mediaRows, "mediaexpert", { enrichmentReady: true });
   assert.deepEqual(visibleMedia.map((row) => row.productId), [201]);
 });
+
+
+import {
+  EXPORT_BUCKET_PAGE_SIZE,
+  clampSearchQuery,
+  paginateExportBucket,
+} from "./export-api-helpers.ts";
+
+test("paginateExportBucket caps the visible window at the requested size", () => {
+  const items = Array.from({ length: 137 }, (_, index) => ({ id: index + 1 }));
+
+  const firstPage = paginateExportBucket(items, EXPORT_BUCKET_PAGE_SIZE);
+  assert.equal(firstPage.visible.length, EXPORT_BUCKET_PAGE_SIZE);
+  assert.equal(firstPage.hiddenCount, 87);
+  assert.equal(firstPage.total, 137);
+  assert.equal(firstPage.hasMore, true);
+
+  const expanded = paginateExportBucket(items, EXPORT_BUCKET_PAGE_SIZE * 2);
+  assert.equal(expanded.visible.length, EXPORT_BUCKET_PAGE_SIZE * 2);
+  assert.equal(expanded.hiddenCount, 137 - EXPORT_BUCKET_PAGE_SIZE * 2);
+
+  const fullyExpanded = paginateExportBucket(items, items.length + 100);
+  assert.equal(fullyExpanded.visible.length, 137);
+  assert.equal(fullyExpanded.hasMore, false);
+  assert.equal(fullyExpanded.hiddenCount, 0);
+});
+
+test("paginateExportBucket handles edge cases: empty list, undersized page", () => {
+  const empty = paginateExportBucket<number>([], EXPORT_BUCKET_PAGE_SIZE);
+  assert.equal(empty.visible.length, 0);
+  assert.equal(empty.total, 0);
+  assert.equal(empty.hasMore, false);
+
+  const small = paginateExportBucket([1, 2, 3], 1);
+  // Should not allow shrinking below the page size to keep UI consistent.
+  assert.equal(small.visible.length, 3);
+  assert.equal(small.hasMore, false);
+});
+
+test("clampSearchQuery trims to 200 chars and rejects non-strings", () => {
+  assert.equal(clampSearchQuery("  hello  "), "hello");
+  assert.equal(clampSearchQuery(123), "");
+  const long = "a".repeat(500);
+  assert.equal(clampSearchQuery(long).length, 200);
+});
+
+test("filterExportReadinessRows includes product name, EAN, SKU and category in haystack", () => {
+  const rows = normalizeExportReadinessRows([
+    {
+      productId: 70,
+      status: "ready",
+      classification: "existing-offer-update",
+      productTitle: "Lampa wiszaca z betonu architektonicznego",
+      productEan: "5901234123457",
+      productSku: "LAM-BET-1",
+      marketplaceCategoryPath: "Dom/Lampy/Wiszace",
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "111" },
+    },
+    {
+      productId: 71,
+      status: "ready",
+      classification: "existing-offer-update",
+      productTitle: "Garnek emaliowany",
+      productEan: "5907777000003",
+      remoteSnapshot: { targetKind: "existing", remoteOfferId: "222" },
+    },
+  ]);
+
+  // Search by partial title -> matches first row only
+  assert.deepEqual(
+    filterExportReadinessRows(rows, { query: "betonu" }).map((row) => row.productId),
+    [70]
+  );
+  // Search by EAN -> exact match
+  assert.deepEqual(
+    filterExportReadinessRows(rows, { query: "5907777000003" }).map((row) => row.productId),
+    [71]
+  );
+  // Search by SKU -> only first row has SKU
+  assert.deepEqual(
+    filterExportReadinessRows(rows, { query: "lam-bet" }).map((row) => row.productId),
+    [70]
+  );
+  // Search by category path
+  assert.deepEqual(
+    filterExportReadinessRows(rows, { query: "Lampy" }).map((row) => row.productId),
+    [70]
+  );
+  // Multi-term: title + status
+  assert.deepEqual(
+    filterExportReadinessRows(rows, { query: "lampa ready" }).map((row) => row.productId),
+    [70]
+  );
+});

@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
+  EXPORT_BUCKET_PAGE_SIZE,
+  clampSearchQuery,
   filterExportReadinessRows,
   getExportProductDisplayLabel,
   getExportProductIdentifierBadges,
   getExportReadinessPresentation,
+  paginateExportBucket,
   type ExportReadinessRow,
 } from "./export-api-helpers";
 
@@ -88,6 +91,8 @@ function getCardReasons(row: ExportReadinessRow) {
   ].slice(0, 3);
 }
 
+const BUCKET_ORDER: Bucket[] = ["ready", "needs_review", "blocked"];
+
 export function ExportProductsBoard({
   marketplaceSlug: _marketplaceSlug,
   marketplaceLabel,
@@ -101,21 +106,45 @@ export function ExportProductsBoard({
   aiError,
   filteredOutByCategoryCount = 0,
 }: ExportProductsBoardProps) {
-  const [query, setQuery] = useState("");
+  const [queryInput, setQueryInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [bucketVisible, setBucketVisible] = useState<Record<Bucket, number>>({
+    ready: EXPORT_BUCKET_PAGE_SIZE,
+    needs_review: EXPORT_BUCKET_PAGE_SIZE,
+    blocked: EXPORT_BUCKET_PAGE_SIZE,
+  });
+
+  // Debounce search query so 10K-row haystack doesn't run on every keystroke.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedQuery(clampSearchQuery(queryInput));
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [queryInput]);
+
+  // When the underlying row set or search query changes, reset bucket pagination
+  // so the user sees the freshest top-N results rather than scrolled-out history.
+  useEffect(() => {
+    setBucketVisible({
+      ready: EXPORT_BUCKET_PAGE_SIZE,
+      needs_review: EXPORT_BUCKET_PAGE_SIZE,
+      blocked: EXPORT_BUCKET_PAGE_SIZE,
+    });
+  }, [rows, debouncedQuery]);
 
   const filtered = useMemo(() => {
     return filterExportReadinessRows(rows, {
       statusFilter: "all",
       operationFilter: "all",
-      query,
+      query: debouncedQuery,
     });
-  }, [rows, query]);
+  }, [rows, debouncedQuery]);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   // Rows that were originally in "needs_review" and the user already selected them
   // act as "accepted review" - they should visibly move to the "ready" column
-  // and triger preflight with confirmNeedsReview=true.
+  // and trigger preflight with confirmNeedsReview=true.
   const acceptedReviewIds = useMemo(() => {
     const accepted = new Set<number>();
     for (const row of rows) {
@@ -148,6 +177,7 @@ export function ExportProductsBoard({
     total: cards.length,
   };
 
+  const totalSelectable = grouped.ready.length + grouped.needs_review.length;
   const blockedIds = grouped.blocked.map((card) => card.row.productId);
   const someAiBusy = aiBusyIds.length > 0;
   const canBulkAi = blockedIds.length > 0 && !someAiBusy;
@@ -162,6 +192,20 @@ export function ExportProductsBoard({
       return;
     }
     onSelectedIdsChange([...selectedIds, productId]);
+  };
+
+  const selectAllVisible = () => {
+    const visibleSelectableIds = cards
+      .filter((card) => card.bucket !== "blocked" && getExportReadinessPresentation(card.row).selectable)
+      .map((card) => card.row.productId);
+    if (visibleSelectableIds.length === 0) return;
+    const merged = Array.from(new Set([...selectedIds, ...visibleSelectableIds]));
+    onSelectedIdsChange(merged);
+  };
+
+  const clearSelection = () => {
+    if (selectedIds.length === 0) return;
+    onSelectedIdsChange([]);
   };
 
   if (loading) {
@@ -185,16 +229,18 @@ export function ExportProductsBoard({
             </h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               {totals.total} produktow • {totals.ready} gotowe • {totals.needs_review} review • {totals.blocked} braki
+              {selectedIds.length > 0 ? ` • ${selectedIds.length} zaznaczonych` : ""}
             </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Szukaj produktu, ID, blokady..."
-              className="h-11 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 text-sm font-medium text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-tertiary)] focus:border-indigo-400 sm:w-72"
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.target.value)}
+              placeholder="Szukaj po nazwie, EAN, SKU, kategorii, blokadzie..."
+              className="h-11 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 text-sm font-medium text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-tertiary)] focus:border-indigo-400 sm:w-80"
+              maxLength={200}
             />
             <button
               type="button"
@@ -215,6 +261,31 @@ export function ExportProductsBoard({
           </div>
         </div>
 
+        {totalSelectable > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+            <span>Akcje masowe:</span>
+            <button
+              type="button"
+              onClick={selectAllVisible}
+              className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-1.5 font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+            >
+              Zaznacz wszystkie pasujace ({totalSelectable})
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              aria-disabled={selectedIds.length === 0}
+              className={`rounded-lg border px-3 py-1.5 font-semibold transition ${
+                selectedIds.length === 0
+                  ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
+                  : "border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+              }`}
+            >
+              Wyczysc zaznaczenie
+            </button>
+          </div>
+        )}
+
         {aiError && (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
             {aiError}
@@ -223,22 +294,30 @@ export function ExportProductsBoard({
 
         {filteredOutByCategoryCount > 0 && (
           <div className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-            Ukryto {filteredOutByCategoryCount} produktow, ktore nie maja kategorii dla {marketplaceLabel}.
-            Produkty bez kategorii nie da sie wyeksportowac do tego marketplace.
-            Otworz produkt i przypisz kategorie, aby pojawil sie tutaj.
+            Ukryto {filteredOutByCategoryCount} produktow bez kategorii dla {marketplaceLabel}.
+            Otworz produkt i przypisz kategorie marketplace, aby pojawil sie na liscie.
+          </div>
+        )}
+
+        {debouncedQuery && cards.length === 0 && rows.length > 0 && (
+          <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            Brak dopasowan dla &quot;{debouncedQuery}&quot;. Wyczysc filtr aby zobaczyc {rows.length} produktow.
           </div>
         )}
       </div>
 
       {cards.length === 0 ? (
         <div className="m-5 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 text-sm text-[var(--text-secondary)]">
-          Brak produktow dla tego marketplace lub filtra.
+          {rows.length === 0
+            ? "Brak produktow dla tego marketplace."
+            : "Brak produktow dopasowanych do filtra."}
         </div>
       ) : (
         <div className="grid gap-4 p-5 lg:grid-cols-3">
-          {(["ready", "needs_review", "blocked"] as Bucket[]).map((bucket) => {
+          {BUCKET_ORDER.map((bucket) => {
             const bucketCards = grouped[bucket];
             const tone = BUCKET_TONE[bucket];
+            const slice = paginateExportBucket(bucketCards, bucketVisible[bucket]);
 
             return (
               <div
@@ -260,12 +339,12 @@ export function ExportProductsBoard({
                 </div>
 
                 <div className="flex flex-col gap-2 p-3">
-                  {bucketCards.length === 0 ? (
+                  {slice.visible.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-6 text-center text-xs text-[var(--text-tertiary)]">
                       Pusto
                     </div>
                   ) : (
-                    bucketCards.map((card) => {
+                    slice.visible.map((card) => {
                       const presentation = getExportReadinessPresentation(card.row);
                       const selectable = presentation.selectable;
                       const checked = selectedIds.includes(card.row.productId);
@@ -363,7 +442,7 @@ export function ExportProductsBoard({
                             >
                               Otworz produkt
                             </button>
-                            {card.bucket === "ready" && !checked && selectable && (
+                            {card.bucket === "ready" && !checked && selectable && !isAcceptedReview && (
                               <button
                                 type="button"
                                 onClick={() => toggleSelect(card.row.productId, true)}
@@ -394,6 +473,21 @@ export function ExportProductsBoard({
                         </article>
                       );
                     })
+                  )}
+
+                  {slice.hasMore && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBucketVisible((current) => ({
+                          ...current,
+                          [bucket]: (current[bucket] || EXPORT_BUCKET_PAGE_SIZE) + EXPORT_BUCKET_PAGE_SIZE,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+                    >
+                      Pokaz wiecej ({slice.hiddenCount})
+                    </button>
                   )}
                 </div>
               </div>
