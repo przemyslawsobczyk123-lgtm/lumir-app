@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 
 import {
   filterExportReadinessRows,
+  getExportProductDisplayLabel,
+  getExportProductIdentifierBadges,
   getExportReadinessPresentation,
   type ExportReadinessRow,
 } from "./export-api-helpers";
@@ -19,6 +21,7 @@ type ExportProductsBoardProps = {
   onGenerateAi: (productIds: number[]) => Promise<void> | void;
   aiBusyIds: number[];
   aiError: string | null;
+  filteredOutByCategoryCount?: number;
 };
 
 type Bucket = "ready" | "needs_review" | "blocked";
@@ -28,6 +31,7 @@ type BoardCard = {
   bucket: Bucket;
   label: string;
   description: string;
+  acceptedReview: boolean;
 };
 
 const BUCKET_TITLES: Record<Bucket, string> = {
@@ -60,14 +64,18 @@ const BUCKET_TONE: Record<Bucket, { wrap: string; head: string; count: string }>
   },
 };
 
-function toBoardCards(rows: ExportReadinessRow[]): BoardCard[] {
+function toBoardCards(rows: ExportReadinessRow[], acceptedReviewIds: Set<number>): BoardCard[] {
   return rows.map((row) => {
     const presentation = getExportReadinessPresentation(row);
+    const accepted = presentation.bucket === "needs_review" && acceptedReviewIds.has(row.productId);
     return {
       row,
-      bucket: presentation.bucket,
-      label: presentation.label,
-      description: presentation.description,
+      bucket: accepted ? "ready" : presentation.bucket,
+      label: accepted ? "Zaakceptowano review" : presentation.label,
+      description: accepted
+        ? "Review zatwierdzone. Trafi do preflight z confirmNeedsReview."
+        : presentation.description,
+      acceptedReview: accepted,
     };
   });
 }
@@ -91,6 +99,7 @@ export function ExportProductsBoard({
   onGenerateAi,
   aiBusyIds,
   aiError,
+  filteredOutByCategoryCount = 0,
 }: ExportProductsBoardProps) {
   const [query, setQuery] = useState("");
 
@@ -102,7 +111,23 @@ export function ExportProductsBoard({
     });
   }, [rows, query]);
 
-  const cards = useMemo(() => toBoardCards(filtered), [filtered]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  // Rows that were originally in "needs_review" and the user already selected them
+  // act as "accepted review" - they should visibly move to the "ready" column
+  // and triger preflight with confirmNeedsReview=true.
+  const acceptedReviewIds = useMemo(() => {
+    const accepted = new Set<number>();
+    for (const row of rows) {
+      if (!selectedSet.has(row.productId)) continue;
+      if (getExportReadinessPresentation(row).bucket === "needs_review") {
+        accepted.add(row.productId);
+      }
+    }
+    return accepted;
+  }, [rows, selectedSet]);
+
+  const cards = useMemo(() => toBoardCards(filtered, acceptedReviewIds), [filtered, acceptedReviewIds]);
 
   const grouped = useMemo(() => {
     const result: Record<Bucket, BoardCard[]> = {
@@ -195,6 +220,14 @@ export function ExportProductsBoard({
             {aiError}
           </div>
         )}
+
+        {filteredOutByCategoryCount > 0 && (
+          <div className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            Ukryto {filteredOutByCategoryCount} produktow, ktore nie maja kategorii dla {marketplaceLabel}.
+            Produkty bez kategorii nie da sie wyeksportowac do tego marketplace.
+            Otworz produkt i przypisz kategorie, aby pojawil sie tutaj.
+          </div>
+        )}
       </div>
 
       {cards.length === 0 ? (
@@ -238,6 +271,9 @@ export function ExportProductsBoard({
                       const checked = selectedIds.includes(card.row.productId);
                       const reasons = getCardReasons(card.row);
                       const aiBusy = aiBusyIds.includes(card.row.productId);
+                      const displayName = getExportProductDisplayLabel(card.row);
+                      const identifierBadges = getExportProductIdentifierBadges(card.row);
+                      const isAcceptedReview = card.acceptedReview;
 
                       return (
                         <article
@@ -255,20 +291,40 @@ export function ExportProductsBoard({
                                 checked={checked}
                                 onChange={() => toggleSelect(card.row.productId, selectable)}
                                 className="mt-1 h-4 w-4 cursor-pointer rounded border-[var(--border-default)] bg-[var(--bg-card)] text-indigo-600"
-                                aria-label={`Zaznacz produkt ${card.row.productId}`}
+                                aria-label={`Zaznacz ${displayName}`}
                               />
                             )}
                             <div className="min-w-0 flex-1">
                               <button
                                 type="button"
                                 onClick={() => onOpenProduct(card.row.productId)}
-                                className="truncate text-left text-sm font-semibold text-[var(--text-primary)] hover:text-indigo-300"
+                                className="block w-full truncate text-left text-sm font-semibold text-[var(--text-primary)] hover:text-indigo-300"
+                                title={displayName}
                               >
-                                Produkt #{card.row.productId}
+                                {displayName}
                               </button>
-                              <div className="mt-0.5 truncate text-xs text-[var(--text-tertiary)]">
+                              {identifierBadges.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-[var(--text-tertiary)]">
+                                  {identifierBadges.map((badge) => (
+                                    <span
+                                      key={badge}
+                                      className="max-w-full truncate rounded-full border border-[var(--border-default)] bg-[var(--bg-card)] px-2 py-0.5 font-mono"
+                                      title={badge}
+                                    >
+                                      {badge}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="mt-1 truncate text-xs text-[var(--text-tertiary)]">
                                 {card.row.classification || "bez klasyfikacji"}
                               </div>
+
+                              {isAcceptedReview && (
+                                <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-200">
+                                  Review zaakceptowane
+                                </div>
+                              )}
 
                               {reasons.length > 0 && (
                                 <ul className="mt-2 space-y-1 text-xs text-[var(--text-secondary)]">
@@ -283,7 +339,7 @@ export function ExportProductsBoard({
                           </div>
 
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {bucket === "blocked" && (
+                            {card.bucket === "blocked" && (
                               <button
                                 type="button"
                                 aria-disabled={aiBusy}
@@ -307,7 +363,7 @@ export function ExportProductsBoard({
                             >
                               Otworz produkt
                             </button>
-                            {bucket === "ready" && !checked && selectable && (
+                            {card.bucket === "ready" && !checked && selectable && (
                               <button
                                 type="button"
                                 onClick={() => toggleSelect(card.row.productId, true)}
@@ -316,17 +372,22 @@ export function ExportProductsBoard({
                                 Dodaj do exportu
                               </button>
                             )}
-                            {bucket === "needs_review" && selectable && (
+                            {isAcceptedReview && (
                               <button
                                 type="button"
                                 onClick={() => toggleSelect(card.row.productId, true)}
-                                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                                  checked
-                                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                    : "bg-amber-500 text-white hover:bg-amber-600"
-                                }`}
+                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
                               >
-                                {checked ? "Zaakceptowano" : "Akceptuj"}
+                                Cofnij akceptacje
+                              </button>
+                            )}
+                            {card.bucket === "needs_review" && selectable && (
+                              <button
+                                type="button"
+                                onClick={() => toggleSelect(card.row.productId, true)}
+                                className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
+                              >
+                                Akceptuj review
                               </button>
                             )}
                           </div>
