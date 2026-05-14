@@ -4,18 +4,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { isAmazonUiEnabled, resolveMarketplaceSlugForMvp } from "../mvp-feature-flags";
 
-import { ExportReadinessTable } from "./ExportReadinessTable";
+import { ExportProductsBoard } from "./ExportProductsBoard";
 import { ExportRunHistoryCard } from "./ExportRunHistoryCard";
 import {
   canDownloadMiraklExportFile,
   canRunMarketplacePreflight,
   canStartExportRun,
   DEFAULT_ALLEGRO_EXPORT_FIELDS,
-  exportHelperPanelClasses,
-  exportPreflightSummaryClasses,
   getExportMarketplaceTabClass,
   getVisibleExportMarketplaceOptions,
-  getExportReadinessPresentation,
   getSelectableExportReadinessIds,
   normalizeExportPreflightResult,
   normalizeExportReadinessRows,
@@ -23,7 +20,6 @@ import {
   parseExportApiSelection,
   type AllegroExportField,
   type AllegroExportFields,
-  type ExportReadinessFilter,
   type ExportPreflightResult,
   type ExportRunRow,
 } from "./export-api-helpers";
@@ -66,6 +62,9 @@ type AllegroAccountOption = {
   status?: string | null;
 };
 
+type WizardStep = "marketplace" | "products" | "export";
+type WorkspaceTab = "wizard" | "history";
+
 function authHeaders() {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
   return {
@@ -92,27 +91,6 @@ async function readJsonOrThrow(response: Response) {
   }
 
   return payload;
-}
-
-function marketplaceHelperCopy(marketplaceSlug: string) {
-  if (["mediaexpert", "empik"].includes(marketplaceSlug)) {
-    return {
-      eyebrow: "Mirakl XLSX",
-      body: "Preflight sprawdza kategorie, wymagane atrybuty, opis HTML i zdjecia. Export pobiera plik XLSX per kategoria.",
-    };
-  }
-
-  if (marketplaceSlug === "amazon") {
-    return {
-      eyebrow: "Validation",
-      body: "Amazon dzisiaj pokazuje readiness. Write-side run zostaje zablokowany do kolejnego adaptera.",
-    };
-  }
-
-  return {
-    eyebrow: "Allegro API",
-    body: "Istniejace oferty ida jako update wybranych pol. Nowe oferty ida jako INACTIVE po preflight.",
-  };
 }
 
 function fieldsEqual(left: AllegroExportFields, right: AllegroExportFields) {
@@ -181,10 +159,13 @@ export function ExportApiWorkspace() {
     [searchString]
   );
   const marketplaceOptions = useMemo(() => getVisibleExportMarketplaceOptions(AMAZON_UI_ENABLED), []);
+  const [tab, setTab] = useState<WorkspaceTab>("wizard");
+  const [step, setStep] = useState<WizardStep>(
+    initialSelection.marketplaceSlug ? "products" : "marketplace"
+  );
   const [marketplaceSlug, setMarketplaceSlug] = useState(resolveMarketplaceSlugForMvp(initialSelection.marketplaceSlug || "allegro", AMAZON_UI_ENABLED));
   const [scopedProductIds, setScopedProductIds] = useState<number[]>(initialSelection.productIds);
   const [selectedIds, setSelectedIds] = useState<number[]>(initialSelection.productIds);
-  const [statusFilter, setStatusFilter] = useState<ExportReadinessFilter>("all");
   const [rows, setRows] = useState(() => normalizeExportReadinessRows([]));
   const [readinessPage, setReadinessPage] = useState(1);
   const [runs, setRuns] = useState(() => normalizeExportRunRows([]));
@@ -198,6 +179,10 @@ export function ExportApiWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<ExportPreflightResult | null>(null);
   const [runResult, setRunResult] = useState<string | null>(null);
+  const [aiBusyIds, setAiBusyIds] = useState<number[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiInfo, setAiInfo] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const nextSelection = parseExportApiSelection(searchString);
@@ -209,6 +194,7 @@ export function ExportApiWorkspace() {
     setAllegroFields(nextSelection.fields || DEFAULT_ALLEGRO_EXPORT_FIELDS);
     setPreflight(null);
     setReadinessPage(1);
+    setStep(nextSelection.marketplaceSlug ? "products" : "marketplace");
   }, [searchString]);
 
   const toggleAllegroField = (field: AllegroExportField) => {
@@ -319,17 +305,13 @@ export function ExportApiWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [marketplaceSlug, scopedProductIds, selectedAllegroAccountId, readinessPage]);
+  }, [marketplaceSlug, scopedProductIds, selectedAllegroAccountId, readinessPage, reloadKey]);
 
-  const copy = marketplaceHelperCopy(marketplaceSlug);
   const marketplaceLabel = getMarketplaceLabel(marketplaceSlug);
   const miraklMode = isMiraklMarketplace(marketplaceSlug);
-  const presentations = rows.map(getExportReadinessPresentation);
-  const readyCount = presentations.filter((row) => row.bucket === "ready").length;
-  const reviewCount = presentations.filter((row) => row.bucket === "needs_review").length;
-  const blockedCount = presentations.filter((row) => row.bucket === "blocked").length;
   const selectedCount = selectedIds.length;
   const activePreset = ALLEGRO_FIELD_PRESETS.find((preset) => fieldsEqual(preset.fields, allegroFields));
+
   const canRunPreflight = canRunMarketplacePreflight({
     marketplaceSlug,
     accountId: selectedAllegroAccountId,
@@ -468,193 +450,304 @@ export function ExportApiWorkspace() {
     }
   }
 
+  async function handleGenerateAi(productIds: number[]) {
+    if (productIds.length === 0) return;
+
+    const limited = productIds.slice(0, 10);
+    if (limited.length < productIds.length) {
+      setAiInfo(`Generuje AI dla pierwszych ${limited.length} produktow z ${productIds.length}. Powtorz dla reszty.`);
+    } else {
+      setAiInfo(null);
+    }
+
+    setAiBusyIds((current) => Array.from(new Set([...current, ...limited])));
+    setAiError(null);
+
+    try {
+      const payload = await fetch(`${API}/api/products/generate-ai-bulk`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          productIds: limited,
+          marketplaceSlug,
+          mode: "all",
+          useAllegro: false,
+          useIcecat: false,
+          useAmazon: false,
+        }),
+      }).then(readJsonOrThrow);
+
+      const jobId = (payload as { data?: { job?: { id?: string } } } | null)?.data?.job?.id;
+      setAiInfo(jobId
+        ? `Job AI #${jobId} uruchomiony dla ${limited.length} produktow. Odswiez za chwile.`
+        : `AI uruchomione dla ${limited.length} produktow.`);
+
+      // refresh readiness po krotkim opoznieniu zeby AI zdazyl zapisac zmiany
+      setTimeout(() => {
+        setReloadKey((value) => value + 1);
+      }, 4000);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Nie udalo sie uruchomic AI");
+    } finally {
+      setAiBusyIds((current) => current.filter((id) => !limited.includes(id)));
+    }
+  }
+
+  const selectedProductCount = selectedIds.length;
+  const stepsDone = {
+    marketplace: !!marketplaceSlug && (marketplaceSlug !== "allegro" || !!selectedAllegroAccountId),
+    products: selectedProductCount > 0,
+    export: false,
+  };
+
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 shadow-[var(--shadow-card)]">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="space-y-5">
+      <header className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 shadow-[var(--shadow-card)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-400">
               Export
             </div>
-            <h1 className="mt-3 text-2xl font-semibold text-[var(--text-primary)]">
-              Centrum exportu {marketplaceLabel}
+            <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">
+              {tab === "history" ? "Historia exportow" : `Eksportuj produkty do ${marketplaceLabel}`}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm text-[var(--text-secondary)]">
-              Allegro publikuje przez API. Media Expert i Empik pobieraja plik Mirakl XLSX gotowy do uploadu.
+            <p className="mt-1 max-w-2xl text-sm text-[var(--text-secondary)]">
+              Allegro publikuje przez API. Media Expert i Empik zwracaja gotowy plik Mirakl XLSX.
             </p>
-
-            <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {marketplaceOptions.map((option) => {
-                const active = marketplaceSlug === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-disabled={!option.enabled}
-                    onClick={() => {
-                      if (!option.enabled) return;
-                      setMarketplaceSlug(option.value);
-                      setPreflight(null);
-                      setRunResult(null);
-                      setReadinessPage(1);
-                    }}
-                    className={getExportMarketplaceTabClass(active, option.enabled)}
-                  >
-                    <div className="text-sm font-semibold">{option.label}</div>
-                    <div className={`mt-1 text-xs ${active ? "text-indigo-100" : "text-[var(--text-secondary)]"}`}>
-                      {option.badge}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
-          <div className={exportHelperPanelClasses.card}>
-            <div className={exportHelperPanelClasses.eyebrow}>
-              {copy.eyebrow}
-            </div>
-            <p className={exportHelperPanelClasses.body}>
-              {copy.body}
-            </p>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className={exportHelperPanelClasses.ready}>
-                <div className="text-[10px] uppercase tracking-[0.16em]">Gotowe</div>
-                <div className="mt-1 text-xl font-semibold">{readyCount}</div>
-              </div>
-              <div className={exportHelperPanelClasses.review}>
-                <div className="text-[10px] uppercase tracking-[0.16em]">Review</div>
-                <div className="mt-1 text-xl font-semibold">{reviewCount}</div>
-              </div>
-              <div className={exportHelperPanelClasses.blocked}>
-                <div className="text-[10px] uppercase tracking-[0.16em]">Blokady</div>
-                <div className="mt-1 text-xl font-semibold">{blockedCount}</div>
-              </div>
-            </div>
+          <div className="inline-flex rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] p-1 text-sm">
+            <button
+              type="button"
+              onClick={() => setTab("wizard")}
+              className={`rounded-lg px-4 py-2 font-semibold transition ${
+                tab === "wizard" ? "bg-indigo-600 text-white" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Eksport
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("history")}
+              className={`rounded-lg px-4 py-2 font-semibold transition ${
+                tab === "history" ? "bg-indigo-600 text-white" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Historia ({runs.length})
+            </button>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)_auto] xl:items-end">
-          {marketplaceSlug === "allegro" && (
-            <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-              Konto Allegro
-              <select
-                value={selectedAllegroAccountId ?? ""}
-                onChange={(event) => {
-                  setSelectedAllegroAccountId(event.target.value ? Number(event.target.value) : null);
-                  setPreflight(null);
-                  setRunResult(null);
-                }}
-                className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm font-medium tracking-normal text-[var(--text-primary)] outline-none transition focus:border-indigo-400"
-              >
-                <option value="">Wybierz konto</option>
-                {allegroAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.allegro_login || "Konto Allegro"} ({account.environment}, {account.status || "unknown"})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+        {tab === "wizard" && (
+          <div className="mt-5">
+            <ol className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <StepperItem
+                index={1}
+                label="Marketplace"
+                hint={marketplaceLabel}
+                state={step === "marketplace" ? "active" : stepsDone.marketplace ? "done" : "todo"}
+                onClick={() => setStep("marketplace")}
+              />
+              <StepperConnector />
+              <StepperItem
+                index={2}
+                label="Produkty"
+                hint={selectedProductCount > 0 ? `${selectedProductCount} zaznaczonych` : "wybierz lub generuj AI"}
+                state={step === "products" ? "active" : selectedProductCount > 0 && step === "export" ? "done" : "todo"}
+                onClick={() => stepsDone.marketplace && setStep("products")}
+              />
+              <StepperConnector />
+              <StepperItem
+                index={3}
+                label="Eksport"
+                hint={preflight ? `${preflight.eligibleCount} gotowe` : "preflight + pobierz"}
+                state={step === "export" ? "active" : "todo"}
+                onClick={() => selectedProductCount > 0 && setStep("export")}
+              />
+            </ol>
+          </div>
+        )}
+
+        {error && tab === "wizard" && (
+          <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {error}
+          </div>
+        )}
+        {aiInfo && tab === "wizard" && (
+          <div className="mt-4 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+            {aiInfo}
+          </div>
+        )}
+      </header>
+
+      {tab === "history" && (
+        <ExportRunHistoryCard
+          marketplaceSlug={marketplaceSlug}
+          runs={runs}
+          loading={loading}
+        />
+      )}
+
+      {tab === "wizard" && step === "marketplace" && (
+        <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 shadow-[var(--shadow-card)]">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+            Krok 1 z 3
+          </div>
+          <h2 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
+            Wybierz marketplace
+          </h2>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            Decyduje o formacie exportu i wymaganych atrybutach.
+          </p>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {marketplaceOptions.map((option) => {
+              const active = marketplaceSlug === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-disabled={!option.enabled}
+                  onClick={() => {
+                    if (!option.enabled) return;
+                    setMarketplaceSlug(option.value);
+                    setPreflight(null);
+                    setRunResult(null);
+                    setReadinessPage(1);
+                  }}
+                  className={getExportMarketplaceTabClass(active, option.enabled)}
+                >
+                  <div className="text-base font-semibold">{option.label}</div>
+                  <div className={`mt-1 text-xs ${active ? "text-indigo-100" : "text-[var(--text-secondary)]"}`}>
+                    {option.badge}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
           {marketplaceSlug === "allegro" && (
-            <div className="space-y-3">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                  Preset pol
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {ALLEGRO_FIELD_PRESETS.map((preset) => (
-                    <button
-                      key={preset.key}
-                      type="button"
-                      onClick={() => {
-                        setAllegroFields(preset.fields);
-                        setPreflight(null);
-                        setRunResult(null);
-                      }}
-                      className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                        activePreset?.key === preset.key
-                          ? "border-indigo-400 bg-indigo-500 text-white"
-                          : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
+            <div className="mt-5 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4">
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                Konto Allegro
+                <select
+                  value={selectedAllegroAccountId ?? ""}
+                  onChange={(event) => {
+                    setSelectedAllegroAccountId(event.target.value ? Number(event.target.value) : null);
+                    setPreflight(null);
+                    setRunResult(null);
+                  }}
+                  className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm font-medium tracking-normal text-[var(--text-primary)] outline-none transition focus:border-indigo-400"
+                >
+                  <option value="">Wybierz konto</option>
+                  {allegroAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.allegro_login || "Konto Allegro"} ({account.environment}, {account.status || "unknown"})
+                    </option>
                   ))}
-                </div>
-              </div>
+                </select>
+              </label>
 
-              <div className="flex flex-wrap gap-2">
-                {ALLEGRO_FIELD_KEYS.map((field) => {
-                  const active = allegroFields[field];
-                  return (
-                    <button
-                      key={field}
-                      type="button"
-                      onClick={() => toggleAllegroField(field)}
-                      className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                        active
-                          ? "border-indigo-400 bg-indigo-500/25 text-white"
-                          : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)]"
-                      }`}
-                    >
-                      {ALLEGRO_FIELD_LABELS[field]}
-                    </button>
-                  );
-                })}
-                <label className="flex items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)]">
-                  <input
-                    type="checkbox"
-                    checked={confirmNeedsReview}
-                    onChange={(event) => {
-                      setConfirmNeedsReview(event.target.checked);
-                      setPreflight(null);
-                      setRunResult(null);
-                    }}
-                    className="h-4 w-4 rounded border-[var(--border-default)] bg-[var(--bg-card)] text-indigo-600"
-                  />
-                  Potwierdz review AI
-                </label>
-              </div>
+              <details className="mt-4">
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                  Zaawansowane: pola synchronizacji
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    {ALLEGRO_FIELD_PRESETS.map((preset) => (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        onClick={() => {
+                          setAllegroFields(preset.fields);
+                          setPreflight(null);
+                          setRunResult(null);
+                        }}
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                          activePreset?.key === preset.key
+                            ? "border-indigo-400 bg-indigo-500 text-white"
+                            : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {ALLEGRO_FIELD_KEYS.map((field) => {
+                      const active = allegroFields[field];
+                      return (
+                        <button
+                          key={field}
+                          type="button"
+                          onClick={() => toggleAllegroField(field)}
+                          className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                            active
+                              ? "border-indigo-400 bg-indigo-500/25 text-white"
+                              : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-secondary)]"
+                          }`}
+                        >
+                          {ALLEGRO_FIELD_LABELS[field]}
+                        </button>
+                      );
+                    })}
+                    <label className="flex items-center gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)]">
+                      <input
+                        type="checkbox"
+                        checked={confirmNeedsReview}
+                        onChange={(event) => {
+                          setConfirmNeedsReview(event.target.checked);
+                          setPreflight(null);
+                          setRunResult(null);
+                        }}
+                        className="h-4 w-4 rounded border-[var(--border-default)] bg-[var(--bg-card)] text-indigo-600"
+                      />
+                      Potwierdz review AI
+                    </label>
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 xl:justify-end">
+          <div className="mt-5 flex justify-end">
             <button
               type="button"
-              aria-disabled={!canRunPreflight}
-              onClick={() => {
-                if (!canRunPreflight) return;
-                void handleRunPreflight();
-              }}
-              className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                !canRunPreflight
-                  ? "cursor-not-allowed bg-indigo-200 text-indigo-500"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              aria-disabled={!stepsDone.marketplace}
+              onClick={() => stepsDone.marketplace && setStep("products")}
+              className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${
+                stepsDone.marketplace
+                  ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                  : "cursor-not-allowed bg-indigo-200 text-indigo-500"
               }`}
             >
-              {preflightLoading ? "Preflight..." : `Preflight (${selectedCount})`}
+              Dalej: produkty
             </button>
+          </div>
+        </section>
+      )}
 
-            <button
-              type="button"
-              aria-disabled={selectedCount === 0}
-              onClick={() => {
-                if (selectedCount === 0) return;
-                setSelectedIds([]);
-                setPreflight(null);
-              }}
-              className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-                selectedCount === 0
-                  ? "cursor-not-allowed border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-tertiary)]"
-                  : "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
-              }`}
-            >
-              Wyczysc
-            </button>
+      {tab === "wizard" && step === "products" && (
+        <>
+          <ExportProductsBoard
+            marketplaceSlug={marketplaceSlug}
+            marketplaceLabel={marketplaceLabel}
+            rows={rows}
+            loading={loading}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={(nextIds) => {
+              setSelectedIds(nextIds);
+              setPreflight(null);
+            }}
+            onOpenProduct={(productId) => router.push(`/dashboard/products/${productId}`)}
+            onGenerateAi={handleGenerateAi}
+            aiBusyIds={aiBusyIds}
+            aiError={aiError}
+          />
 
-            {scopedProductIds.length > 0 && (
+          {scopedProductIds.length > 0 && (
+            <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              Pokazano {scopedProductIds.length} produktow z poprzedniego widoku.{" "}
               <button
                 type="button"
                 onClick={() => {
@@ -662,99 +755,216 @@ export function ExportApiWorkspace() {
                   setPreflight(null);
                   setReadinessPage(1);
                 }}
-                className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/15"
+                className="font-semibold underline hover:text-white"
               >
-                Ostatnie 100
+                Pokaz wszystkie
               </button>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
 
-        {scopedProductIds.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] px-4 py-3 text-sm text-[var(--text-secondary)]">
-            Scope z handoffu: {scopedProductIds.length} produktow z poprzedniego widoku. Selection mozesz dalej edytowac lokalnie.
-          </div>
-        )}
+          {scopedProductIds.length === 0 && (readinessPage > 1 || rows.length >= EXPORT_READINESS_LIMIT) && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)] sm:flex-row sm:items-center sm:justify-between">
+              <span>Strona {readinessPage} · max {EXPORT_READINESS_LIMIT} wynikow</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  aria-disabled={readinessPage === 1}
+                  onClick={() => {
+                    if (readinessPage === 1) return;
+                    setReadinessPage((current) => Math.max(1, current - 1));
+                    setPreflight(null);
+                  }}
+                  className={`rounded-xl border px-3 py-2 font-semibold transition ${
+                    readinessPage === 1
+                      ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
+                      : "border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+                  }`}
+                >
+                  Poprzednia
+                </button>
+                <button
+                  type="button"
+                  aria-disabled={rows.length < EXPORT_READINESS_LIMIT}
+                  onClick={() => {
+                    if (rows.length < EXPORT_READINESS_LIMIT) return;
+                    setReadinessPage((current) => current + 1);
+                    setPreflight(null);
+                  }}
+                  className={`rounded-xl border px-3 py-2 font-semibold transition ${
+                    rows.length < EXPORT_READINESS_LIMIT
+                      ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
+                      : "border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+                  }`}
+                >
+                  Nastepna
+                </button>
+              </div>
+            </div>
+          )}
 
-        {error && (
-          <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-            {error}
-          </div>
-        )}
-      </section>
-
-      <ExportReadinessTable
-        marketplaceSlug={marketplaceSlug}
-        marketplaceLabel={marketplaceLabel}
-        rows={rows}
-        loading={loading}
-        selectedIds={selectedIds}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        onSelectedIdsChange={(nextIds) => {
-          setSelectedIds(nextIds);
-          setPreflight(null);
-        }}
-        onOpenProduct={(productId) => router.push(`/dashboard/products/${productId}`)}
-      />
-
-      {scopedProductIds.length === 0 && (readinessPage > 1 || rows.length >= EXPORT_READINESS_LIMIT) && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)] sm:flex-row sm:items-center sm:justify-between">
-          <span>Strona {readinessPage} · max {EXPORT_READINESS_LIMIT} wynikow</span>
-          <div className="flex gap-2">
+          <div className="sticky bottom-3 flex justify-end gap-3">
             <button
               type="button"
-              aria-disabled={readinessPage === 1}
-              onClick={() => {
-                if (readinessPage === 1) return;
-                setReadinessPage((current) => Math.max(1, current - 1));
-                setPreflight(null);
-              }}
-              className={`rounded-xl border px-3 py-2 font-semibold transition ${
-                readinessPage === 1
-                  ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
-                  : "border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
-              }`}
+              onClick={() => setStep("marketplace")}
+              className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
             >
-              Poprzednia
+              Wstecz
             </button>
             <button
               type="button"
-              aria-disabled={rows.length < EXPORT_READINESS_LIMIT}
+              aria-disabled={selectedCount === 0}
               onClick={() => {
-                if (rows.length < EXPORT_READINESS_LIMIT) return;
-                setReadinessPage((current) => current + 1);
-                setPreflight(null);
+                if (selectedCount === 0) return;
+                void handleRunPreflight();
+                setStep("export");
               }}
-              className={`rounded-xl border px-3 py-2 font-semibold transition ${
-                rows.length < EXPORT_READINESS_LIMIT
-                  ? "cursor-not-allowed border-[var(--border-default)] text-[var(--text-tertiary)]"
-                  : "border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+              className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${
+                selectedCount > 0
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "cursor-not-allowed bg-emerald-200 text-emerald-700"
               }`}
             >
-              Nastepna
+              {selectedCount > 0 ? `Dalej: eksportuj ${selectedCount}` : "Zaznacz produkty"}
             </button>
           </div>
-        </div>
+        </>
       )}
 
-      {preflight && (
+      {tab === "wizard" && step === "export" && (
         <section className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 shadow-[var(--shadow-card)]">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
-                Preflight
-              </div>
-              <h2 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
-                Plan exportu dla {preflight.marketplaceSlug || marketplaceSlug}
-              </h2>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                {miraklMode
-                  ? "Backend sprawdzil wymagane atrybuty, opis HTML, zdjecia i kategorie."
-                  : "Backend policzyl realne diffs i blokady dla wybranych pol."}
-              </p>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+            Krok 3 z 3
+          </div>
+          <h2 className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
+            Eksport do {marketplaceLabel}
+          </h2>
+
+          {preflightLoading && (
+            <p className="mt-3 text-sm text-[var(--text-secondary)]">
+              Sprawdzam atrybuty, opisy i zdjecia ({selectedCount} produktow)...
+            </p>
+          )}
+
+          {!preflightLoading && !preflight && (
+            <div className="mt-5 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 text-sm text-[var(--text-secondary)]">
+              Brak danych preflight.{" "}
+              <button
+                type="button"
+                onClick={() => void handleRunPreflight()}
+                className="font-semibold text-indigo-300 underline"
+              >
+                Uruchom ponownie
+              </button>
             </div>
-            <div className="flex flex-col gap-2 sm:min-w-[220px]">
+          )}
+
+          {preflight && (
+            <>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <SummaryCell
+                  tone="ready"
+                  label="Gotowe do exportu"
+                  value={preflight.eligibleCount}
+                />
+                <SummaryCell
+                  tone="danger"
+                  label="Zablokowane"
+                  value={preflight.blockedCount}
+                />
+                <SummaryCell
+                  tone="info"
+                  label={miraklMode ? "Format pliku" : "Wybrane pola"}
+                  textValue={
+                    miraklMode
+                      ? "Mirakl XLSX"
+                      : ALLEGRO_FIELD_KEYS.filter((field) => allegroFields[field])
+                          .map((field) => ALLEGRO_FIELD_LABELS[field])
+                          .join(", ") || "Brak"
+                  }
+                />
+              </div>
+
+              {preflight.groups.length > 0 && (
+                <div className="mt-5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+                    {miraklMode ? "Plik podzielony na kategorie" : "Grupy"}
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {preflight.groups.map((group) => (
+                      <div
+                        key={`${group.classification}:${group.count}`}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold">{group.classification}</div>
+                          <div className="text-xs text-[var(--text-secondary)]">{group.count} produktow</div>
+                        </div>
+                        {miraklMode && (
+                          <button
+                            type="button"
+                            aria-disabled={runLoading}
+                            onClick={() => {
+                              if (runLoading) return;
+                              void handleDownloadMiraklFile(group.productIds, group.classification);
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                              runLoading
+                                ? "cursor-not-allowed bg-slate-700 text-slate-400"
+                                : "bg-indigo-600 text-white hover:bg-indigo-700"
+                            }`}
+                          >
+                            Pobierz XLSX
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {preflight.blockedItems.length > 0 && (
+                <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
+                  <div className="font-semibold">{preflight.blockedItems.length} produktow zablokowanych w preflight</div>
+                  <p className="mt-1 text-rose-100/80">
+                    Wroc do kroku 2 i uzyj <strong>Generuj AI</strong> albo otworz produkty recznie.
+                  </p>
+                </div>
+              )}
+
+              {runResult && (
+                <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                  {runResult}
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
+            <button
+              type="button"
+              onClick={() => setStep("products")}
+              className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+            >
+              Wstecz
+            </button>
+
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <button
+                type="button"
+                aria-disabled={!canRunPreflight || preflightLoading}
+                onClick={() => {
+                  if (!canRunPreflight || preflightLoading) return;
+                  void handleRunPreflight();
+                }}
+                className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                  canRunPreflight && !preflightLoading
+                    ? "border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]"
+                    : "cursor-not-allowed border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-tertiary)]"
+                }`}
+              >
+                {preflightLoading ? "Sprawdzam..." : "Sprawdz ponownie"}
+              </button>
+
               <button
                 type="button"
                 aria-disabled={!canRunPrimaryExportAction}
@@ -762,125 +972,113 @@ export function ExportApiWorkspace() {
                   if (!canRunPrimaryExportAction) return;
                   if (miraklMode) {
                     void handleDownloadMiraklFile(
-                      preflight.eligibleItems.map((item) => item.productId),
-                      preflight.groups[0]?.classification
+                      preflight!.eligibleItems.map((item) => item.productId),
+                      preflight!.groups[0]?.classification
                     );
                     return;
                   }
                   void handleStartRun();
                 }}
-                className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${
                   canRunPrimaryExportAction
                     ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                    : "cursor-not-allowed bg-slate-200 text-slate-500"
+                    : "cursor-not-allowed bg-emerald-200 text-emerald-700"
                 }`}
               >
                 {miraklMode
-                  ? runLoading ? "Pobieram XLSX..." : preflight.groups.length > 1 ? "Pobierz per kategoria"
-                    : "Pobierz XLSX"
-                  : runLoading ? "Dodaje run..." : "Uruchom export"}
+                  ? runLoading
+                    ? "Pobieram XLSX..."
+                    : (preflight?.groups.length ?? 0) > 1
+                      ? "Pobierz per kategoria"
+                      : "Pobierz XLSX"
+                  : runLoading
+                    ? "Wysylam..."
+                    : "Uruchom export"}
               </button>
-              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
-                {miraklMode
-                  ? preflight.groups.length > 1
-                    ? "Wybrane produkty sa w kilku kategoriach. Pobierz osobny XLSX dla kazdej kategorii."
-                    : preflight.eligibleCount > 0
-                      ? "Plik XLSX wezmie tylko eligible pozycje."
-                      : "Brak pozycji gotowych do pliku."
-                  : preflight.eligibleCount > 0
-                    ? "Run wezmie tylko eligible pozycje."
-                    : "Brak pozycji gotowych do exportu."}
-              </div>
             </div>
           </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className={exportPreflightSummaryClasses.ready}>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">Gotowe</div>
-              <div className="mt-2 text-2xl font-semibold">{preflight.eligibleCount}</div>
-            </div>
-            <div className={exportPreflightSummaryClasses.blocked}>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">Blokady</div>
-              <div className="mt-2 text-2xl font-semibold">{preflight.blockedCount}</div>
-            </div>
-            <div className={exportPreflightSummaryClasses.info}>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                {miraklMode ? "Format" : "Wybrane pola"}
-              </div>
-              <div className="mt-2 text-sm font-semibold">
-                {miraklMode
-                  ? "Mirakl XLSX"
-                  : ALLEGRO_FIELD_KEYS.filter((field) => allegroFields[field]).map((field) => ALLEGRO_FIELD_LABELS[field]).join(", ") || "Brak"}
-              </div>
-            </div>
-          </div>
-
-          {runResult && (
-            <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-              {runResult}
-            </div>
-          )}
-
-          {preflight.groups.length > 0 && (
-            <div className="mt-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                Grupy klasyfikacji
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {preflight.groups.map((group) => (
-                  <div
-                    key={`${group.classification}:${group.count}`}
-                    className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                  >
-                    {group.classification} <span className="ml-1 text-[var(--text-secondary)]">({group.count})</span>
-                    {miraklMode && (
-                      <button
-                        type="button"
-                        aria-disabled={runLoading}
-                        onClick={() => {
-                          if (runLoading) return;
-                          void handleDownloadMiraklFile(group.productIds, group.classification);
-                        }}
-                        className={`ml-3 rounded-lg px-2 py-1 text-xs font-semibold transition ${
-                          runLoading
-                            ? "cursor-not-allowed bg-slate-700 text-slate-400"
-                            : "bg-indigo-600 text-white hover:bg-indigo-700"
-                        }`}
-                      >
-                        XLSX
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {preflight.blockedItems.length > 0 && (
-            <div className="mt-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                Blocked w preflight
-              </div>
-              <div className="mt-3 space-y-2">
-                {preflight.blockedItems.map((item) => (
-                  <div
-                    key={`blocked:${item.productId}`}
-                    className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"
-                  >
-                    Produkt #{item.productId}: {item.blockers.join(", ") || "Brak detali blokera"}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
       )}
+    </div>
+  );
+}
 
-      <ExportRunHistoryCard
-        marketplaceSlug={marketplaceSlug}
-        runs={runs}
-        loading={loading}
-      />
+type StepperState = "todo" | "active" | "done";
+
+function StepperItem({
+  index,
+  label,
+  hint,
+  state,
+  onClick,
+}: {
+  index: number;
+  label: string;
+  hint?: string;
+  state: StepperState;
+  onClick?: () => void;
+}) {
+  const baseCircle = "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition";
+  const circleTone = state === "active"
+    ? "bg-indigo-600 text-white"
+    : state === "done"
+      ? "bg-emerald-500 text-white"
+      : "bg-[var(--bg-body)] text-[var(--text-tertiary)] border border-[var(--border-default)]";
+  const labelTone = state === "active"
+    ? "text-[var(--text-primary)]"
+    : state === "done"
+      ? "text-emerald-300"
+      : "text-[var(--text-secondary)]";
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-3 rounded-xl px-2 py-1 text-left transition hover:bg-[var(--bg-card-hover)]"
+      >
+        <span className={`${baseCircle} ${circleTone}`}>
+          {state === "done" ? "✓" : index}
+        </span>
+        <span className="flex flex-col">
+          <span className={`text-sm font-semibold ${labelTone}`}>{label}</span>
+          {hint && <span className="text-xs text-[var(--text-tertiary)]">{hint}</span>}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function StepperConnector() {
+  return (
+    <li aria-hidden="true" className="hidden h-px flex-1 bg-[var(--border-default)] sm:block" />
+  );
+}
+
+function SummaryCell({
+  tone,
+  label,
+  value,
+  textValue,
+}: {
+  tone: "ready" | "danger" | "info";
+  label: string;
+  value?: number;
+  textValue?: string;
+}) {
+  const toneClass =
+    tone === "ready"
+      ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+      : tone === "danger"
+        ? "border-rose-400/60 bg-rose-500/10 text-rose-100"
+        : "border-sky-400/60 bg-sky-500/10 text-sky-100";
+
+  return (
+    <div className={`rounded-xl border p-4 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">{label}</div>
+      <div className="mt-2 text-2xl font-semibold">
+        {textValue ?? value ?? 0}
+      </div>
     </div>
   );
 }
