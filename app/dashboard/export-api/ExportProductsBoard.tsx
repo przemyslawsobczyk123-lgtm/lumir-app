@@ -93,6 +93,7 @@ export function ExportProductsBoard({
   aiError,
 }: ExportProductsBoardProps) {
   const [query, setQuery] = useState("");
+  const [acceptedIds, setAcceptedIds] = useState<number[]>([]);
 
   const filtered = useMemo(() => {
     return filterExportReadinessRows(rows, {
@@ -104,23 +105,33 @@ export function ExportProductsBoard({
 
   const cards = useMemo(() => toBoardCards(filtered), [filtered]);
 
+  // Override bucket for accepted items: move them from needs_review to ready
+  const groupedCards = useMemo(() => {
+    return cards.map((card) => {
+      if (card.bucket === "needs_review" && acceptedIds.includes(card.row.productId)) {
+        return { ...card, bucket: "ready" as Bucket, label: "Zaakceptowano" };
+      }
+      return card;
+    });
+  }, [cards, acceptedIds]);
+
   const grouped = useMemo(() => {
     const result: Record<Bucket, BoardCard[]> = {
       ready: [],
       needs_review: [],
       blocked: [],
     };
-    for (const card of cards) {
+    for (const card of groupedCards) {
       result[card.bucket].push(card);
     }
     return result;
-  }, [cards]);
+  }, [groupedCards]);
 
   const totals = {
     ready: grouped.ready.length,
     needs_review: grouped.needs_review.length,
     blocked: grouped.blocked.length,
-    total: cards.length,
+    total: groupedCards.length,
   };
 
   const blockedIds = grouped.blocked.map((card) => card.row.productId);
@@ -264,10 +275,18 @@ export function ExportProductsBoard({
                                 onClick={() => onOpenProduct(card.row.productId)}
                                 className="truncate text-left text-sm font-semibold text-[var(--text-primary)] hover:text-indigo-300"
                               >
-                                Produkt #{card.row.productId}
+                                {card.row.productName || `Produkt #${card.row.productId}`}
                               </button>
-                              <div className="mt-0.5 truncate text-xs text-[var(--text-tertiary)]">
-                                {card.row.classification || "bez klasyfikacji"}
+                              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[var(--text-tertiary)]">
+                                <span>#{card.row.productId}</span>
+                                {card.row.ean && (
+                                  <span className="rounded bg-[var(--bg-card)] px-1.5 py-0.5 text-[10px] font-medium">
+                                    EAN {card.row.ean}
+                                  </span>
+                                )}
+                                {card.row.classification && (
+                                  <span className="truncate">{card.row.classification}</span>
+                                )}
                               </div>
 
                               {reasons.length > 0 && (
@@ -319,7 +338,15 @@ export function ExportProductsBoard({
                             {bucket === "needs_review" && selectable && (
                               <button
                                 type="button"
-                                onClick={() => toggleSelect(card.row.productId, true)}
+                                onClick={() => {
+                                  // Accept: move to ready column and auto-select
+                                  if (!acceptedIds.includes(card.row.productId)) {
+                                    setAcceptedIds((prev) => [...prev, card.row.productId]);
+                                  }
+                                  if (!selectedIds.includes(card.row.productId)) {
+                                    onSelectedIdsChange([...selectedIds, card.row.productId]);
+                                  }
+                                }}
                                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                                   checked
                                     ? "bg-emerald-600 text-white hover:bg-emerald-700"

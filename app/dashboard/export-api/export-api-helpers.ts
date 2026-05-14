@@ -118,6 +118,8 @@ export const DEFAULT_ALLEGRO_EXPORT_FIELDS: AllegroExportFields = {
 export type ExportReadinessRow = {
   marketplaceSlug: string;
   productId: number;
+  productName: string | null;
+  ean: string | null;
   accountId: number | null;
   marketplaceId: string | null;
   status: ExportReadinessStatus;
@@ -375,6 +377,18 @@ export function normalizeExportReadinessRows(input: unknown): ExportReadinessRow
       return {
         marketplaceSlug: typeof data.marketplaceSlug === "string" ? data.marketplaceSlug.trim() : "",
         productId: Number(data.productId || 0),
+        productName: typeof data.productName === "string" && data.productName.trim()
+          ? data.productName.trim()
+          : typeof data.name === "string" && data.name.trim()
+            ? data.name.trim()
+            : typeof data.title === "string" && data.title.trim()
+              ? data.title.trim()
+              : null,
+        ean: typeof data.ean === "string" && data.ean.trim()
+          ? data.ean.trim()
+          : typeof data.gtin === "string" && data.gtin.trim()
+            ? data.gtin.trim()
+            : null,
         accountId: Number.isInteger(Number(data.accountId)) && Number(data.accountId) > 0 ? Number(data.accountId) : null,
         marketplaceId: typeof data.marketplaceId === "string" && data.marketplaceId.trim()
           ? data.marketplaceId.trim()
@@ -555,6 +569,18 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
 
   if (isExistingUpdate && hasRemoteOffer) {
     if (row.requiresConfirmation || row.status === "needs_review") {
+      // Only show in review if there are no hard blockers
+      if (row.blockers.length > 0 || row.missingRequiredFields.length > 0) {
+        return {
+          bucket: "blocked",
+          label: "Braki do uzupelnienia",
+          description: row.summary || "Istniejaca oferta ma blokady - napraw przed potwierdzeniem.",
+          actionLabel: "Otworz produkt",
+          tone: "danger",
+          selectable: false,
+        };
+      }
+
       return {
         bucket: "needs_review",
         label: "Wymaga potwierdzenia",
@@ -599,6 +625,18 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
     }
 
     if (row.status === "needs_review" || row.requiresConfirmation) {
+      // Only show in review if there are no hard blockers
+      if (row.blockers.length > 0 || row.missingRequiredFields.length > 0) {
+        return {
+          bucket: "blocked",
+          label: "Nowa oferta zablokowana",
+          description: row.summary || "Brakuje danych wymaganych przez Allegro.",
+          actionLabel: "Otworz produkt",
+          tone: "danger",
+          selectable: false,
+        };
+      }
+
       return {
         bucket: "needs_review",
         label: "Wymaga potwierdzenia",
@@ -631,6 +669,19 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
   }
 
   if (row.status === "needs_review") {
+    // If there are actual blockers or missing fields, this is NOT a review item —
+    // it's blocked and needs AI or manual fix first
+    if (row.blockers.length > 0 || row.missingRequiredFields.length > 0) {
+      return {
+        bucket: "blocked",
+        label: "Braki do uzupelnienia",
+        description: row.summary || "Produkt ma blokady ktore trzeba naprawic przed exportem.",
+        actionLabel: "Otworz produkt",
+        tone: "danger",
+        selectable: false,
+      };
+    }
+
     return {
       bucket: "needs_review",
       label: "Wymaga potwierdzenia",
