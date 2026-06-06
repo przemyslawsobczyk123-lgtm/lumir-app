@@ -1,7 +1,7 @@
 import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "../mvp-feature-flags.ts";
 
 export type FileImportMarketplace = "mediaexpert" | "empik" | "custom";
-export type RemoteImportMarketplace = "allegro" | "amazon";
+export type RemoteImportMarketplace = "allegro" | "icecat" | "amazon";
 export type ImportDestinationId = FileImportMarketplace | RemoteImportMarketplace;
 
 export type ImportDestination = {
@@ -20,6 +20,7 @@ export const IMPORT_DESTINATIONS: ImportDestination[] = [
   { id: "empik", kind: "file", label: "Empik", accent: "border-rose-400/60" },
   { id: "custom", kind: "file", label: "W\u0142asny plik", accent: "border-cyan-400/60" },
   { id: "allegro", kind: "remote", label: "Allegro", accent: "border-emerald-400/60" },
+  { id: "icecat", kind: "remote", label: "Icecat", accent: "border-sky-400/60" },
   { id: "amazon", kind: "remote", label: "Amazon", accent: "border-orange-400/60" },
 ];
 

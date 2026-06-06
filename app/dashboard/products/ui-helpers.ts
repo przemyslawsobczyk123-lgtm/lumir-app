@@ -1,3 +1,6 @@
+export const SUPPORTED_SALES_CHANNEL_SLUGS = ["allegro", "empik", "mediaexpert"] as const;
+
+const SUPPORTED_SALES_CHANNELS = new Set<string>(SUPPORTED_SALES_CHANNEL_SLUGS);
 const AUTO_ASSIGN_MARKETPLACES = new Set(["mediaexpert", "empik"]);
 
 export type ProductListingFocus = "all" | "ready" | "review" | "blocked";
@@ -25,8 +28,23 @@ type ProductListingInput = {
   integrations: string | null;
 };
 
+export function normalizeSalesChannelSlug(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+export function isSupportedSalesChannelSlug(value: unknown) {
+  return SUPPORTED_SALES_CHANNELS.has(normalizeSalesChannelSlug(value));
+}
+
+export function filterSupportedSalesChannels<T>(
+  entries: readonly T[],
+  getMarketplaceSlug: (entry: T) => unknown
+): T[] {
+  return entries.filter((entry) => isSupportedSalesChannelSlug(getMarketplaceSlug(entry)));
+}
+
 export type ProductListingBadgeKind = "ready" | "partial" | "review" | "unmapped" | "attributes";
-export type ActiveProductFilterSummaryKey = "search" | "focus" | "status" | "marketplace";
+export type ActiveProductFilterSummaryKey = "search" | "focus" | "status" | "marketplace" | "marketplaceCategory" | "source";
 export type ActiveProductFilterSummaryItem = {
   key: ActiveProductFilterSummaryKey;
   label: string;
@@ -36,15 +54,20 @@ export type ActiveProductFilterSummaryInput = {
   search: string;
   statusFilter: string;
   marketplaceFilter: string;
+  marketplaceCategoryFilter?: string;
+  sourceFilter?: string;
   listingFocus: ProductListingFocus;
 };
 export type ActiveProductFilterSummaryLabels = {
   search: string;
   status: string;
   marketplace: string;
+  marketplaceCategory: string;
+  source: string;
   focus: string;
   statusLabels: Partial<Record<string, string>>;
   marketplaceLabels: Partial<Record<string, string>>;
+  sourceLabels: Partial<Record<string, string>>;
   focusLabels: Partial<Record<string, string>>;
 };
 
@@ -52,9 +75,18 @@ export function hasActiveProductFilters(
   search: string,
   statusFilter: string,
   marketplaceFilter: string,
-  listingFocus: ProductListingFocus = "all"
+  listingFocus: ProductListingFocus = "all",
+  marketplaceCategoryFilter = "",
+  sourceFilter = ""
 ) {
-  return Boolean(search.trim() || statusFilter || marketplaceFilter || listingFocus !== "all");
+  return Boolean(
+    search.trim()
+      || statusFilter
+      || marketplaceFilter
+      || sourceFilter
+      || listingFocus !== "all"
+      || (marketplaceFilter && marketplaceCategoryFilter.trim())
+  );
 }
 
 export function getActiveProductFilterSummary(
@@ -92,6 +124,22 @@ export function getActiveProductFilterSummary(
     });
   }
 
+  if (input.marketplaceFilter && input.marketplaceCategoryFilter?.trim()) {
+    items.push({
+      key: "marketplaceCategory",
+      label: labels.marketplaceCategory,
+      value: input.marketplaceCategoryFilter.trim(),
+    });
+  }
+
+  if (input.sourceFilter) {
+    items.push({
+      key: "source",
+      label: labels.source,
+      value: labels.sourceLabels[input.sourceFilter] ?? input.sourceFilter,
+    });
+  }
+
   return items;
 }
 
@@ -109,13 +157,14 @@ export function parseProductIntegrations(raw: string | null): ProductIntegration
   if (!raw) return [];
   return raw.split("|||").filter(Boolean).map((item) => {
     const parts = item.split("\x01");
+    const slug = normalizeSalesChannelSlug(parts[0] ?? "");
     return {
-      slug: parts[0] ?? "",
+      slug,
       name: parts[1] ?? parts[0] ?? "",
       missing: parseInt(parts[2] ?? "0", 10) || 0,
       categoryPath: parts[3] ?? "",
     };
-  });
+  }).filter((integration) => isSupportedSalesChannelSlug(integration.slug));
 }
 
 export function getProductListingState(input: ProductListingInput) {

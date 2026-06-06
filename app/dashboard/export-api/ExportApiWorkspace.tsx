@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { isAmazonUiEnabled, resolveMarketplaceSlugForMvp } from "../mvp-feature-flags";
 
-import { ExportProductsBoard } from "./ExportProductsBoard";
+import { ExportReadinessTable } from "./ExportReadinessTable";
 import { ExportRunHistoryCard } from "./ExportRunHistoryCard";
 import {
   canDownloadMiraklExportFile,
@@ -14,8 +14,8 @@ import {
   enrichExportReadinessRows,
   filterExportReadinessRowsForMarketplace,
   getExportMarketplaceTabClass,
-  getVisibleExportMarketplaceOptions,
   getSelectableExportReadinessIds,
+  getVisibleExportMarketplaceOptions,
   normalizeExportPreflightResult,
   normalizeExportProductSummaries,
   normalizeExportReadinessRows,
@@ -32,6 +32,7 @@ import {
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const AMAZON_UI_ENABLED = isAmazonUiEnabled();
 const EXPORT_READINESS_LIMIT = 100;
+const AI_BULK_LIMIT = 10;
 
 const ALLEGRO_FIELD_LABELS: Record<AllegroExportField, string> = {
   title: "Tytul",
@@ -60,6 +61,9 @@ const ALLEGRO_FIELD_PRESETS: Array<{ key: string; label: string; fields: Allegro
   },
 ];
 
+type WizardStep = "marketplace" | "products" | "export";
+type WorkspaceTab = "wizard" | "history";
+
 type AllegroAccountOption = {
   id: number;
   environment: string;
@@ -67,8 +71,9 @@ type AllegroAccountOption = {
   status?: string | null;
 };
 
-type WizardStep = "marketplace" | "products" | "export";
-type WorkspaceTab = "wizard" | "history";
+type ExportRequestError = Error & {
+  preflight?: ExportPreflightResult | null;
+};
 
 function authHeaders() {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
@@ -88,11 +93,13 @@ async function readJsonOrThrow(response: Response) {
   }
 
   if (!response.ok) {
-    if (typeof payload === "object" && payload && "error" in payload) {
-      const error = (payload as { error?: unknown }).error;
-      throw new Error(typeof error === "string" && error ? error : "Request failed");
-    }
-    throw new Error(`Request failed: ${response.status}`);
+    const data = typeof payload === "object" && payload ? payload as { error?: unknown; message?: unknown } : {};
+    const message = typeof data.error === "string" && data.error
+      ? data.error
+      : typeof data.message === "string" && data.message
+        ? data.message
+        : `Request failed: ${response.status}`;
+    throw new Error(message);
   }
 
   return payload;
@@ -116,43 +123,118 @@ function getDownloadFileName(response: Response, fallback: string) {
   return match?.[1] || fallback;
 }
 
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function loadMarketplaceRunHistory(marketplaceSlug: string): Promise<ExportRunRow[]> {
   const runsPayload = await fetch(`${API}/api/marketplace-export/runs`, {
     headers: authHeaders(),
     cache: "no-store",
   }).then(readJsonOrThrow);
-
-  const listedRuns = normalizeExportRunRows(
+  const rows = normalizeExportRunRows(
     typeof runsPayload === "object" && runsPayload && "data" in runsPayload
       ? (runsPayload as { data?: unknown }).data
       : []
   ).filter((run) => run.marketplaceSlug === marketplaceSlug);
 
-  return Promise.all(listedRuns.map(async (run) => {
+  return Promise.all(rows.map(async (run) => {
     try {
-      const detailPayload = await fetch(`${API}/api/marketplace-export/runs/${run.id}`, {
+      const detailsPayload = await fetch(`${API}/api/marketplace-export/runs/${run.id}`, {
         headers: authHeaders(),
         cache: "no-store",
       }).then(readJsonOrThrow);
-      const detailed = normalizeExportRunRows([
-        typeof detailPayload === "object" && detailPayload && "data" in detailPayload
-          ? (detailPayload as { data?: unknown }).data
+      return normalizeExportRunRows([
+        typeof detailsPayload === "object" && detailsPayload && "data" in detailsPayload
+          ? (detailsPayload as { data?: unknown }).data
           : null,
-      ])[0];
-      return detailed ?? run;
+      ])[0] ?? run;
     } catch {
       return run;
     }
   }));
 }
 
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  URL.revokeObjectURL(url);
+function StepPill({
+  index,
+  label,
+  hint,
+  state,
+  onClick,
+}: {
+  index: 1 | 2 | 3;
+  label: string;
+  hint?: string;
+  state: "active" | "done" | "todo";
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-3 rounded-xl px-2 py-1 text-left transition hover:bg-[var(--bg-card-hover)]"
+      >
+        <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition ${
+          state === "active"
+            ? "bg-indigo-600 text-white"
+            : state === "done"
+              ? "bg-emerald-500 text-white"
+              : "border border-[var(--border-default)] bg-[var(--bg-body)] text-[var(--text-tertiary)]"
+        }`}
+        >
+          {state === "done" ? "OK" : index}
+        </span>
+        <span className="flex flex-col">
+          <span className={`text-sm font-semibold ${
+            state === "active"
+              ? "text-[var(--text-primary)]"
+              : state === "done"
+                ? "text-emerald-300"
+                : "text-[var(--text-secondary)]"
+          }`}
+          >
+            {label}
+          </span>
+          {hint && <span className="text-xs text-[var(--text-tertiary)]">{hint}</span>}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function StepSeparator() {
+  return <li aria-hidden="true" className="hidden h-px flex-1 bg-[var(--border-default)] sm:block" />;
+}
+
+function MetricCard({
+  tone,
+  label,
+  value,
+  textValue,
+}: {
+  tone: "ready" | "danger" | "info";
+  label: string;
+  value?: number;
+  textValue?: string;
+}) {
+  const toneClass = tone === "ready"
+    ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+    : tone === "danger"
+      ? "border-rose-400/60 bg-rose-500/10 text-rose-100"
+      : "border-sky-400/60 bg-sky-500/10 text-sky-100";
+
+  return (
+    <div className={`rounded-xl border p-4 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">{label}</div>
+      <div className="mt-2 text-2xl font-semibold">{textValue ?? value ?? 0}</div>
+    </div>
+  );
 }
 
 export function ExportApiWorkspace() {
@@ -165,15 +247,13 @@ export function ExportApiWorkspace() {
   );
   const marketplaceOptions = useMemo(() => getVisibleExportMarketplaceOptions(AMAZON_UI_ENABLED), []);
   const [tab, setTab] = useState<WorkspaceTab>("wizard");
-  const [step, setStep] = useState<WizardStep>(
-    initialSelection.marketplaceSlug ? "products" : "marketplace"
-  );
+  const [step, setStep] = useState<WizardStep>(initialSelection.marketplaceSlug ? "products" : "marketplace");
   const [marketplaceSlug, setMarketplaceSlug] = useState(resolveMarketplaceSlugForMvp(initialSelection.marketplaceSlug || "allegro", AMAZON_UI_ENABLED));
   const [scopedProductIds, setScopedProductIds] = useState<number[]>(initialSelection.productIds);
   const [selectedIds, setSelectedIds] = useState<number[]>(initialSelection.productIds);
   const [rows, setRows] = useState(() => normalizeExportReadinessRows([]));
   const [productSummaries, setProductSummaries] = useState<ExportProductSummary[]>([]);
-  const [productSummariesReady, setProductSummariesReady] = useState(false);
+  const [enrichmentReady, setEnrichmentReady] = useState(false);
   const [readinessPage, setReadinessPage] = useState(1);
   const [runs, setRuns] = useState(() => normalizeExportRunRows([]));
   const [allegroAccounts, setAllegroAccounts] = useState<AllegroAccountOption[]>([]);
@@ -189,7 +269,7 @@ export function ExportApiWorkspace() {
   const [aiBusyIds, setAiBusyIds] = useState<number[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiInfo, setAiInfo] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [aiRefreshTick, setAiRefreshTick] = useState(0);
 
   useEffect(() => {
     const nextSelection = parseExportApiSelection(searchString);
@@ -204,15 +284,6 @@ export function ExportApiWorkspace() {
     setStep(nextSelection.marketplaceSlug ? "products" : "marketplace");
   }, [searchString]);
 
-  const toggleAllegroField = (field: AllegroExportField) => {
-    setAllegroFields((current) => ({
-      ...current,
-      [field]: !current[field],
-    }));
-    setPreflight(null);
-    setRunResult(null);
-  };
-
   useEffect(() => {
     let cancelled = false;
 
@@ -224,7 +295,7 @@ export function ExportApiWorkspace() {
         }).then(readJsonOrThrow);
         if (cancelled) return;
 
-        const nextAccounts = (
+        const accounts = (
           typeof payload === "object" && payload && "data" in payload && Array.isArray((payload as { data?: unknown }).data)
             ? (payload as { data: unknown[] }).data
             : []
@@ -240,21 +311,18 @@ export function ExportApiWorkspace() {
           })
           .filter((account) => Number.isInteger(account.id) && account.id > 0);
 
-        setAllegroAccounts(nextAccounts);
+        setAllegroAccounts(accounts);
         setSelectedAllegroAccountId((current) => {
-          if (current && nextAccounts.some((account) => account.id === current)) return current;
-          const validProduction = nextAccounts.find((account) => account.environment === "production" && account.status === "valid");
-          return validProduction?.id ?? nextAccounts[0]?.id ?? null;
+          if (current && accounts.some((account) => account.id === current)) return current;
+          const validProduction = accounts.find((account) => account.environment === "production" && account.status === "valid");
+          return validProduction?.id ?? accounts[0]?.id ?? null;
         });
       } catch {
-        if (!cancelled) {
-          setAllegroAccounts([]);
-        }
+        if (!cancelled) setAllegroAccounts([]);
       }
     };
 
     void loadAccounts();
-
     return () => {
       cancelled = true;
     };
@@ -266,7 +334,7 @@ export function ExportApiWorkspace() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      setProductSummariesReady(false);
+      setEnrichmentReady(false);
 
       try {
         const readinessUrl = new URL(`${API}/api/marketplace-export/readiness`);
@@ -282,7 +350,10 @@ export function ExportApiWorkspace() {
         }
 
         const [readinessPayload, nextRuns] = await Promise.all([
-          fetch(readinessUrl.toString(), { headers: authHeaders(), cache: "no-store" }).then(readJsonOrThrow),
+          fetch(readinessUrl.toString(), {
+            headers: authHeaders(),
+            cache: "no-store",
+          }).then(readJsonOrThrow),
           loadMarketplaceRunHistory(marketplaceSlug),
         ]);
 
@@ -297,91 +368,78 @@ export function ExportApiWorkspace() {
         setRuns(nextRuns);
         setSelectedIds((current) => getSelectableExportReadinessIds(nextRows, current));
 
-        // Enrich rows with product names, EAN and marketplace category mapping.
-        // We fetch a focused list scoped to the readiness rows so the request stays bounded.
-        const productIdsForEnrichment = nextRows.map((row) => row.productId);
-        if (productIdsForEnrichment.length === 0) {
+        const productIds = nextRows.map((row) => row.productId);
+        if (productIds.length === 0) {
           setProductSummaries([]);
-          setProductSummariesReady(true);
-        } else {
-          try {
-            const productsUrl = new URL(`${API}/api/products/list`);
-            productsUrl.searchParams.set("marketplace", marketplaceSlug);
-            productsUrl.searchParams.set("page", "1");
-            productsUrl.searchParams.set("limit", String(Math.max(productIdsForEnrichment.length, 50)));
-            const productsPayload = await fetch(productsUrl.toString(), {
-              headers: authHeaders(),
-              cache: "no-store",
-            }).then(readJsonOrThrow);
+          setEnrichmentReady(true);
+          return;
+        }
 
-            if (cancelled) return;
-
-            const summaries = normalizeExportProductSummaries(
-              typeof productsPayload === "object" && productsPayload && "data" in productsPayload
-                ? (productsPayload as { data?: unknown }).data
-                : []
-            );
-            setProductSummaries(summaries);
-            setProductSummariesReady(true);
-          } catch {
-            if (cancelled) return;
-            // Enrichment is best-effort; rows still render with ID fallback.
-            setProductSummaries([]);
-            setProductSummariesReady(false);
-          }
+        try {
+          const productsUrl = new URL(`${API}/api/products/list`);
+          productsUrl.searchParams.set("marketplace", marketplaceSlug);
+          productsUrl.searchParams.set("page", "1");
+          productsUrl.searchParams.set("limit", String(Math.max(productIds.length, 50)));
+          const productsPayload = await fetch(productsUrl.toString(), {
+            headers: authHeaders(),
+            cache: "no-store",
+          }).then(readJsonOrThrow);
+          if (cancelled) return;
+          setProductSummaries(normalizeExportProductSummaries(
+            typeof productsPayload === "object" && productsPayload && "data" in productsPayload
+              ? (productsPayload as { data?: unknown }).data
+              : []
+          ));
+          setEnrichmentReady(true);
+        } catch {
+          if (cancelled) return;
+          setProductSummaries([]);
+          setEnrichmentReady(false);
         }
       } catch (loadError) {
         if (cancelled) return;
         setRows([]);
         setRuns([]);
         setProductSummaries([]);
-        setProductSummariesReady(false);
+        setEnrichmentReady(false);
         setError(loadError instanceof Error ? loadError.message : "Nie udalo sie zaladowac Export");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     };
 
     void load();
-
     return () => {
       cancelled = true;
     };
-  }, [marketplaceSlug, scopedProductIds, selectedAllegroAccountId, readinessPage, reloadKey]);
+  }, [marketplaceSlug, scopedProductIds, selectedAllegroAccountId, readinessPage, aiRefreshTick]);
 
   const marketplaceLabel = getMarketplaceLabel(marketplaceSlug);
   const miraklMode = isMiraklMarketplace(marketplaceSlug);
   const selectedCount = selectedIds.length;
   const activePreset = ALLEGRO_FIELD_PRESETS.find((preset) => fieldsEqual(preset.fields, allegroFields));
-
   const enrichedRows = useMemo(
     () => enrichExportReadinessRows(rows, productSummaries),
     [rows, productSummaries]
   );
-
-  const visibleRows = useMemo(
+  const marketplaceRows = useMemo(
     () => filterExportReadinessRowsForMarketplace(enrichedRows, marketplaceSlug, {
-      enrichmentReady: productSummariesReady && productSummaries.length > 0,
+      enrichmentReady: enrichmentReady && productSummaries.length > 0,
     }),
-    [enrichedRows, marketplaceSlug, productSummariesReady, productSummaries.length]
+    [enrichedRows, marketplaceSlug, enrichmentReady, productSummaries.length]
   );
-
-  const filteredOutByCategory = enrichedRows.length - visibleRows.length;
-
-  const effectiveConfirmNeedsReview = useMemo(
-    () => shouldConfirmReviewForSelection(visibleRows, selectedIds, confirmNeedsReview),
-    [visibleRows, selectedIds, confirmNeedsReview]
+  const filteredOutByCategoryCount = enrichedRows.length - marketplaceRows.length;
+  const confirmReviewForPayload = useMemo(
+    () => shouldConfirmReviewForSelection(marketplaceRows, selectedIds, confirmNeedsReview),
+    [marketplaceRows, selectedIds, confirmNeedsReview]
   );
-
   const canRunPreflight = canRunMarketplacePreflight({
     marketplaceSlug,
     accountId: selectedAllegroAccountId,
     selectedCount,
     loading: preflightLoading,
   });
-  const canRunExport = !!preflight && canStartExportRun({
+  const canRunAllegroExport = !!preflight && canStartExportRun({
     marketplaceSlug,
     accountId: selectedAllegroAccountId,
     eligibleCount: preflight.eligibleCount,
@@ -392,9 +450,10 @@ export function ExportApiWorkspace() {
     eligibleCount: preflight.eligibleCount,
     loading: runLoading,
   });
-  const canRunPrimaryExportAction = miraklMode
+  const canRunFinalExport = miraklMode
     ? canDownloadMirakl && (preflight?.groups.length ?? 0) <= 1
-    : canRunExport;
+    : canRunAllegroExport;
+  const marketplaceReady = Boolean(marketplaceSlug && (marketplaceSlug !== "allegro" || selectedAllegroAccountId));
 
   async function handleRunPreflight() {
     if (!canRunPreflight) return;
@@ -410,8 +469,8 @@ export function ExportApiWorkspace() {
         body: JSON.stringify({
           marketplaceSlug,
           accountId: marketplaceSlug === "allegro" ? selectedAllegroAccountId : null,
-          productIds: getSelectableExportReadinessIds(visibleRows, selectedIds),
-          confirmNeedsReview: effectiveConfirmNeedsReview,
+          productIds: getSelectableExportReadinessIds(marketplaceRows, selectedIds),
+          confirmNeedsReview: confirmReviewForPayload,
           fields: marketplaceSlug === "allegro" ? allegroFields : null,
         }),
       }).then(readJsonOrThrow);
@@ -424,7 +483,8 @@ export function ExportApiWorkspace() {
         )
       );
     } catch (preflightError) {
-      setPreflight(null);
+      const exportError = preflightError as ExportRequestError;
+      setPreflight(exportError.preflight ?? null);
       setError(preflightError instanceof Error ? preflightError.message : "Preflight fail");
     } finally {
       setPreflightLoading(false);
@@ -433,7 +493,6 @@ export function ExportApiWorkspace() {
 
   async function handleStartRun() {
     if (!preflight || runLoading) return;
-
     const productIds = preflight.eligibleItems.map((item) => item.productId);
     if (!canStartExportRun({
       marketplaceSlug,
@@ -457,16 +516,14 @@ export function ExportApiWorkspace() {
           accountId: selectedAllegroAccountId,
           productIds,
           mode: "publish",
-          confirmNeedsReview: effectiveConfirmNeedsReview,
+          confirmNeedsReview: confirmReviewForPayload,
           fields: marketplaceSlug === "allegro" ? allegroFields : null,
         }),
       }).then(readJsonOrThrow);
       const data = typeof payload === "object" && payload && "data" in payload
         ? payload as { data?: { runId?: number; jobId?: string } }
         : { data: null };
-
       setRunResult(`Run #${data.data?.runId ?? "-"} dodany do kolejki${data.data?.jobId ? ` (${data.data.jobId})` : ""}.`);
-
       setRuns(await loadMarketplaceRunHistory(marketplaceSlug));
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Export run fail");
@@ -516,14 +573,11 @@ export function ExportApiWorkspace() {
   async function handleGenerateAi(productIds: number[]) {
     if (productIds.length === 0) return;
 
-    const limited = productIds.slice(0, 10);
-    if (limited.length < productIds.length) {
-      setAiInfo(`Generuje AI dla pierwszych ${limited.length} produktow z ${productIds.length}. Powtorz dla reszty.`);
-    } else {
-      setAiInfo(null);
-    }
-
-    setAiBusyIds((current) => Array.from(new Set([...current, ...limited])));
+    const batchIds = productIds.slice(0, AI_BULK_LIMIT);
+    setAiInfo(batchIds.length < productIds.length
+      ? `Generuje AI dla pierwszych ${batchIds.length} produktow z ${productIds.length}. Powtorz dla reszty.`
+      : null);
+    setAiBusyIds((current) => Array.from(new Set([...current, ...batchIds])));
     setAiError(null);
 
     try {
@@ -531,7 +585,7 @@ export function ExportApiWorkspace() {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          productIds: limited,
+          productIds: batchIds,
           marketplaceSlug,
           mode: "all",
           useAllegro: false,
@@ -539,29 +593,19 @@ export function ExportApiWorkspace() {
           useAmazon: false,
         }),
       }).then(readJsonOrThrow);
-
-      const jobId = (payload as { data?: { job?: { id?: string } } } | null)?.data?.job?.id;
+      const jobId = (payload as { data?: { job?: { id?: string | number } } })?.data?.job?.id;
       setAiInfo(jobId
-        ? `Job AI #${jobId} uruchomiony dla ${limited.length} produktow. Odswiez za chwile.`
-        : `AI uruchomione dla ${limited.length} produktow.`);
-
-      // refresh readiness po krotkim opoznieniu zeby AI zdazyl zapisac zmiany
+        ? `Job AI #${jobId} uruchomiony dla ${batchIds.length} produktow. Odswiez za chwile.`
+        : `AI uruchomione dla ${batchIds.length} produktow.`);
       setTimeout(() => {
-        setReloadKey((value) => value + 1);
+        setAiRefreshTick((current) => current + 1);
       }, 4000);
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : "Nie udalo sie uruchomic AI");
+    } catch (generateError) {
+      setAiError(generateError instanceof Error ? generateError.message : "Nie udalo sie uruchomic AI");
     } finally {
-      setAiBusyIds((current) => current.filter((id) => !limited.includes(id)));
+      setAiBusyIds((current) => current.filter((id) => !batchIds.includes(id)));
     }
   }
-
-  const selectedProductCount = selectedIds.length;
-  const stepsDone = {
-    marketplace: !!marketplaceSlug && (marketplaceSlug !== "allegro" || !!selectedAllegroAccountId),
-    products: selectedProductCount > 0,
-    export: false,
-  };
 
   return (
     <div className="space-y-5">
@@ -578,7 +622,6 @@ export function ExportApiWorkspace() {
               Allegro publikuje przez API. Media Expert i Empik zwracaja gotowy plik Mirakl XLSX.
             </p>
           </div>
-
           <div className="inline-flex rounded-xl border border-[var(--border-default)] bg-[var(--bg-body)] p-1 text-sm">
             <button
               type="button"
@@ -604,28 +647,32 @@ export function ExportApiWorkspace() {
         {tab === "wizard" && (
           <div className="mt-5">
             <ol className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <StepperItem
+              <StepPill
                 index={1}
                 label="Marketplace"
                 hint={marketplaceLabel}
-                state={step === "marketplace" ? "active" : stepsDone.marketplace ? "done" : "todo"}
+                state={step === "marketplace" ? "active" : marketplaceReady ? "done" : "todo"}
                 onClick={() => setStep("marketplace")}
               />
-              <StepperConnector />
-              <StepperItem
+              <StepSeparator />
+              <StepPill
                 index={2}
                 label="Produkty"
-                hint={selectedProductCount > 0 ? `${selectedProductCount} zaznaczonych` : "wybierz lub generuj AI"}
-                state={step === "products" ? "active" : selectedProductCount > 0 && step === "export" ? "done" : "todo"}
-                onClick={() => stepsDone.marketplace && setStep("products")}
+                hint={selectedCount > 0 ? `${selectedCount} zaznaczonych` : "wybierz lub generuj AI"}
+                state={step === "products" ? "active" : selectedCount > 0 && step === "export" ? "done" : "todo"}
+                onClick={() => {
+                  if (marketplaceReady) setStep("products");
+                }}
               />
-              <StepperConnector />
-              <StepperItem
+              <StepSeparator />
+              <StepPill
                 index={3}
                 label="Eksport"
                 hint={preflight ? `${preflight.eligibleCount} gotowe` : "preflight + pobierz"}
                 state={step === "export" ? "active" : "todo"}
-                onClick={() => selectedProductCount > 0 && setStep("export")}
+                onClick={() => {
+                  if (selectedCount > 0) setStep("export");
+                }}
               />
             </ol>
           </div>
@@ -644,11 +691,7 @@ export function ExportApiWorkspace() {
       </header>
 
       {tab === "history" && (
-        <ExportRunHistoryCard
-          marketplaceSlug={marketplaceSlug}
-          runs={runs}
-          loading={loading}
-        />
+        <ExportRunHistoryCard marketplaceSlug={marketplaceSlug} runs={runs} loading={loading} />
       )}
 
       {tab === "wizard" && step === "marketplace" && (
@@ -662,7 +705,6 @@ export function ExportApiWorkspace() {
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             Decyduje o formacie exportu i wymaganych atrybutach.
           </p>
-
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {marketplaceOptions.map((option) => {
               const active = marketplaceSlug === option.value;
@@ -743,7 +785,11 @@ export function ExportApiWorkspace() {
                         <button
                           key={field}
                           type="button"
-                          onClick={() => toggleAllegroField(field)}
+                          onClick={() => {
+                            setAllegroFields((current) => ({ ...current, [field]: !current[field] }));
+                            setPreflight(null);
+                            setRunResult(null);
+                          }}
                           className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                             active
                               ? "border-indigo-400 bg-indigo-500/25 text-white"
@@ -776,10 +822,12 @@ export function ExportApiWorkspace() {
           <div className="mt-5 flex justify-end">
             <button
               type="button"
-              aria-disabled={!stepsDone.marketplace}
-              onClick={() => stepsDone.marketplace && setStep("products")}
+              aria-disabled={!marketplaceReady}
+              onClick={() => {
+                if (marketplaceReady) setStep("products");
+              }}
               className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${
-                stepsDone.marketplace
+                marketplaceReady
                   ? "bg-indigo-600 text-white hover:bg-indigo-700"
                   : "cursor-not-allowed bg-indigo-200 text-indigo-500"
               }`}
@@ -792,10 +840,10 @@ export function ExportApiWorkspace() {
 
       {tab === "wizard" && step === "products" && (
         <>
-          <ExportProductsBoard
+          <ExportReadinessTable
             marketplaceSlug={marketplaceSlug}
             marketplaceLabel={marketplaceLabel}
-            rows={visibleRows}
+            rows={marketplaceRows}
             loading={loading}
             selectedIds={selectedIds}
             onSelectedIdsChange={(nextIds) => {
@@ -806,7 +854,7 @@ export function ExportApiWorkspace() {
             onGenerateAi={handleGenerateAi}
             aiBusyIds={aiBusyIds}
             aiError={aiError}
-            filteredOutByCategoryCount={filteredOutByCategory}
+            filteredOutByCategoryCount={filteredOutByCategoryCount}
           />
 
           {scopedProductIds.length > 0 && (
@@ -828,7 +876,7 @@ export function ExportApiWorkspace() {
 
           {scopedProductIds.length === 0 && (readinessPage > 1 || rows.length >= EXPORT_READINESS_LIMIT) && (
             <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)] sm:flex-row sm:items-center sm:justify-between">
-              <span>Strona {readinessPage} · max {EXPORT_READINESS_LIMIT} wynikow</span>
+              <span>Strona {readinessPage} | max {EXPORT_READINESS_LIMIT} wynikow</span>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -925,26 +973,12 @@ export function ExportApiWorkspace() {
           {preflight && (
             <>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <SummaryCell
-                  tone="ready"
-                  label="Gotowe do exportu"
-                  value={preflight.eligibleCount}
-                />
-                <SummaryCell
-                  tone="danger"
-                  label="Zablokowane"
-                  value={preflight.blockedCount}
-                />
-                <SummaryCell
+                <MetricCard tone="ready" label="Gotowe do exportu" value={preflight.eligibleCount} />
+                <MetricCard tone="danger" label="Zablokowane" value={preflight.blockedCount} />
+                <MetricCard
                   tone="info"
                   label={miraklMode ? "Format pliku" : "Wybrane pola"}
-                  textValue={
-                    miraklMode
-                      ? "Mirakl XLSX"
-                      : ALLEGRO_FIELD_KEYS.filter((field) => allegroFields[field])
-                          .map((field) => ALLEGRO_FIELD_LABELS[field])
-                          .join(", ") || "Brak"
-                  }
+                  textValue={miraklMode ? "Mirakl XLSX" : ALLEGRO_FIELD_KEYS.filter((field) => allegroFields[field]).map((field) => ALLEGRO_FIELD_LABELS[field]).join(", ") || "Brak"}
                 />
               </div>
 
@@ -968,8 +1002,7 @@ export function ExportApiWorkspace() {
                             type="button"
                             aria-disabled={runLoading}
                             onClick={() => {
-                              if (runLoading) return;
-                              void handleDownloadMiraklFile(group.productIds, group.classification);
+                              if (!runLoading) void handleDownloadMiraklFile(group.productIds, group.classification);
                             }}
                             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                               runLoading
@@ -1011,14 +1044,12 @@ export function ExportApiWorkspace() {
             >
               Wstecz
             </button>
-
             <div className="flex flex-wrap gap-2 sm:justify-end">
               <button
                 type="button"
                 aria-disabled={!canRunPreflight || preflightLoading}
                 onClick={() => {
-                  if (!canRunPreflight || preflightLoading) return;
-                  void handleRunPreflight();
+                  if (canRunPreflight && !preflightLoading) void handleRunPreflight();
                 }}
                 className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                   canRunPreflight && !preflightLoading
@@ -1028,23 +1059,22 @@ export function ExportApiWorkspace() {
               >
                 {preflightLoading ? "Sprawdzam..." : "Sprawdz ponownie"}
               </button>
-
               <button
                 type="button"
-                aria-disabled={!canRunPrimaryExportAction}
+                aria-disabled={!canRunFinalExport}
                 onClick={() => {
-                  if (!canRunPrimaryExportAction) return;
+                  if (!canRunFinalExport || !preflight) return;
                   if (miraklMode) {
                     void handleDownloadMiraklFile(
-                      preflight!.eligibleItems.map((item) => item.productId),
-                      preflight!.groups[0]?.classification
+                      preflight.eligibleItems.map((item) => item.productId),
+                      preflight.groups[0]?.classification
                     );
                     return;
                   }
                   void handleStartRun();
                 }}
                 className={`rounded-xl px-5 py-3 text-sm font-semibold transition ${
-                  canRunPrimaryExportAction
+                  canRunFinalExport
                     ? "bg-emerald-600 text-white hover:bg-emerald-700"
                     : "cursor-not-allowed bg-emerald-200 text-emerald-700"
                 }`}
@@ -1063,86 +1093,6 @@ export function ExportApiWorkspace() {
           </div>
         </section>
       )}
-    </div>
-  );
-}
-
-type StepperState = "todo" | "active" | "done";
-
-function StepperItem({
-  index,
-  label,
-  hint,
-  state,
-  onClick,
-}: {
-  index: number;
-  label: string;
-  hint?: string;
-  state: StepperState;
-  onClick?: () => void;
-}) {
-  const baseCircle = "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition";
-  const circleTone = state === "active"
-    ? "bg-indigo-600 text-white"
-    : state === "done"
-      ? "bg-emerald-500 text-white"
-      : "bg-[var(--bg-body)] text-[var(--text-tertiary)] border border-[var(--border-default)]";
-  const labelTone = state === "active"
-    ? "text-[var(--text-primary)]"
-    : state === "done"
-      ? "text-emerald-300"
-      : "text-[var(--text-secondary)]";
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex items-center gap-3 rounded-xl px-2 py-1 text-left transition hover:bg-[var(--bg-card-hover)]"
-      >
-        <span className={`${baseCircle} ${circleTone}`}>
-          {state === "done" ? "✓" : index}
-        </span>
-        <span className="flex flex-col">
-          <span className={`text-sm font-semibold ${labelTone}`}>{label}</span>
-          {hint && <span className="text-xs text-[var(--text-tertiary)]">{hint}</span>}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function StepperConnector() {
-  return (
-    <li aria-hidden="true" className="hidden h-px flex-1 bg-[var(--border-default)] sm:block" />
-  );
-}
-
-function SummaryCell({
-  tone,
-  label,
-  value,
-  textValue,
-}: {
-  tone: "ready" | "danger" | "info";
-  label: string;
-  value?: number;
-  textValue?: string;
-}) {
-  const toneClass =
-    tone === "ready"
-      ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
-      : tone === "danger"
-        ? "border-rose-400/60 bg-rose-500/10 text-rose-100"
-        : "border-sky-400/60 bg-sky-500/10 text-sky-100";
-
-  return (
-    <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">
-        {textValue ?? value ?? 0}
-      </div>
     </div>
   );
 }

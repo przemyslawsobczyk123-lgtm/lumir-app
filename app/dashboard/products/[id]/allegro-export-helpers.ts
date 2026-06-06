@@ -34,6 +34,11 @@ export type ProductMarketplaceLink = {
   remoteExternalId?: string | null;
 };
 
+export type AllegroAccountReference = {
+  id: number;
+  [key: string]: unknown;
+};
+
 export const ALLEGRO_PUBLISH_GATE_REASON =
   "Publikacja do Allegro jest tymczasowo wylaczona do czasu live smoke.";
 
@@ -70,7 +75,7 @@ export function normalizeSavedAllegroMarketplaceLink(raw: unknown): SavedAllegro
 
 export function pickInitialAllegroSelection(input: {
   marketplaceLinks: ProductMarketplaceLink[];
-  accounts: Array<{ id: number }>;
+  accounts: AllegroAccountReference[];
 }): { accountId: number | null; offerId: string } {
   const link = input.marketplaceLinks.find(
     (entry) => normalizeText(entry.marketplaceSlug).toLowerCase() === "allegro"
@@ -92,7 +97,7 @@ export function pickInitialAllegroSelection(input: {
 
 export function resolveInitialAllegroSelection(input: {
   marketplaceLinks: ProductMarketplaceLink[];
-  accounts: Array<{ id: number }>;
+  accounts: AllegroAccountReference[];
   currentAccountId: number | null;
   currentOfferId: string;
   hasHydratedSavedSelection: boolean;

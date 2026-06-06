@@ -4,7 +4,12 @@ import { useRouter, useParams } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { UnoptimizedRemoteImage } from "../../_components/UnoptimizedRemoteImage";
 import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "../../mvp-feature-flags";
-import { canAutoAssignCategory, getDraftCategoryHint } from "../ui-helpers";
+import {
+  canAutoAssignCategory,
+  filterSupportedSalesChannels,
+  getDraftCategoryHint,
+  isSupportedSalesChannelSlug,
+} from "../ui-helpers";
 import {
   normalizeDraftQualitySummary,
   type AIDraftStatus,
@@ -12,7 +17,6 @@ import {
 } from "../ai-draft-helpers";
 import { ProductAiReviewCard } from "./ProductAiReviewCard";
 import { ProductPublicationChecklistCard } from "./ProductPublicationChecklistCard";
-import { AllegroOfferUpdateCard } from "./AllegroOfferUpdateCard";
 import { AmazonFoundationCard } from "./AmazonFoundationCard";
 import {
   normalizeProductAiReview,
@@ -21,28 +25,19 @@ import {
   type PublicationChecklist,
 } from "./review-checklist-helpers";
 import {
-  ALLEGRO_PUBLISH_GATE_REASON,
-  getAllegroPublishDisabledReason,
-  isAllegroPublishEnabled,
-  pickInitialAllegroSelection,
-  resolveInitialAllegroSelection,
-  normalizeAllegroOfferUpdatePreview,
-  normalizeSavedAllegroMarketplaceLink,
-  type AllegroOfferUpdatePreview,
-  type ProductMarketplaceLink,
-  type SavedAllegroMarketplaceLink,
-} from "./allegro-export-helpers";
-import {
   normalizeAmazonProductTypeDefinition,
   normalizeAmazonValidationHistory,
   normalizeAmazonValidationPreview,
   type AmazonProductTypeDefinition,
   type AmazonValidationPreview,
 } from "./amazon-foundation-helpers";
-import { buildExportApiHref } from "../../export-api/export-api-helpers";
+import {
+  applyProductEanToMarketplaceAttributes,
+  getFirstInvalidMarketplaceEanAttribute,
+  getMarketplaceEanValidation,
+} from "./marketplace-ean-helpers";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-const ALLEGRO_PUBLISH_ENABLED = isAllegroPublishEnabled();
 const AMAZON_UI_ENABLED = isAmazonUiEnabled();
 
 function getToken() {
@@ -126,28 +121,12 @@ type JobSummary = {
   startedAt?: string | null;
   finishedAt?: string | null;
 };
-type SellerAllegroAccount = {
-  id: number;
-  environment: string;
-  allegro_login?: string | null;
-  status?: string | null;
-};
 type SellerAmazonAccount = {
   id: number;
   seller_name?: string | null;
   marketplace_id?: string | null;
   marketplace_country_code?: string | null;
   status?: string | null;
-};
-type SellerOfferOption = {
-  id: string;
-  name: string;
-};
-type AllegroHistoryRow = {
-  id: number;
-  mode: string;
-  status: string;
-  createdAt?: string | null;
 };
 type AmazonSuggestion = {
   productType: string;
@@ -165,6 +144,7 @@ type ProductMarketplaceCategoryRow = {
 type ProductAttributeRow = {
   field_code: string;
   value: string;
+  marketplace_slug?: string | null;
 };
 type ProductMarketplaceLinkRow = {
   marketplace_slug?: string | null;
@@ -210,6 +190,16 @@ type AllegroParametersResponse = {
 };
 type UploadImageResponse = {
   url?: string;
+  error?: string;
+};
+type RemoveBackgroundResponse = {
+  success?: boolean;
+  data?: {
+    url?: string | null;
+    originalUrl?: string | null;
+    background?: string | null;
+    provider?: string | null;
+  } | null;
   error?: string;
 };
 type MediaOption = "global" | "separate" | "override";
@@ -407,25 +397,6 @@ export default function EditProductPage() {
   const [allegroReview, setAllegroReview] = useState<ProductAiReview | null>(null);
   const [allegroChecklist, setAllegroChecklist] = useState<PublicationChecklist | null>(null);
   const [checklistToggleBusyKey, setChecklistToggleBusyKey] = useState<string | null>(null);
-  const [allegroAccounts, setAllegroAccounts] = useState<SellerAllegroAccount[]>([]);
-  const [allegroOffers, setAllegroOffers] = useState<SellerOfferOption[]>([]);
-  const [allegroOffersLoading, setAllegroOffersLoading] = useState(false);
-  const [allegroAccountId, setAllegroAccountId] = useState<number | null>(null);
-  const [allegroOfferId, setAllegroOfferId] = useState("");
-  const [productMarketplaceLinks, setProductMarketplaceLinks] = useState<ProductMarketplaceLink[]>([]);
-  const [savedAllegroLink, setSavedAllegroLink] = useState<SavedAllegroMarketplaceLink | null>(null);
-  const allegroSavedSelectionHydratedRef = useRef(false);
-  const [allegroPreview, setAllegroPreview] = useState<AllegroOfferUpdatePreview | null>(null);
-  const [allegroPreviewBusy, setAllegroPreviewBusy] = useState(false);
-  const [allegroPublishBusy, setAllegroPublishBusy] = useState(false);
-  const [allegroConfirmNeedsReview, setAllegroConfirmNeedsReview] = useState(false);
-  const [allegroHistory, setAllegroHistory] = useState<AllegroHistoryRow[]>([]);
-  const [allegroFields, setAllegroFields] = useState({
-    title: true,
-    description: true,
-    price: false,
-    stock: false,
-  });
   const [amazonAccounts, setAmazonAccounts] = useState<SellerAmazonAccount[]>([]);
   const [amazonAccountId, setAmazonAccountId] = useState<number | null>(null);
   const [amazonMarketplaceId, setAmazonMarketplaceId] = useState("");
@@ -451,7 +422,10 @@ export default function EditProductPage() {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json() as Promise<MarketplaceListResponse>).then(j => {
         if (j.data) {
-          const visibleMarketplaces = withoutAmazonWhenDisabled(j.data, (mp) => mp.slug, AMAZON_UI_ENABLED);
+          const visibleMarketplaces = filterSupportedSalesChannels(
+            withoutAmazonWhenDisabled(j.data, (mp) => mp.slug, AMAZON_UI_ENABLED),
+            (mp) => mp.slug
+          );
           setMarketplaces(visibleMarketplaces);
           if (visibleMarketplaces.length) {
             setAttrMp(visibleMarketplaces[0].slug);
@@ -522,6 +496,16 @@ export default function EditProductPage() {
     load();
   }, [attrMp, mktCats]);
 
+  useEffect(() => {
+    if (!attrMp || !attrFields.length) return;
+    setAttrVals((current) => applyProductEanToMarketplaceAttributes({
+      marketplaceSlug: attrMp,
+      fields: attrFields,
+      values: current,
+      productEan: ean,
+    }));
+  }, [attrFields, attrMp, ean]);
+
   const setMktCat = (mp: Marketplace, val: Partial<MarketplaceCategory>) => {
     setMktCats(prev => {
       const ex = prev[mp.slug] ?? { marketplaceId: mp.id, marketplaceSlug: mp.slug, marketplaceLabel: mp.name };
@@ -553,20 +537,6 @@ export default function EditProductPage() {
           setLengthCm(p.length_cm != null ? String(p.length_cm) : "");
           setDesc(p.description || "");
           setDescHtml(p.description || "");
-          const nextMarketplaceLinks = Array.isArray(p.marketplaceLinks)
-            ? p.marketplaceLinks.map((entry) => ({
-                marketplaceSlug: String(entry.marketplace_slug || ""),
-                accountId: Number(entry.account_id || 0),
-                remoteOfferId: String(entry.remote_offer_id || ""),
-                remoteOfferTitle: entry.remote_offer_title ? String(entry.remote_offer_title) : null,
-                remoteExternalId: entry.remote_external_id ? String(entry.remote_external_id) : null,
-              })).filter((entry) => entry.marketplaceSlug && entry.accountId && entry.remoteOfferId)
-            : [];
-          setProductMarketplaceLinks(nextMarketplaceLinks);
-          const nextSavedAllegroLink = normalizeSavedAllegroMarketplaceLink(p.marketplaceLinks);
-          setSavedAllegroLink(nextSavedAllegroLink);
-          setAllegroAccountId((current) => current ?? nextSavedAllegroLink?.accountId ?? null);
-          setAllegroOfferId((current) => current || nextSavedAllegroLink?.offerId || "");
         } catch (e) { console.error("Error loading basic fields:", e); }
 
         try {
@@ -582,7 +552,9 @@ export default function EditProductPage() {
           if (p.marketplaceCategories) {
             const mcs: Record<string, MarketplaceCategory> = {};
             if (Array.isArray(p.marketplaceCategories)) {
-              p.marketplaceCategories.forEach((mc) => {
+              p.marketplaceCategories
+                .filter((mc) => isSupportedSalesChannelSlug(mc.slug))
+                .forEach((mc) => {
                 mcs[mc.slug] = {
                   marketplaceId: mc.marketplace_id,
                   marketplaceSlug: mc.slug,
@@ -602,7 +574,9 @@ export default function EditProductPage() {
           if (p.attributes) {
             const attrs: Record<string, string> = {};
             if (Array.isArray(p.attributes)) {
-              p.attributes.forEach((a) => {
+              p.attributes
+                .filter((a) => !a.marketplace_slug || isSupportedSalesChannelSlug(a.marketplace_slug))
+                .forEach((a) => {
                 attrs[a.field_code] = a.value === "❗ UZUPEŁNIJ" ? "" : a.value;
               });
             }
@@ -630,7 +604,7 @@ export default function EditProductPage() {
       const next: Record<string, AIDraft> = {};
       for (const row of (json.data || [])) {
         const draft = normalizeAIDraft(row);
-        if (draft.marketplaceSlug) next[draft.marketplaceSlug] = draft;
+        if (isSupportedSalesChannelSlug(draft.marketplaceSlug)) next[draft.marketplaceSlug] = draft;
       }
       setAiDrafts(next);
     } catch {
@@ -660,91 +634,6 @@ export default function EditProductPage() {
     }
   }, [id]);
 
-  const loadAllegroHistory = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/api/seller/allegro/offer-updates/history?productId=${id}`, { headers: authHeaders(), cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać historii Allegro");
-      const history = Array.isArray(json.data)
-        ? json.data.map((value: unknown) => {
-            const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
-            return {
-              id: Number(row.id || 0),
-              mode: String(row.mode || ""),
-              status: String(row.status || ""),
-              createdAt: row.createdAt ? String(row.createdAt) : null,
-            };
-          })
-        : [];
-      setAllegroHistory(history);
-    } catch {
-      setAllegroHistory([]);
-    }
-  }, [id]);
-
-  const loadAllegroAccounts = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/api/seller/allegro/accounts`, { headers: authHeaders(), cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać kont Allegro");
-      const accounts: SellerAllegroAccount[] = Array.isArray(json.data)
-        ? json.data.map((value: unknown) => {
-            const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
-            return {
-              id: Number(row.id || 0),
-              environment: String(row.environment || "production"),
-              allegro_login: row.allegro_login ? String(row.allegro_login) : null,
-              status: row.status ? String(row.status) : null,
-            };
-          })
-        : [];
-      setAllegroAccounts(accounts);
-      const initialSelection = pickInitialAllegroSelection({
-        marketplaceLinks: productMarketplaceLinks,
-        accounts,
-      });
-      setAllegroAccountId((current) => {
-        if (current && accounts.some((entry) => entry.id === current)) {
-          return current;
-        }
-        if (initialSelection.accountId) {
-          return initialSelection.accountId;
-        }
-        if (savedAllegroLink && accounts.some((entry) => entry.id === savedAllegroLink.accountId)) {
-          return savedAllegroLink.accountId;
-        }
-        return accounts[0]?.id ?? null;
-      });
-    } catch {
-      setAllegroAccounts([]);
-    }
-  }, [productMarketplaceLinks, savedAllegroLink]);
-
-  useEffect(() => {
-    allegroSavedSelectionHydratedRef.current = false;
-  }, [id]);
-
-  useEffect(() => {
-    const resolved = resolveInitialAllegroSelection({
-      marketplaceLinks: productMarketplaceLinks,
-      accounts: allegroAccounts,
-      currentAccountId: allegroAccountId,
-      currentOfferId: allegroOfferId,
-      hasHydratedSavedSelection: allegroSavedSelectionHydratedRef.current,
-    });
-
-    if (!resolved.accountId || !resolved.offerId) {
-      return;
-    }
-
-    if (resolved.shouldHydrate) {
-      setAllegroAccountId(resolved.accountId);
-      setAllegroOfferId(resolved.offerId);
-    }
-
-    allegroSavedSelectionHydratedRef.current = true;
-  }, [allegroAccountId, allegroAccounts, allegroOfferId, id, productMarketplaceLinks]);
-
   const loadAmazonAccounts = useCallback(async () => {
     if (!AMAZON_UI_ENABLED) return;
     try {
@@ -770,60 +659,6 @@ export default function EditProductPage() {
     }
   }, []);
 
-  const loadAllegroOffers = useCallback(async (accountId: number | null) => {
-    if (!accountId) {
-      setAllegroOffers([]);
-      return;
-    }
-
-    const account = allegroAccounts.find((entry) => entry.id === accountId);
-    if (!account) return;
-
-    setAllegroOffersLoading(true);
-    try {
-      const res = await fetch(`${API}/api/seller/allegro/offers?env=${account.environment}&limit=20&offset=0`, {
-        headers: authHeaders(),
-        cache: "no-store",
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać ofert Allegro");
-      const offers: SellerOfferOption[] = Array.isArray(json.offers)
-        ? json.offers.map((value: unknown) => {
-            const offer = value && typeof value === "object" ? value as Record<string, unknown> : {};
-            return {
-              id: String(offer.id || ""),
-              name: String(offer.name || offer.title || offer.id || ""),
-            };
-          }).filter((offer: SellerOfferOption) => offer.id)
-        : [];
-      const savedOffer = savedAllegroLink?.accountId === accountId
-        ? {
-            id: savedAllegroLink.offerId,
-            name: savedAllegroLink.offerTitle || `Zapisana oferta (${savedAllegroLink.offerId})`,
-          }
-        : null;
-      const initialSelection = pickInitialAllegroSelection({
-        marketplaceLinks: productMarketplaceLinks,
-        accounts: allegroAccounts,
-      });
-      const nextOffers = savedOffer && !offers.some((offer) => offer.id === savedOffer.id)
-        ? [savedOffer, ...offers]
-        : offers;
-      setAllegroOffers(nextOffers);
-      setAllegroOfferId((current) => {
-        if (current) return current;
-        if (initialSelection.accountId === accountId && initialSelection.offerId) {
-          return initialSelection.offerId;
-        }
-        return savedOffer?.id || nextOffers[0]?.id || "";
-      });
-    } catch {
-      setAllegroOffers([]);
-    } finally {
-      setAllegroOffersLoading(false);
-    }
-  }, [allegroAccounts, productMarketplaceLinks, savedAllegroLink]);
-
   const toggleChecklistItem = useCallback(async (itemKey: string, checked: boolean) => {
     setChecklistToggleBusyKey(itemKey);
     try {
@@ -841,73 +676,6 @@ export default function EditProductPage() {
       setChecklistToggleBusyKey(null);
     }
   }, [id, loadAllegroChecklist]);
-
-  const handleAllegroPreview = useCallback(async () => {
-    if (!allegroAccountId || !allegroOfferId) {
-      setError("Wybierz konto Allegro i ofertę do preview");
-      return;
-    }
-
-    setAllegroPreviewBusy(true);
-    try {
-      const res = await fetch(`${API}/api/seller/allegro/offer-updates/preview`, {
-        method: "POST",
-        headers: authHeaders(true),
-        body: JSON.stringify({
-          productId: Number(id),
-          accountId: allegroAccountId,
-          offerId: allegroOfferId,
-          fields: allegroFields,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nie udało się pobrać preview Allegro");
-      setAllegroPreview(normalizeAllegroOfferUpdatePreview(json.data));
-      if (json.data?.review) setAllegroReview(normalizeProductAiReview(json.data.review));
-      if (json.data?.checklist) setAllegroChecklist(normalizePublicationChecklist(json.data.checklist));
-      await loadAllegroHistory();
-    } catch (e: unknown) {
-      setError(getErrorMessage(e, "Nie udało się pobrać preview Allegro"));
-    } finally {
-      setAllegroPreviewBusy(false);
-    }
-  }, [allegroAccountId, allegroFields, allegroOfferId, id, loadAllegroHistory]);
-
-  const handleAllegroPublish = useCallback(async () => {
-    if (!ALLEGRO_PUBLISH_ENABLED) {
-      setError(ALLEGRO_PUBLISH_GATE_REASON);
-      return;
-    }
-
-    if (!allegroAccountId || !allegroOfferId) {
-      setError("Wybierz konto Allegro i ofertę do publikacji");
-      return;
-    }
-
-    setAllegroPublishBusy(true);
-    try {
-      const res = await fetch(`${API}/api/seller/allegro/offer-updates/publish`, {
-        method: "POST",
-        headers: authHeaders(true),
-        body: JSON.stringify({
-          productId: Number(id),
-          accountId: allegroAccountId,
-          offerId: allegroOfferId,
-          fields: allegroFields,
-          confirmNeedsReview: allegroConfirmNeedsReview,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nie udało się opublikować zmian w Allegro");
-      await loadAllegroHistory();
-      await loadAllegroChecklist();
-      setError("");
-    } catch (e: unknown) {
-      setError(getErrorMessage(e, "Nie udało się opublikować zmian w Allegro"));
-    } finally {
-      setAllegroPublishBusy(false);
-    }
-  }, [allegroAccountId, allegroConfirmNeedsReview, allegroFields, allegroOfferId, id, loadAllegroChecklist, loadAllegroHistory]);
 
   const handleAmazonSuggest = useCallback(async () => {
     if (!AMAZON_UI_ENABLED) return;
@@ -1125,14 +893,8 @@ export default function EditProductPage() {
   useEffect(() => {
     void loadAllegroReview();
     void loadAllegroChecklist();
-    void loadAllegroHistory();
-    void loadAllegroAccounts();
     if (AMAZON_UI_ENABLED) void loadAmazonAccounts();
-  }, [loadAllegroAccounts, loadAllegroChecklist, loadAllegroHistory, loadAllegroReview, loadAmazonAccounts]);
-
-  useEffect(() => {
-    void loadAllegroOffers(allegroAccountId);
-  }, [allegroAccountId, loadAllegroOffers]);
+  }, [loadAllegroChecklist, loadAllegroReview, loadAmazonAccounts]);
 
   useEffect(() => {
     if (!AMAZON_UI_ENABLED) return;
@@ -1218,21 +980,17 @@ export default function EditProductPage() {
   const applyAttributesDraft = () => {
     if (!aiCurrentDraft?.attributesJson) return;
     setAttrMp(aiMp);
-    setAttrVals(prev => ({ ...prev, ...aiCurrentDraft.attributesJson }));
+    setAttrVals((current) => applyProductEanToMarketplaceAttributes({
+      marketplaceSlug: aiMp,
+      fields: attrFields,
+      values: { ...current, ...aiCurrentDraft.attributesJson },
+      productEan: ean,
+    }));
     setAiError("");
   };
 
   const totalImages = globalSlots.filter(Boolean).length;
   const assignedCount = Object.values(mktCats).filter(c => c.categoryPath || c.allegroName).length;
-  const allegroDisabledReason = allegroPreview ? getAllegroPublishDisabledReason(allegroPreview) : null;
-  const allegroPublishGateReason = ALLEGRO_PUBLISH_ENABLED ? null : ALLEGRO_PUBLISH_GATE_REASON;
-  const allegroExportApiHref = buildExportApiHref({
-    marketplaceSlug: "allegro",
-    productIds: [Number(id)],
-    accountId: allegroAccountId,
-    confirmNeedsReview: allegroConfirmNeedsReview,
-    fields: allegroFields,
-  });
 
   if (loadingProduct) {
     return (
@@ -1246,6 +1004,16 @@ export default function EditProductPage() {
 
   const handleSave = async () => {
     if (!title.trim()) { setError("Podaj nazwę produktu"); setTab("produkt"); return; }
+    const eanAttributeError = getFirstInvalidMarketplaceEanAttribute({
+      marketplaceSlug: attrMp,
+      fields: attrFields,
+      values: attrVals,
+    });
+    if (eanAttributeError) {
+      setError(`${eanAttributeError.label}: ${eanAttributeError.message}`);
+      setTab("atrybuty");
+      return;
+    }
     setSaving(true); setError("");
     try {
       const images = globalSlots.filter(Boolean) as string[];
@@ -1485,48 +1253,8 @@ export default function EditProductPage() {
                 onChange={val => setMktCat(mp, val)} />
             ))}
 
-            <div className="pt-4 space-y-4 border-t" style={{ borderColor: "var(--border-default)" }}>
-              <AllegroOfferUpdateCard
-                accounts={allegroAccounts}
-                offers={allegroOffers}
-                selectedAccountId={allegroAccountId}
-                selectedOfferId={allegroOfferId}
-                fields={allegroFields}
-                preview={allegroPreview}
-                history={allegroHistory}
-                loadingOffers={allegroOffersLoading}
-                previewBusy={allegroPreviewBusy}
-                publishBusy={allegroPublishBusy}
-                publishEnabled={ALLEGRO_PUBLISH_ENABLED}
-                publishGateReason={allegroPublishGateReason}
-                confirmNeedsReview={allegroConfirmNeedsReview}
-                exportApiHref={allegroExportApiHref}
-                onSelectAccount={(accountId) => {
-                  setAllegroAccountId(accountId);
-                  setAllegroOfferId("");
-                  setAllegroPreview(null);
-                  setAllegroConfirmNeedsReview(false);
-                }}
-                onSelectOffer={(offerId) => {
-                  setAllegroOfferId(offerId);
-                  setAllegroPreview(null);
-                }}
-                onToggleField={(field) => {
-                  setAllegroFields((current) => ({ ...current, [field]: !current[field] }));
-                  setAllegroPreview(null);
-                }}
-                onToggleConfirmNeedsReview={setAllegroConfirmNeedsReview}
-                onPreview={handleAllegroPreview}
-                onPublish={handleAllegroPublish}
-              />
-
-              {allegroDisabledReason && allegroPreview && !allegroPreview.publishEligible ? (
-                <div className="rounded-2xl border border-amber-300/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                  {allegroDisabledReason}
-                </div>
-              ) : null}
-
-              {AMAZON_UI_ENABLED && (
+            {AMAZON_UI_ENABLED && (
+              <div className="pt-4 space-y-4 border-t" style={{ borderColor: "var(--border-default)" }}>
                 <AmazonFoundationCard
                   accounts={amazonAccounts}
                   selectedAccountId={amazonAccountId}
@@ -1567,8 +1295,8 @@ export default function EditProductPage() {
                   onPreview={handleAmazonPreview}
                   onReloadLatest={handleAmazonLoadLatest}
                 />
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1669,6 +1397,7 @@ export default function EditProductPage() {
                     <div className="grid grid-cols-2 gap-3">
                       {attrFields.filter(f => f.required).map(f => (
                         <AttrField key={f.field_code} field={f}
+                          marketplaceSlug={attrMp}
                           value={attrVals[f.field_code] ?? ""}
                           onChange={v => setAttrVals(prev => ({ ...prev, [f.field_code]: v }))} />
                       ))}
@@ -1686,6 +1415,7 @@ export default function EditProductPage() {
                     <div className="grid grid-cols-2 gap-3">
                       {attrFields.filter(f => !f.required).map(f => (
                         <AttrField key={f.field_code} field={f}
+                          marketplaceSlug={attrMp}
                           value={attrVals[f.field_code] ?? ""}
                           onChange={v => setAttrVals(prev => ({ ...prev, [f.field_code]: v }))} />
                       ))}
@@ -1702,6 +1432,7 @@ export default function EditProductPage() {
         {/* ── Tab: Media ──────────────────────────────────────────── */}
         {tab === "media" && (
           <MediaTab
+            productId={id}
             marketplaces={marketplaces}
             globalSlots={globalSlots} setGlobalSlots={setGlobalSlots}
             mpSlots={mpSlots} setMpSlots={setMpSlots}
@@ -2232,7 +1963,25 @@ function DescriptionBlock({ label, plain, setPlain, html, setHtml }: {
 }
 
 // ── Single attribute field ────────────────────────────────────────
-function AttrField({ field, value, onChange }: { field: Field; value: string; onChange: (v: string) => void }) {
+function AttrField({
+  field,
+  marketplaceSlug,
+  value,
+  onChange,
+}: {
+  field: Field;
+  marketplaceSlug: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const eanValidation = getMarketplaceEanValidation({
+    marketplaceSlug,
+    fieldCode: field.field_code,
+    label: field.label,
+    value,
+  });
+  const validationMessage = eanValidation.applies && !eanValidation.valid ? eanValidation.message : "";
+
   return (
     <div>
       <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
@@ -2250,8 +1999,14 @@ function AttrField({ field, value, onChange }: { field: Field; value: string; on
           value={value}
           onChange={e => onChange(e.target.value)}
           placeholder={field.description || field.label}
-          className={!value && field.required ? "border-red-300 focus:border-red-400 focus:ring-red-100" : ""}
+          inputMode={eanValidation.applies ? "numeric" : undefined}
+          className={validationMessage || (!value && field.required) ? "border-red-300 focus:border-red-400 focus:ring-red-100" : ""}
         />
+      )}
+      {validationMessage && (
+        <div className="mt-1.5 text-[11px] font-medium text-red-500">
+          {validationMessage}
+        </div>
       )}
     </div>
   );
@@ -2340,7 +2095,8 @@ const MEDIA_OPTIONS: { value: MediaOption; label: string; desc: string }[] = [
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_MB   = 5;
 
-function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlots, mpMediaOption, setMpMediaOption, mediaViewMp, setMediaViewMp }: {
+function MediaTab({ productId, marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlots, mpMediaOption, setMpMediaOption, mediaViewMp, setMediaViewMp }: {
+  productId: string;
   marketplaces: Marketplace[];
   globalSlots: (string | null)[];     setGlobalSlots: React.Dispatch<React.SetStateAction<(string | null)[]>>;
   mpSlots: Record<string, (string | null)[]>; setMpSlots: React.Dispatch<React.SetStateAction<Record<string, (string | null)[]>>>;
@@ -2348,6 +2104,7 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
   mediaViewMp: string; setMediaViewMp: (v: string) => void;
 }) {
   const [uploading, setUploading] = useState<number | null>(null);
+  const [backgroundRemoving, setBackgroundRemoving] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState("");
   const multiRef = useRef<HTMLInputElement>(null);
 
@@ -2386,6 +2143,30 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
     } catch (e: unknown) { setUploadError(getErrorMessage(e, "Błąd uploadu")); }
     finally { setUploading(null); }
   }, [setSlot]);
+
+  const removeBackground = useCallback(async (slotIdx: number, imageUrl: string) => {
+    if (readOnly || backgroundRemoving !== null) return;
+    setBackgroundRemoving(slotIdx);
+    setUploadError("");
+    try {
+      const res = await fetch(`${API}/api/products/images/remove-background`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({ productId, imageUrl, background: "white" }),
+      });
+      const json: RemoveBackgroundResponse = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Nie udało się usunąć tła");
+      const processedUrl = json.data?.url;
+      if (!processedUrl) throw new Error("Brak URL po usunięciu tła");
+
+      const emptyIdx = slots.findIndex((slot) => !slot);
+      setSlot(emptyIdx >= 0 ? emptyIdx : slotIdx, processedUrl);
+    } catch (e: unknown) {
+      setUploadError(getErrorMessage(e, "Nie udało się usunąć tła"));
+    } finally {
+      setBackgroundRemoving(null);
+    }
+  }, [backgroundRemoving, productId, readOnly, setSlot, slots]);
 
   const handleMultiUpload = async (files: FileList) => {
     const emptyIdxs = slots.map((s, i) => (!s ? i : -1)).filter(i => i >= 0);
@@ -2446,8 +2227,12 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
         <div className="grid grid-cols-4 gap-2.5">
           {Array.from({ length: SLOTS }, (_, i) => (
             <ImageSlot key={i} index={i} url={slots[i] ?? null}
-              uploading={uploading === i} readOnly={readOnly}
-              onFile={f => uploadFile(f, i)} onRemove={() => setSlot(i, null)} />
+              uploading={uploading === i || backgroundRemoving === i}
+              loadingLabel={backgroundRemoving === i ? "Tło..." : "Wysyłanie..."}
+              readOnly={readOnly}
+              onFile={f => uploadFile(f, i)}
+              onRemove={() => setSlot(i, null)}
+              onRemoveBackground={slots[i] ? () => removeBackground(i, slots[i] as string) : undefined} />
           ))}
         </div>
 
@@ -2480,9 +2265,9 @@ function MediaTab({ marketplaces, globalSlots, setGlobalSlots, mpSlots, setMpSlo
 }
 
 // ── Image slot ────────────────────────────────────────────────────
-function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
-  index: number; url: string | null; uploading: boolean; readOnly: boolean;
-  onFile: (f: File) => void; onRemove: () => void;
+function ImageSlot({ index, url, uploading, loadingLabel, readOnly, onFile, onRemove, onRemoveBackground }: {
+  index: number; url: string | null; uploading: boolean; loadingLabel: string; readOnly: boolean;
+  onFile: (f: File) => void; onRemove: () => void; onRemoveBackground?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
@@ -2513,7 +2298,7 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            <span className="text-[10px]">Wysyłanie...</span>
+            <span className="text-[10px]">{loadingLabel}</span>
           </div>
         ) : url ? (
           <>
@@ -2524,11 +2309,21 @@ function ImageSlot({ index, url, uploading, readOnly, onFile, onRemove }: {
               className="object-cover"
             />
             {!readOnly && (
-              <button onClick={e => { e.stopPropagation(); onRemove(); }}
-                className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-red-500 text-white
-                  flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-[10px] font-bold">
-                ✕
-              </button>
+              <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                {onRemoveBackground && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onRemoveBackground(); }}
+                    title="Usuń tło"
+                    className="h-5 rounded-full bg-indigo-500 px-2 text-[10px] font-bold text-white shadow-sm transition hover:bg-indigo-400"
+                  >
+                    Tło
+                  </button>
+                )}
+                <button onClick={e => { e.stopPropagation(); onRemove(); }}
+                  className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white transition hover:bg-red-400">
+                  ✕
+                </button>
+              </div>
             )}
           </>
         ) : (

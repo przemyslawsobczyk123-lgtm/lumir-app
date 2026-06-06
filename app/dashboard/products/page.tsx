@@ -8,6 +8,7 @@ import { translations } from "../i18n";
 import {
   createProductExportBatchGroups,
   findProductExportCategoryGroup,
+  filterSupportedSalesChannels,
   getActiveProductFilterSummary,
   getExportableProductIds,
   getProductExportBatchSummary,
@@ -104,6 +105,11 @@ type ProductListingStats = {
   blocked: number;
   unmapped: number;
   attributesMissing: number;
+};
+type ProductCategoryOption = {
+  value: string;
+  label: string;
+  count: number;
 };
 type MarketplaceOption = { slug: string; name: string };
 type JobSummary = {
@@ -219,6 +225,11 @@ const PRODUCTS_PAGE_COPY = {
     filterStatusLabel: "Status produktu",
     filterMarketplaceLabel: "Kanal sprzedazy",
     filterMarketplaceAll: "Wszystkie kanaly",
+    filterSourceLabel: "Zrodlo importu",
+    filterSourceAll: "Wszystkie zrodla",
+    filterSourceIcecat: "Icecat",
+    filterMarketplaceCategoryLabel: "Kategoria",
+    filterMarketplaceCategoryAll: "Wszystkie kategorie",
     statusFilterAll: "Kazdy status",
     statusFilterMapped: "Gotowe",
     statusFilterPending: "Oczekuje na dane",
@@ -228,6 +239,8 @@ const PRODUCTS_PAGE_COPY = {
     filterActiveFocus: "Etap",
     filterActiveStatus: "Status",
     filterActiveMarketplace: "Kanal",
+    filterActiveMarketplaceCategory: "Kategoria",
+    filterActiveSource: "Zrodlo",
     badgeStatusPrefix: "Status",
     badgeBrandPrefix: "Marka",
     marketplaceReady: "gotowe",
@@ -295,6 +308,11 @@ const PRODUCTS_PAGE_COPY = {
     filterStatusLabel: "Product status",
     filterMarketplaceLabel: "Sales channel",
     filterMarketplaceAll: "All channels",
+    filterSourceLabel: "Import source",
+    filterSourceAll: "All sources",
+    filterSourceIcecat: "Icecat",
+    filterMarketplaceCategoryLabel: "Category",
+    filterMarketplaceCategoryAll: "All categories",
     statusFilterAll: "Any status",
     statusFilterMapped: "Ready",
     statusFilterPending: "Waiting for data",
@@ -304,6 +322,8 @@ const PRODUCTS_PAGE_COPY = {
     filterActiveFocus: "Stage",
     filterActiveStatus: "Status",
     filterActiveMarketplace: "Channel",
+    filterActiveMarketplaceCategory: "Category",
+    filterActiveSource: "Source",
     badgeStatusPrefix: "Status",
     badgeBrandPrefix: "Brand",
     marketplaceReady: "ready",
@@ -1482,7 +1502,10 @@ export default function ProductsPage() {
   const [search, setSearch]               = useState("");
   const [statusFilter, setStatusFilter]   = useState("");
   const [mpFilter, setMpFilter]           = useState("");
+  const [mpCategoryFilter, setMpCategoryFilter] = useState("");
+  const [sourceFilter, setSourceFilter]   = useState("");
   const [marketplaces, setMarketplaces]   = useState<{slug:string;name:string}[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<ProductCategoryOption[]>([]);
   const [page, setPage]                   = useState(1);
   const [pageSize, setPageSize]           = useState<ProductPageSize>(DEFAULT_PAGE_SIZE);
   const [pageJump, setPageJump]           = useState("");
@@ -1509,6 +1532,8 @@ export default function ProductsPage() {
     p: number,
     st: string,
     mp: string,
+    category: string,
+    source: string,
     focus: ProductListingFocus,
     limit: ProductPageSize
   ) => {
@@ -1521,8 +1546,12 @@ export default function ProductsPage() {
         limit: String(limit),
         status: st,
         marketplace: mp,
+        source,
         listingFocus: focus,
       });
+      if (mp && category.trim()) {
+        params.set("marketplaceCategory", category.trim());
+      }
       const res = await fetch(`${API}/api/products/list?${params}`, { headers: authHeaders() });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Blad ladowania produktow");
@@ -1530,12 +1559,24 @@ export default function ProductsPage() {
       setProducts(json.data || []);
       setTotal(json.total || 0);
       setListingStats(normalizeProductListingStats(json.listingStats));
+      setCategoryOptions(
+        Array.isArray(json.categoryOptions)
+          ? json.categoryOptions
+              .map((item: Partial<ProductCategoryOption>) => ({
+                value: String(item.value || "").trim(),
+                label: String(item.label || item.value || "").trim(),
+                count: Number(item.count || 0),
+              }))
+              .filter((item: ProductCategoryOption) => item.value && item.count > 0)
+          : []
+      );
       setListError(null);
     } catch (err: unknown) {
       if (requestSeq.current !== requestId) return;
       setProducts([]);
       setTotal(0);
       setListingStats(EMPTY_PRODUCT_LISTING_STATS);
+      setCategoryOptions([]);
       setListError(getErrorMessage(err, PRODUCTS_PAGE_COPY.pl.listLoadError));
     } finally {
       if (requestSeq.current === requestId) setLoading(false);
@@ -1608,14 +1649,21 @@ export default function ProductsPage() {
       const report = buildCompletedBulkReport(job, items);
       setCompletedBulkReport(report);
       setShowBulkAI(false);
-      await loadProducts(search, page, statusFilter, mpFilter, listingFocus, pageSize);
+      await loadProducts(search, page, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
       setSelected(new Set(report.failedProductIds));
     })();
-  }, [listingFocus, loadJobItems, loadProducts, mpFilter, page, pageSize, search, statusFilter]);
+  }, [listingFocus, loadJobItems, loadProducts, mpCategoryFilter, mpFilter, page, pageSize, search, sourceFilter, statusFilter]);
 
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
-      .then(r => r.json()).then(j => { if (j.data) setMarketplaces(j.data); }).catch(() => {});
+      .then(r => r.json()).then(j => {
+        if (j.data) {
+          setMarketplaces(filterSupportedSalesChannels(
+            j.data as { slug: string; name: string }[],
+            (mp) => mp.slug
+          ));
+        }
+      }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1634,10 +1682,10 @@ export default function ProductsPage() {
       setPageJump("");
       setSelected(new Set());
       setSplitSelectionGroups([]);
-      loadProducts(search, 1, statusFilter, mpFilter, listingFocus, pageSize);
+      loadProducts(search, 1, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
     }, 300);
     return () => clearTimeout(timeout);
-  }, [listingFocus, loadProducts, search, statusFilter, mpFilter, pageSize]);
+  }, [listingFocus, loadProducts, search, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, pageSize]);
 
   useEffect(() => {
     const handler = () => setOpenMenu(null);
@@ -1779,7 +1827,7 @@ export default function ProductsPage() {
       }
       setShowExportPreflight(false);
       await Promise.all([
-        loadProducts(search, page, statusFilter, mpFilter, listingFocus, pageSize),
+        loadProducts(search, page, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize),
       ]);
       return { ok: true };
     } catch (err: unknown) {
@@ -1813,7 +1861,7 @@ export default function ProductsPage() {
       setExportBatchGroups([]);
       setShowDeleteConfirm(false);
       await Promise.all([
-        loadProducts(search, page, statusFilter, mpFilter, listingFocus, pageSize),
+        loadProducts(search, page, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize),
         loadActiveBackgroundJobs(),
       ]);
     } finally {
@@ -1926,6 +1974,8 @@ export default function ProductsPage() {
     setSearch("");
     setStatusFilter("");
     setMpFilter("");
+    setMpCategoryFilter("");
+    setSourceFilter("");
     setListingFocus("all");
     setSplitSelectionGroups([]);
     setPage(1);
@@ -1979,8 +2029,8 @@ export default function ProductsPage() {
   const totalPages  = Math.max(1, Math.ceil(total / pageSize));
   const allChecked  = visibleProducts.length > 0 && visibleProducts.every((product) => selected.has(product.id));
   const someChecked = visibleProducts.some((product) => selected.has(product.id)) && !allChecked;
-  const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter, listingFocus);
-  const hasBaseFilters = hasActiveProductFilters(search, statusFilter, mpFilter, "all");
+  const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter, listingFocus, mpCategoryFilter, sourceFilter);
+  const hasBaseFilters = hasActiveProductFilters(search, statusFilter, mpFilter, "all", mpCategoryFilter, sourceFilter);
   const focusLabels: Record<ProductListingFocus, string> = {
     all: pageCopy.focusAll,
     ready: pageCopy.focusReady,
@@ -1995,15 +2045,21 @@ export default function ProductsPage() {
     acc[marketplace.slug] = marketplace.name;
     return acc;
   }, {});
+  const sourceFilterLabels = {
+    icecat: pageCopy.filterSourceIcecat,
+  };
   const activeFilterSummary = getActiveProductFilterSummary(
-    { search, statusFilter, marketplaceFilter: mpFilter, listingFocus },
+    { search, statusFilter, marketplaceFilter: mpFilter, marketplaceCategoryFilter: mpCategoryFilter, sourceFilter, listingFocus },
     {
       search: pageCopy.filterActiveSearch,
       focus: pageCopy.filterActiveFocus,
       status: pageCopy.filterActiveStatus,
       marketplace: pageCopy.filterActiveMarketplace,
+      marketplaceCategory: pageCopy.filterActiveMarketplaceCategory,
+      source: pageCopy.filterActiveSource,
       statusLabels: statusFilterLabels,
       marketplaceLabels: marketplaceFilterLabels,
+      sourceLabels: sourceFilterLabels,
       focusLabels,
     }
   );
@@ -2032,8 +2088,8 @@ export default function ProductsPage() {
     setPageJump("");
     setSelected(new Set());
     setSplitSelectionGroups([]);
-    loadProducts(search, nextPage, statusFilter, mpFilter, listingFocus, pageSize);
-  }, [listingFocus, loadProducts, mpFilter, pageSize, search, statusFilter, totalPages]);
+    loadProducts(search, nextPage, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
+  }, [listingFocus, loadProducts, mpCategoryFilter, mpFilter, pageSize, search, sourceFilter, statusFilter, totalPages]);
 
   return (
     <div>
@@ -2186,7 +2242,7 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:max-w-3xl lg:grid-cols-[minmax(170px,240px)_minmax(220px,300px)]">
+            <div className={`grid gap-3 sm:grid-cols-2 ${mpFilter ? "lg:max-w-6xl lg:grid-cols-[minmax(160px,210px)_minmax(190px,260px)_minmax(170px,230px)_minmax(230px,1fr)]" : "lg:max-w-5xl lg:grid-cols-[minmax(160px,220px)_minmax(200px,280px)_minmax(170px,240px)]"}`}>
               <label className="flex min-w-0 flex-col gap-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
                   {pageCopy.filterStatusLabel}
@@ -2208,7 +2264,12 @@ export default function ProductsPage() {
                 </span>
                 <select
                   value={mpFilter}
-                  onChange={(event) => setMpFilter(event.target.value)}
+                  onChange={(event) => {
+                    setMpFilter(event.target.value);
+                    setMpCategoryFilter("");
+                    setCategoryOptions([]);
+                    setPage(1);
+                  }}
                   className="h-10 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
                 >
                   <option value="">{pageCopy.filterMarketplaceAll}</option>
@@ -2217,6 +2278,46 @@ export default function ProductsPage() {
                   ))}
                 </select>
               </label>
+
+              <label className="flex min-w-0 flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
+                  {pageCopy.filterSourceLabel}
+                </span>
+                <select
+                  value={sourceFilter}
+                  onChange={(event) => {
+                    setSourceFilter(event.target.value);
+                    setPage(1);
+                  }}
+                  className="h-10 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">{pageCopy.filterSourceAll}</option>
+                  <option value="icecat">{pageCopy.filterSourceIcecat}</option>
+                </select>
+              </label>
+
+              {mpFilter && (
+                <label className="flex min-w-0 flex-col gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
+                    {pageCopy.filterMarketplaceCategoryLabel}
+                  </span>
+                  <select
+                    value={mpCategoryFilter}
+                    onChange={(event) => {
+                      setMpCategoryFilter(event.target.value);
+                      setPage(1);
+                    }}
+                    className="h-10 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  >
+                    <option value="">{pageCopy.filterMarketplaceCategoryAll}</option>
+                    {categoryOptions.map((category) => (
+                      <option key={category.value} value={category.value}>
+                        {category.label} ({category.count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
           </div>
 

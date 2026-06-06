@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { UnoptimizedRemoteImage } from "../_components/UnoptimizedRemoteImage";
 import { isAmazonUiEnabled, withoutAmazonWhenDisabled } from "../mvp-feature-flags";
+import { filterSupportedSalesChannels } from "../products/ui-helpers";
 import { getAllegroImportErrorNotice } from "./allegro-import-helpers";
 import {
   buildAllegroDescriptionHtml,
@@ -836,7 +837,10 @@ export default function NewProductPage() {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
       .then(r => r.json() as Promise<MarketplaceListResponse>).then(j => {
         if (j.data) {
-          const visibleMarketplaces = withoutAmazonWhenDisabled(j.data, (mp) => mp.slug, AMAZON_UI_ENABLED);
+          const visibleMarketplaces = filterSupportedSalesChannels(
+            withoutAmazonWhenDisabled(j.data, (mp) => mp.slug, AMAZON_UI_ENABLED),
+            (mp) => mp.slug
+          );
           setMarketplaces(visibleMarketplaces);
           if (visibleMarketplaces.length) setAttrMp(visibleMarketplaces[0].slug);
         }

@@ -9,12 +9,19 @@ export type ExportRunTone = "info" | "warning" | "ready" | "danger";
 export type ExportOperationTone = "info" | "warning" | "ready" | "danger";
 export type AllegroExportField = "title" | "description" | "price" | "stock";
 export type AllegroExportFields = Record<AllegroExportField, boolean>;
+export type ExportWizardStepState = "done" | "active" | "pending";
+export type ExportWorkspaceTabId = "products" | "history";
 
 export type ExportMarketplaceOption = {
   value: "allegro" | "mediaexpert" | "empik" | "amazon";
   label: string;
   enabled: boolean;
   badge: string;
+};
+
+export type ExportDestinationOption = ExportMarketplaceOption & {
+  subtitle: string;
+  accent: string;
 };
 
 export type OperationDiagnostic = {
@@ -37,8 +44,39 @@ export const EXPORT_MARKETPLACE_OPTIONS: ExportMarketplaceOption[] = [
   { value: "amazon", label: "Amazon", enabled: false, badge: "Validation next" },
 ];
 
+const EXPORT_DESTINATION_ORDER: ExportMarketplaceOption["value"][] = ["mediaexpert", "empik", "allegro", "amazon"];
+
+const EXPORT_DESTINATION_ACCENTS: Record<ExportMarketplaceOption["value"], string> = {
+  mediaexpert: "border-amber-400/80 hover:border-amber-300",
+  empik: "border-rose-400/80 hover:border-rose-300",
+  allegro: "border-emerald-400/80 hover:border-emerald-300",
+  amazon: "border-sky-400/80 hover:border-sky-300",
+};
+
+const EXPORT_DESTINATION_SUBTITLES: Record<ExportMarketplaceOption["value"], string> = {
+  mediaexpert: "MIRAKL XLSX",
+  empik: "MIRAKL XLSX",
+  allegro: "ALLEGRO API",
+  amazon: "VALIDATION",
+};
+
 export function getVisibleExportMarketplaceOptions(amazonEnabled = isAmazonUiEnabled()) {
   return withoutAmazonWhenDisabled(EXPORT_MARKETPLACE_OPTIONS, (item) => item.value, amazonEnabled);
+}
+
+export function getExportDestinationOptions(amazonEnabled = isAmazonUiEnabled()): ExportDestinationOption[] {
+  const visibleByValue = new Map(
+    getVisibleExportMarketplaceOptions(amazonEnabled).map((option) => [option.value, option])
+  );
+
+  return EXPORT_DESTINATION_ORDER
+    .map((value) => visibleByValue.get(value))
+    .filter((option): option is ExportMarketplaceOption => Boolean(option))
+    .map((option) => ({
+      ...option,
+      subtitle: EXPORT_DESTINATION_SUBTITLES[option.value],
+      accent: EXPORT_DESTINATION_ACCENTS[option.value],
+    }));
 }
 
 export function getExportMarketplaceTabClass(active: boolean, enabled: boolean) {
@@ -57,31 +95,31 @@ export function getExportMarketplaceTabClass(active: boolean, enabled: boolean) 
 
 const EXPORT_TONE_CLASSES = {
   ready: {
-    badge: "border-emerald-400 bg-emerald-100 text-emerald-900 [html.dark_&]:border-[#34d399]/70 [html.dark_&]:bg-[#052e2b] [html.dark_&]:text-[#a7f3d0]",
-    panel: "border-emerald-400 bg-emerald-100 text-emerald-900 shadow-sm shadow-emerald-900/10 [html.dark_&]:border-[#34d399]/70 [html.dark_&]:bg-[#052e2b] [html.dark_&]:text-[#a7f3d0] [html.dark_&]:shadow-black/20",
-    row: "hover:border-emerald-400/60 [html.dark_&]:hover:border-[#34d399]/55",
+    badge: "border-emerald-300 bg-emerald-50 text-emerald-900 [html.dark_&]:border-emerald-300/45 [html.dark_&]:bg-emerald-400/10 [html.dark_&]:text-emerald-100",
+    panel: "border-emerald-300 bg-emerald-50 text-emerald-900 shadow-sm shadow-emerald-900/10 [html.dark_&]:border-emerald-300/45 [html.dark_&]:bg-emerald-400/10 [html.dark_&]:text-emerald-100 [html.dark_&]:shadow-emerald-950/20",
+    row: "hover:border-emerald-300 hover:bg-emerald-50 [html.dark_&]:hover:border-emerald-300/45 [html.dark_&]:hover:bg-emerald-400/[0.04]",
   },
   warning: {
-    badge: "border-amber-400 bg-amber-100 text-amber-900 [html.dark_&]:border-[#f59e0b]/70 [html.dark_&]:bg-[#3b2a08] [html.dark_&]:text-[#fde68a]",
-    panel: "border-amber-400 bg-amber-100 text-amber-900 shadow-sm shadow-amber-900/10 [html.dark_&]:border-[#f59e0b]/70 [html.dark_&]:bg-[#3b2a08] [html.dark_&]:text-[#fde68a] [html.dark_&]:shadow-black/20",
-    row: "hover:border-amber-400/60 [html.dark_&]:hover:border-[#f59e0b]/55",
+    badge: "border-amber-300 bg-amber-50 text-amber-900 [html.dark_&]:border-amber-300/45 [html.dark_&]:bg-amber-400/10 [html.dark_&]:text-amber-100",
+    panel: "border-amber-300 bg-amber-50 text-amber-900 shadow-sm shadow-amber-900/10 [html.dark_&]:border-amber-300/45 [html.dark_&]:bg-amber-400/10 [html.dark_&]:text-amber-100 [html.dark_&]:shadow-amber-950/20",
+    row: "hover:border-amber-300 hover:bg-amber-50 [html.dark_&]:hover:border-amber-300/45 [html.dark_&]:hover:bg-amber-400/[0.04]",
   },
   danger: {
-    badge: "border-rose-400 bg-rose-100 text-rose-900 [html.dark_&]:border-[#fb7185]/70 [html.dark_&]:bg-[#3f101c] [html.dark_&]:text-[#fecdd3]",
-    panel: "border-rose-400 bg-rose-100 text-rose-900 shadow-sm shadow-rose-900/10 [html.dark_&]:border-[#fb7185]/70 [html.dark_&]:bg-[#3f101c] [html.dark_&]:text-[#fecdd3] [html.dark_&]:shadow-black/20",
-    row: "hover:border-rose-400/60 [html.dark_&]:hover:border-[#fb7185]/55",
+    badge: "border-rose-300 bg-rose-50 text-rose-900 [html.dark_&]:border-rose-300/45 [html.dark_&]:bg-rose-400/10 [html.dark_&]:text-rose-100",
+    panel: "border-rose-300 bg-rose-50 text-rose-900 shadow-sm shadow-rose-900/10 [html.dark_&]:border-rose-300/45 [html.dark_&]:bg-rose-400/10 [html.dark_&]:text-rose-100 [html.dark_&]:shadow-rose-950/20",
+    row: "hover:border-rose-300 hover:bg-rose-50 [html.dark_&]:hover:border-rose-300/45 [html.dark_&]:hover:bg-rose-400/[0.04]",
   },
   info: {
-    badge: "border-sky-400 bg-sky-100 text-sky-900 [html.dark_&]:border-[#38bdf8]/70 [html.dark_&]:bg-[#082f49] [html.dark_&]:text-[#bae6fd]",
-    panel: "border-sky-400 bg-sky-100 text-sky-900 shadow-sm shadow-sky-900/10 [html.dark_&]:border-[#38bdf8]/70 [html.dark_&]:bg-[#082f49] [html.dark_&]:text-[#bae6fd] [html.dark_&]:shadow-black/20",
-    row: "hover:border-sky-400/60 [html.dark_&]:hover:border-[#38bdf8]/55",
+    badge: "border-sky-300 bg-sky-50 text-sky-900 [html.dark_&]:border-sky-300/45 [html.dark_&]:bg-sky-400/10 [html.dark_&]:text-sky-100",
+    panel: "border-sky-300 bg-sky-50 text-sky-900 shadow-sm shadow-sky-900/10 [html.dark_&]:border-sky-300/45 [html.dark_&]:bg-sky-400/10 [html.dark_&]:text-sky-100 [html.dark_&]:shadow-sky-950/20",
+    row: "hover:border-sky-300 hover:bg-sky-50 [html.dark_&]:hover:border-sky-300/45 [html.dark_&]:hover:bg-sky-400/[0.04]",
   },
 } as const satisfies Record<ExportOperationTone, { badge: string; panel: string; row: string }>;
 
 export const exportHelperPanelClasses = {
-  card: "rounded-2xl border border-indigo-300 bg-indigo-100 p-4 shadow-sm shadow-indigo-900/10 [html.dark_&]:border-[#6366f1]/70 [html.dark_&]:bg-[#17172f] [html.dark_&]:shadow-indigo-950/30",
-  eyebrow: "text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-600 [html.dark_&]:text-[#a5b4fc]",
-  body: "mt-2 text-sm leading-6 text-indigo-700 [html.dark_&]:text-[#c7d2fe]",
+  card: "rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm shadow-indigo-900/10 [html.dark_&]:border-white/10 [html.dark_&]:bg-slate-950/45 [html.dark_&]:shadow-xl [html.dark_&]:shadow-slate-950/25 [html.dark_&]:backdrop-blur",
+  eyebrow: "text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700 [html.dark_&]:text-indigo-200",
+  body: "mt-2 text-sm leading-6 text-indigo-900 [html.dark_&]:text-slate-200",
   ready: `rounded-xl border px-3 py-2 text-sm ${EXPORT_TONE_CLASSES.ready.panel}`,
   review: `rounded-xl border px-3 py-2 text-sm ${EXPORT_TONE_CLASSES.warning.panel}`,
   blocked: `rounded-xl border px-3 py-2 text-sm ${EXPORT_TONE_CLASSES.danger.panel}`,
@@ -144,6 +182,14 @@ export type ExportReadinessRow = {
   hasMarketplaceMapping: boolean;
 };
 
+export type ExportProductSummary = {
+  id: number;
+  title: string | null;
+  ean: string | null;
+  sku: string | null;
+  integrations: ProductIntegration[];
+};
+
 export type ExportReadinessPresentation = {
   bucket: ExportReadinessStatus;
   label: string;
@@ -194,6 +240,30 @@ export type ExportPreflightResult = {
     count: number;
     productIds: number[];
   }>;
+};
+
+export type CompactExportIssue = {
+  label: string;
+  tone: "warning" | "danger";
+};
+
+export type NormalizedExportErrorDetails = {
+  message: string;
+  preflight: ExportPreflightResult | null;
+};
+
+export type ExportWizardStep = {
+  index: 1 | 2 | 3 | 4;
+  label: string;
+  description: string;
+  state: ExportWizardStepState;
+};
+
+export type ExportWorkspaceTab = {
+  id: ExportWorkspaceTabId;
+  label: string;
+  description: string;
+  count: number | null;
 };
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -420,14 +490,11 @@ export function normalizeExportReadinessRows(input: unknown): ExportReadinessRow
             : null,
         diffCount: diffRows.length,
         productTitle: normalizeOptionalString(data.productTitle)
-          ?? normalizeOptionalString((data.product as Record<string, unknown> | null | undefined)?.title)
-          ?? null,
+          ?? normalizeOptionalString(toRecord(data.product).title),
         productEan: normalizeOptionalString(data.productEan)
-          ?? normalizeOptionalString((data.product as Record<string, unknown> | null | undefined)?.ean)
-          ?? null,
+          ?? normalizeOptionalString(toRecord(data.product).ean),
         productSku: normalizeOptionalString(data.productSku)
-          ?? normalizeOptionalString((data.product as Record<string, unknown> | null | undefined)?.sku)
-          ?? null,
+          ?? normalizeOptionalString(toRecord(data.product).sku),
         marketplaceCategoryPath: normalizeOptionalString(data.marketplaceCategoryPath)
           ?? normalizeOptionalString(data.categoryPath),
         hasMarketplaceMapping: typeof data.hasMarketplaceMapping === "boolean"
@@ -436,6 +503,90 @@ export function normalizeExportReadinessRows(input: unknown): ExportReadinessRow
       };
     })
     .filter((row) => Number.isInteger(row.productId) && row.productId > 0);
+}
+
+export function normalizeExportProductSummaries(input: unknown): ExportProductSummary[] {
+  if (!Array.isArray(input)) return [];
+
+  const seenIds = new Set<number>();
+  const rows: ExportProductSummary[] = [];
+
+  input.forEach((entry) => {
+    const data = toRecord(entry);
+    const id = Number(data.id || 0);
+    if (!Number.isInteger(id) || id <= 0 || seenIds.has(id)) return;
+
+    seenIds.add(id);
+    rows.push({
+      id,
+      title: normalizeOptionalString(data.title),
+      ean: normalizeOptionalString(data.ean),
+      sku: normalizeOptionalString(data.sku),
+      integrations: parseProductIntegrations(typeof data.integrations === "string" ? data.integrations : null),
+    });
+  });
+
+  return rows;
+}
+
+function normalizeExportProductSummaryMap(products: ExportProductSummary[] | Map<number, ExportProductSummary>) {
+  if (products instanceof Map) return products;
+
+  const productById = new Map<number, ExportProductSummary>();
+  products.forEach((product) => {
+    productById.set(product.id, product);
+  });
+  return productById;
+}
+
+export function enrichExportReadinessRows(
+  rows: ExportReadinessRow[],
+  products: ExportProductSummary[] | Map<number, ExportProductSummary>
+) {
+  const productById = normalizeExportProductSummaryMap(products);
+
+  return rows.map((row) => {
+    const product = productById.get(row.productId);
+    if (!product) return row;
+
+    const integration = product.integrations.find((item) => item.slug === row.marketplaceSlug);
+    const marketplaceCategoryPath = integration?.categoryPath?.trim() || row.marketplaceCategoryPath || null;
+
+    return {
+      ...row,
+      productTitle: row.productTitle || product.title,
+      productEan: row.productEan || product.ean,
+      productSku: row.productSku || product.sku,
+      marketplaceCategoryPath,
+      hasMarketplaceMapping: row.hasMarketplaceMapping
+        || Boolean(integration?.categoryPath?.trim())
+        || Boolean(marketplaceCategoryPath),
+    };
+  });
+}
+
+export function filterExportReadinessRowsForMarketplace(
+  rows: ExportReadinessRow[],
+  marketplaceSlug: string,
+  options: { enrichmentReady?: boolean } = {}
+) {
+  if (!options.enrichmentReady || !marketplaceSlug) return rows;
+  return rows.filter((row) => (!row.marketplaceSlug || row.marketplaceSlug === marketplaceSlug) && row.hasMarketplaceMapping);
+}
+
+export function getExportProductDisplayLabel(row: ExportReadinessRow) {
+  return row.productTitle || `Produkt #${row.productId}`;
+}
+
+export function getExportProductIdentifierBadges(row: ExportReadinessRow) {
+  const badges = [`#${row.productId}`];
+  if (row.productEan) {
+    badges.push(`EAN ${row.productEan}`);
+  } else if (row.productSku) {
+    badges.push(`SKU ${row.productSku}`);
+  }
+  if (row.marketplaceCategoryPath) badges.push(row.marketplaceCategoryPath);
+  return badges;
 }
 
 function normalizedLower(value: unknown) {
@@ -457,64 +608,6 @@ function hasDiagnostic(row: ExportReadinessRow, token: string) {
   const normalized = normalizedLower(token);
   return [...row.blockers, ...row.warnings, ...row.missingRequiredFields]
     .some((entry) => normalizedLower(entry).includes(normalized));
-}
-
-const SOFT_REVIEW_LABELS = new Set([
-  "Wymaga potwierdzenia review",
-  "Dostawa wymaga potwierdzenia",
-  "Marza wymaga potwierdzenia",
-  "Brak zmian w wybranych polach",
-].map((value) => normalizedLower(value)));
-
-const SOFT_REVIEW_KEYWORDS = [
-  "potwierdzenia",
-  "potwierdzenie",
-  "draft wymaga",
-  "draft publish",
-  "ai_review_status",
-  "ai review",
-];
-
-function isSoftReviewLabel(label: string) {
-  const normalized = normalizedLower(label);
-  if (!normalized) return false;
-  if (SOFT_REVIEW_LABELS.has(normalized)) return true;
-  return SOFT_REVIEW_KEYWORDS.some((keyword) => normalized.includes(keyword));
-}
-
-export type ExportReviewClassification = {
-  softLabels: string[];
-  hardLabels: string[];
-  hasSoftReview: boolean;
-  hasHardBlocker: boolean;
-};
-
-export function classifyExportReviewSignals(row: ExportReadinessRow): ExportReviewClassification {
-  const seen = new Set<string>();
-  const candidates = [...row.blockers, ...row.warnings, ...row.missingRequiredFields].filter((label) => {
-    if (!label) return false;
-    if (seen.has(label)) return false;
-    seen.add(label);
-    return true;
-  });
-
-  const softLabels: string[] = [];
-  const hardLabels: string[] = [];
-
-  for (const label of candidates) {
-    if (isSoftReviewLabel(label)) {
-      softLabels.push(label);
-    } else {
-      hardLabels.push(label);
-    }
-  }
-
-  return {
-    softLabels,
-    hardLabels,
-    hasSoftReview: softLabels.length > 0 || row.requiresConfirmation,
-    hasHardBlocker: hardLabels.length > 0,
-  };
 }
 
 export function getExportOperationFilter(row: ExportReadinessRow): ExportReadinessOperation {
@@ -633,17 +726,6 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
 
   if (isExistingUpdate && hasRemoteOffer) {
     if (row.requiresConfirmation || row.status === "needs_review") {
-      const review = classifyExportReviewSignals(row);
-      if (review.hasHardBlocker) {
-        return {
-          bucket: "blocked",
-          label: "Braki przed review",
-          description: review.hardLabels[0] || row.summary || "Uzupelnij wymagane pola, zanim trafi do review.",
-          actionLabel: "Otworz produkt",
-          tone: "danger",
-          selectable: false,
-        };
-      }
       return {
         bucket: "needs_review",
         label: "Wymaga potwierdzenia",
@@ -688,17 +770,6 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
     }
 
     if (row.status === "needs_review" || row.requiresConfirmation) {
-      const review = classifyExportReviewSignals(row);
-      if (review.hasHardBlocker) {
-        return {
-          bucket: "blocked",
-          label: "Braki przed review",
-          description: review.hardLabels[0] || row.summary || "Uzupelnij wymagane pola, zanim trafi do review.",
-          actionLabel: "Otworz produkt",
-          tone: "danger",
-          selectable: false,
-        };
-      }
       return {
         bucket: "needs_review",
         label: "Wymaga potwierdzenia",
@@ -731,17 +802,6 @@ export function getExportReadinessPresentation(row: ExportReadinessRow): ExportR
   }
 
   if (row.status === "needs_review") {
-    const review = classifyExportReviewSignals(row);
-    if (review.hasHardBlocker) {
-      return {
-        bucket: "blocked",
-        label: "Braki przed review",
-        description: review.hardLabels[0] || row.summary || "Uzupelnij wymagane pola, zanim trafi do review.",
-        actionLabel: "Otworz produkt",
-        tone: "danger",
-        selectable: false,
-      };
-    }
     return {
       bucket: "needs_review",
       label: "Wymaga potwierdzenia",
@@ -769,6 +829,111 @@ export function canSelectExportReadinessRow(row: ExportReadinessRow) {
 export function getSelectableExportReadinessIds(rows: ExportReadinessRow[], candidateIds: number[]) {
   const selectableIds = new Set(rows.filter(canSelectExportReadinessRow).map((row) => row.productId));
   return candidateIds.filter((id, index, array) => selectableIds.has(id) && array.indexOf(id) === index);
+}
+
+export function getDefaultExportSelectionIds(
+  rows: ExportReadinessRow[],
+  options: { includeReview?: boolean } = {}
+) {
+  return rows
+    .filter(canSelectExportReadinessRow)
+    .filter((row) => options.includeReview || getExportReadinessPresentation(row).bucket === "ready")
+    .map((row) => row.productId);
+}
+
+export function getReadyExportSelectionToggle(rows: ExportReadinessRow[], selectedIds: number[]) {
+  const readyIds = getDefaultExportSelectionIds(rows);
+  const selectedIdSet = new Set(selectedIds);
+  const readyIdSet = new Set(readyIds);
+  const allReadySelected = readyIds.length > 0 && readyIds.every((id) => selectedIdSet.has(id));
+
+  return {
+    readyIds,
+    allReadySelected,
+    selectedIds: allReadySelected
+      ? selectedIds.filter((id) => !readyIdSet.has(id))
+      : Array.from(new Set([...selectedIds, ...readyIds])),
+  };
+}
+
+export function shouldConfirmReviewForSelection(
+  rows: ExportReadinessRow[],
+  selectedIds: number[],
+  confirmNeedsReview: boolean
+) {
+  if (confirmNeedsReview) return true;
+  if (selectedIds.length === 0) return false;
+
+  const selectedIdSet = new Set(selectedIds);
+  return rows.some((row) => selectedIdSet.has(row.productId) && getExportReadinessPresentation(row).bucket === "needs_review");
+}
+
+export function getExportReadyBulkSelectionControl(rows: ExportReadinessRow[], selectedIds: number[]) {
+  const toggle = getReadyExportSelectionToggle(rows, selectedIds);
+  const readyIdSet = new Set(toggle.readyIds);
+  const selectedReadyCount = Array.from(new Set(selectedIds)).filter((id) => readyIdSet.has(id)).length;
+  const readyCount = toggle.readyIds.length;
+  const indeterminate = selectedReadyCount > 0 && !toggle.allReadySelected;
+
+  return {
+    readyIds: toggle.readyIds,
+    readyCount,
+    selectedReadyCount,
+    allReadySelected: toggle.allReadySelected,
+    indeterminate,
+    ariaChecked: indeterminate ? "mixed" as const : toggle.allReadySelected,
+    disabled: readyCount === 0,
+    checkboxLabel: toggle.allReadySelected ? "Odznacz wszystkie gotowe" : "Zaznacz wszystkie gotowe",
+    actionLabel: toggle.allReadySelected
+      ? "Odznacz wszystkie gotowe"
+      : `Zaznacz wszystkie gotowe (${readyCount})`,
+    selectedIds: toggle.selectedIds,
+  };
+}
+
+export function getExportWizardStep(input: {
+  selectedCount: number;
+  hasPreflight: boolean;
+  hasRunResult: boolean;
+}) {
+  if (input.hasRunResult) return 4;
+  if (input.hasPreflight) return 3;
+  if (input.selectedCount > 0) return 2;
+  return 1;
+}
+
+export function getExportWizardSteps(activeStep: number): ExportWizardStep[] {
+  const steps: Array<Omit<ExportWizardStep, "state">> = [
+    { index: 1, label: "Marketplace", description: "Kanal exportu" },
+    { index: 2, label: "Produkty", description: "Gotowe pozycje" },
+    { index: 3, label: "Braki", description: "Preflight" },
+    { index: 4, label: "Export", description: "API albo XLSX" },
+  ];
+
+  return steps.map((step) => ({
+    ...step,
+    state: step.index < activeStep ? "done" : step.index === activeStep ? "active" : "pending",
+  }));
+}
+
+export function getExportWorkspaceTabs(marketplaceLabel: string, historyCount?: number): ExportWorkspaceTab[] {
+  const label = String(marketplaceLabel || "").trim() || "marketplace";
+  const normalizedHistoryCount = typeof historyCount === "number" && historyCount > 0 ? historyCount : null;
+
+  return [
+    {
+      id: "products",
+      label: "Produkty",
+      description: `Preflight i publikacja dla ${label}`,
+      count: null,
+    },
+    {
+      id: "history",
+      label: `Historia ${label}`,
+      description: `Ostatnie runy i bledy dla ${label}`,
+      count: normalizedHistoryCount,
+    },
+  ];
 }
 
 export function normalizeExportPreflightResult(input: unknown): ExportPreflightResult | null {
@@ -824,16 +989,89 @@ export function normalizeExportPreflightResult(input: unknown): ExportPreflightR
   };
 }
 
+export function getCompactExportIssues(row: ExportReadinessRow, limit = 3) {
+  const all: CompactExportIssue[] = [
+    ...row.blockers.map((label) => ({ label, tone: "danger" as const })),
+    ...row.warnings.map((label) => ({ label, tone: "warning" as const })),
+    ...row.missingRequiredFields.map((label) => ({ label, tone: "danger" as const })),
+  ];
+  const visible = all.slice(0, Math.max(0, limit));
+
+  return {
+    visible,
+    hiddenCount: Math.max(0, all.length - visible.length),
+    all,
+  };
+}
+
+export function getExportPrimaryActionLabel(marketplaceSlug: string) {
+  if (marketplaceSlug === "allegro") return "Publikuj / aktualizuj na Allegro";
+  if (marketplaceSlug === "mediaexpert" || marketplaceSlug === "empik") return "Pobierz plik Excel";
+  return "Export niedostepny";
+}
+
+export function isActiveExportRunStatus(status: string) {
+  return ["queued", "processing", "running", "retrying"].includes(String(status || "").trim().toLowerCase());
+}
+
+export function getExportRunStatusLabel(status: string) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "queued") return "Czeka";
+  if (normalized === "processing" || normalized === "running") return "W toku";
+  if (normalized === "retrying") return "Retry";
+  if (normalized === "done" || normalized === "success") return "Gotowe";
+  if (normalized === "error" || normalized === "failed") return "Blad";
+  if (normalized === "blocked") return "Blokada";
+  return status || "unknown";
+}
+
+export function getExportClassificationLabel(value: string | null | undefined) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "existing-offer-update") return "Aktualizacje";
+  if (normalized === "new-offer-create") return "Nowe oferty";
+  if (normalized === "duplicate-offer-conflict") return "Konflikty";
+  if (normalized === "mirakl-xlsx-category") return "Mirakl XLSX";
+  if (normalized === "unclassified") return "Bez klasyfikacji";
+  return String(value || "").trim() || "Bez klasyfikacji";
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+
+  try {
+    return toPlainRecord(JSON.parse(value) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeExportErrorDetails(input: unknown): NormalizedExportErrorDetails {
+  const payload = toPlainRecord(input) ?? {};
+  const rawDetails = payload.details;
+  const details = toPlainRecord(rawDetails) ?? parseJsonRecord(rawDetails) ?? {};
+  const preflightInput = details.preflight ?? payload.preflight;
+  const message = normalizeOptionalString(payload.error)
+    ?? normalizeOptionalString(payload.message)
+    ?? "Request failed";
+
+  return {
+    message,
+    preflight: normalizeExportPreflightResult(preflightInput),
+  };
+}
+
 export function canStartExportRun(input: {
   marketplaceSlug: string;
   accountId: number | null;
   eligibleCount: number;
   loading: boolean;
+  hasActiveRun?: boolean;
 }) {
   return input.marketplaceSlug === "allegro"
     && !!input.accountId
     && input.eligibleCount > 0
-    && !input.loading;
+    && !input.loading
+    && !input.hasActiveRun;
 }
 
 export function canRunMarketplacePreflight(input: {
@@ -969,118 +1207,4 @@ export function getExportRunTone(status: string): ExportRunTone {
   }
 
   return "info";
-}
-
-
-export type ExportProductSummary = {
-  id: number;
-  title: string | null;
-  ean: string | null;
-  sku: string | null;
-  integrations: ProductIntegration[];
-};
-
-function toProductSummary(input: unknown): ExportProductSummary | null {
-  if (typeof input !== "object" || !input) return null;
-  const data = input as Record<string, unknown>;
-  const id = Number(data.id || 0);
-  if (!Number.isInteger(id) || id <= 0) return null;
-
-  return {
-    id,
-    title: normalizeOptionalString(data.title),
-    ean: normalizeOptionalString(data.ean),
-    sku: normalizeOptionalString(data.sku),
-    integrations: parseProductIntegrations(typeof data.integrations === "string" ? data.integrations : null),
-  };
-}
-
-export function normalizeExportProductSummaries(input: unknown): ExportProductSummary[] {
-  if (!Array.isArray(input)) return [];
-  const seen = new Set<number>();
-  const result: ExportProductSummary[] = [];
-  for (const entry of input) {
-    const summary = toProductSummary(entry);
-    if (!summary) continue;
-    if (seen.has(summary.id)) continue;
-    seen.add(summary.id);
-    result.push(summary);
-  }
-  return result;
-}
-
-export function buildExportProductSummaryMap(summaries: ExportProductSummary[]): Map<number, ExportProductSummary> {
-  const map = new Map<number, ExportProductSummary>();
-  for (const summary of summaries) {
-    map.set(summary.id, summary);
-  }
-  return map;
-}
-
-export function enrichExportReadinessRows(
-  rows: ExportReadinessRow[],
-  summaries: ExportProductSummary[] | Map<number, ExportProductSummary>
-): ExportReadinessRow[] {
-  const lookup = summaries instanceof Map ? summaries : buildExportProductSummaryMap(summaries);
-  return rows.map((row) => {
-    const summary = lookup.get(row.productId);
-    if (!summary) return row;
-
-    const integration = summary.integrations.find((entry) => entry.slug === row.marketplaceSlug);
-    const categoryPath = integration?.categoryPath?.trim() || row.marketplaceCategoryPath || null;
-    return {
-      ...row,
-      productTitle: row.productTitle || summary.title,
-      productEan: row.productEan || summary.ean,
-      productSku: row.productSku || summary.sku,
-      marketplaceCategoryPath: categoryPath,
-      hasMarketplaceMapping: row.hasMarketplaceMapping
-        || Boolean(integration && integration.categoryPath && integration.categoryPath.trim())
-        || Boolean(categoryPath),
-    };
-  });
-}
-
-export type ExportReadinessRowsForMarketplaceOptions = {
-  enrichmentReady: boolean;
-};
-
-export function filterExportReadinessRowsForMarketplace(
-  rows: ExportReadinessRow[],
-  marketplaceSlug: string,
-  options: ExportReadinessRowsForMarketplaceOptions = { enrichmentReady: false }
-): ExportReadinessRow[] {
-  if (!options.enrichmentReady) return rows;
-  if (!marketplaceSlug) return rows;
-  return rows.filter((row) => {
-    if (row.marketplaceSlug && row.marketplaceSlug !== marketplaceSlug) return false;
-    return row.hasMarketplaceMapping;
-  });
-}
-
-export function getExportProductDisplayLabel(row: ExportReadinessRow): string {
-  if (row.productTitle) return row.productTitle;
-  return `Produkt #${row.productId}`;
-}
-
-export function getExportProductIdentifierBadges(row: ExportReadinessRow): string[] {
-  const badges: string[] = [`#${row.productId}`];
-  if (row.productEan) badges.push(`EAN ${row.productEan}`);
-  else if (row.productSku) badges.push(`SKU ${row.productSku}`);
-  if (row.marketplaceCategoryPath) badges.push(row.marketplaceCategoryPath);
-  return badges;
-}
-
-export function shouldConfirmReviewForSelection(
-  rows: ExportReadinessRow[],
-  selectedIds: number[],
-  globalConfirm: boolean
-): boolean {
-  if (globalConfirm) return true;
-  if (selectedIds.length === 0) return false;
-  const selectedSet = new Set(selectedIds);
-  return rows.some((row) => {
-    if (!selectedSet.has(row.productId)) return false;
-    return getExportReadinessPresentation(row).bucket === "needs_review";
-  });
 }

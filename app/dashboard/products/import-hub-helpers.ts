@@ -1,6 +1,19 @@
-export type MarketplaceImportProvider = "allegro" | "amazon";
+export type MarketplaceImportProvider = "allegro" | "icecat" | "amazon";
 export type MarketplaceImportMode = "import_only" | "import_and_ai";
 export type AllegroImportSourceKind = "seller_offer" | "external_link";
+export type ImageProcessingBackground = "white" | "transparent";
+
+export type ImageProcessingOptions = {
+  removeBackground?: boolean;
+  background?: ImageProcessingBackground | string | null;
+  preserveOriginal?: boolean | null;
+};
+
+type NormalizedImageProcessingOptions = {
+  removeBackground: true;
+  background: ImageProcessingBackground;
+  preserveOriginal: boolean;
+};
 
 export type AllegroImportItem = {
   remoteId: string;
@@ -16,14 +29,25 @@ export type AmazonImportItem = {
   title?: string | null;
 };
 
-export type MarketplaceImportItem = AllegroImportItem | AmazonImportItem;
+export type IcecatImportItem = {
+  ean: string;
+  title?: string | null;
+  brand?: string | null;
+  description?: string | null;
+  images?: string[] | null;
+  categoryPath?: string | null;
+  source?: string | null;
+};
 
-type BuildMarketplaceImportPayloadInput = {
+export type MarketplaceImportItem = AllegroImportItem | AmazonImportItem | IcecatImportItem;
+
+export type BuildMarketplaceImportPayloadInput = {
   provider: MarketplaceImportProvider;
   sourceKind?: AllegroImportSourceKind;
   selectedItems: MarketplaceImportItem[];
   mode?: MarketplaceImportMode;
   accountId?: number | null;
+  imageProcessing?: ImageProcessingOptions | null;
 };
 
 type AllegroImportPayload = {
@@ -32,15 +56,23 @@ type AllegroImportPayload = {
   mode: MarketplaceImportMode;
   accountId: number | null;
   items: Array<{ remoteId: string; url?: string; offerId?: string; productId?: string }>;
+  imageProcessing?: NormalizedImageProcessingOptions;
 };
 
 type AmazonImportPayload = {
   provider: "amazon";
   mode: MarketplaceImportMode;
   items: Array<{ asin: string | null; ean: string | null }>;
+  imageProcessing?: NormalizedImageProcessingOptions;
 };
 
-export type MarketplaceImportPayload = AllegroImportPayload | AmazonImportPayload;
+type IcecatImportPayload = {
+  provider: "icecat";
+  mode: "import_only";
+  items: Array<{ ean: string }>;
+};
+
+export type MarketplaceImportPayload = AllegroImportPayload | AmazonImportPayload | IcecatImportPayload;
 
 const ALLEGRO_UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -90,6 +122,11 @@ export function getImportItemKey(provider: MarketplaceImportProvider, item: Mark
     return `allegro:${remoteId}`;
   }
 
+  if (provider === "icecat") {
+    const ean = normalizeIcecatEan((item as IcecatImportItem).ean);
+    return `icecat:${ean || "-"}`;
+  }
+
   const asin = String((item as AmazonImportItem).asin || "").trim();
   const ean = String((item as AmazonImportItem).ean || "").trim();
   return `amazon:${asin || "-"}:${ean || "-"}`;
@@ -122,7 +159,8 @@ export function buildMarketplaceImportPayload(
   input: BuildMarketplaceImportPayloadInput
 ): MarketplaceImportPayload {
   const sourceKind = input.provider === "allegro" ? (input.sourceKind || "seller_offer") : undefined;
-  const mode = sourceKind === "external_link" ? "import_and_ai" : (input.mode ?? "import_and_ai");
+  const mode = input.mode ?? "import_and_ai";
+  const imageProcessing = normalizeImageProcessing(input.imageProcessing);
 
   if (input.provider === "allegro") {
     return {
@@ -136,6 +174,18 @@ export function buildMarketplaceImportPayload(
         ...normalizeOptionalField("offerId", (item as AllegroImportItem).offerId),
         ...normalizeOptionalField("productId", (item as AllegroImportItem).productId),
       })),
+      ...(imageProcessing ? { imageProcessing } : {}),
+    };
+  }
+
+  if (input.provider === "icecat") {
+    return {
+      provider: "icecat",
+      mode: "import_only",
+      items: input.selectedItems
+        .map((item) => normalizeIcecatEan((item as IcecatImportItem).ean))
+        .filter(Boolean)
+        .map((ean) => ({ ean })),
     };
   }
 
@@ -146,6 +196,38 @@ export function buildMarketplaceImportPayload(
       asin: normalizeOptionalString((item as AmazonImportItem).asin),
       ean: normalizeOptionalString((item as AmazonImportItem).ean),
     })),
+    ...(imageProcessing ? { imageProcessing } : {}),
+  };
+}
+
+export function normalizeIcecatEan(value: unknown) {
+  const normalized = typeof value === "string"
+    ? value.trim().replace(/\.0+$/, "").replace(/[^0-9]/g, "")
+    : "";
+  return /^[0-9]{8,14}$/.test(normalized) ? normalized : "";
+}
+
+export function parseIcecatEanList(value: string) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const token of String(value || "").split(/[\s,;]+/)) {
+    const ean = normalizeIcecatEan(token);
+    if (!ean || seen.has(ean)) continue;
+    seen.add(ean);
+    result.push(ean);
+  }
+
+  return result;
+}
+
+function normalizeImageProcessing(value: ImageProcessingOptions | null | undefined): NormalizedImageProcessingOptions | null {
+  if (!value?.removeBackground) return null;
+  const background = value.background === "transparent" ? "transparent" : "white";
+  return {
+    removeBackground: true,
+    background,
+    preserveOriginal: value.preserveOriginal ?? true,
   };
 }
 

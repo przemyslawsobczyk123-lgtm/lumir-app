@@ -1,16 +1,16 @@
-"use client";
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   filterExportReadinessRows,
   getExportProductDisplayLabel,
   getExportProductIdentifierBadges,
+  getExportReadyBulkSelectionControl,
   getExportReadinessPresentation,
   type ExportReadinessRow,
+  type ExportReadinessStatus,
 } from "./export-api-helpers";
 
-type ExportProductsBoardProps = {
+type ExportReadinessTableProps = {
   marketplaceSlug: string;
   marketplaceLabel: string;
   rows: ExportReadinessRow[];
@@ -18,35 +18,37 @@ type ExportProductsBoardProps = {
   selectedIds: number[];
   onSelectedIdsChange: (ids: number[]) => void;
   onOpenProduct: (productId: number) => void;
-  onGenerateAi: (productIds: number[]) => Promise<void> | void;
+  onGenerateAi: (productIds: number[]) => void;
   aiBusyIds: number[];
   aiError: string | null;
   filteredOutByCategoryCount?: number;
 };
 
-type Bucket = "ready" | "needs_review" | "blocked";
+type ExportColumnKey = ExportReadinessStatus;
 
-type BoardCard = {
+type ExportDisplayRow = {
   row: ExportReadinessRow;
-  bucket: Bucket;
+  bucket: ExportColumnKey;
   label: string;
   description: string;
   acceptedReview: boolean;
 };
 
-const BUCKET_TITLES: Record<Bucket, string> = {
+const COLUMN_ORDER: ExportColumnKey[] = ["ready", "needs_review", "blocked"];
+
+const COLUMN_TITLES: Record<ExportColumnKey, string> = {
   ready: "Gotowe do exportu",
   needs_review: "Wymaga review",
   blocked: "Braki do uzupelnienia",
 };
 
-const BUCKET_HINTS: Record<Bucket, string> = {
+const COLUMN_DESCRIPTIONS: Record<ExportColumnKey, string> = {
   ready: "Produkty spelniaja wymagania marketplace. Zaznacz i przejdz dalej.",
   needs_review: "Klik = akceptuj zmiane i odblokuj export.",
   blocked: "Generuj AI uzupelni atrybuty, opis i zdjecia automatycznie.",
 };
 
-const BUCKET_TONE: Record<Bucket, { wrap: string; head: string; count: string }> = {
+const COLUMN_CLASSES: Record<ExportColumnKey, { wrap: string; head: string; count: string }> = {
   ready: {
     wrap: "border-emerald-400/60 bg-emerald-500/5",
     head: "text-emerald-300",
@@ -64,23 +66,7 @@ const BUCKET_TONE: Record<Bucket, { wrap: string; head: string; count: string }>
   },
 };
 
-function toBoardCards(rows: ExportReadinessRow[], acceptedReviewIds: Set<number>): BoardCard[] {
-  return rows.map((row) => {
-    const presentation = getExportReadinessPresentation(row);
-    const accepted = presentation.bucket === "needs_review" && acceptedReviewIds.has(row.productId);
-    return {
-      row,
-      bucket: accepted ? "ready" : presentation.bucket,
-      label: accepted ? "Zaakceptowano review" : presentation.label,
-      description: accepted
-        ? "Review zatwierdzone. Trafi do preflight z confirmNeedsReview."
-        : presentation.description,
-      acceptedReview: accepted,
-    };
-  });
-}
-
-function getCardReasons(row: ExportReadinessRow) {
+function getVisibleIssueLabels(row: ExportReadinessRow) {
   return [
     ...row.blockers,
     ...row.missingRequiredFields,
@@ -88,8 +74,7 @@ function getCardReasons(row: ExportReadinessRow) {
   ].slice(0, 3);
 }
 
-export function ExportProductsBoard({
-  marketplaceSlug: _marketplaceSlug,
+export function ExportReadinessTable({
   marketplaceLabel,
   rows,
   loading,
@@ -100,67 +85,79 @@ export function ExportProductsBoard({
   aiBusyIds,
   aiError,
   filteredOutByCategoryCount = 0,
-}: ExportProductsBoardProps) {
+}: ExportReadinessTableProps) {
   const [query, setQuery] = useState("");
-
-  const filtered = useMemo(() => {
-    return filterExportReadinessRows(rows, {
-      statusFilter: "all",
-      operationFilter: "all",
-      query,
-    });
-  }, [rows, query]);
-
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-
-  // Rows that were originally in "needs_review" and the user already selected them
-  // act as "accepted review" - they should visibly move to the "ready" column
-  // and triger preflight with confirmNeedsReview=true.
+  const readyHeaderCheckboxRef = useRef<HTMLInputElement>(null);
+  const visibleRows = useMemo(
+    () => filterExportReadinessRows(rows, { statusFilter: "all", operationFilter: "all", query }),
+    [rows, query]
+  );
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const acceptedReviewIds = useMemo(() => {
-    const accepted = new Set<number>();
-    for (const row of rows) {
-      if (!selectedSet.has(row.productId)) continue;
-      if (getExportReadinessPresentation(row).bucket === "needs_review") {
-        accepted.add(row.productId);
+    const ids = new Set<number>();
+    rows.forEach((row) => {
+      if (selectedIdSet.has(row.productId) && getExportReadinessPresentation(row).bucket === "needs_review") {
+        ids.add(row.productId);
       }
-    }
-    return accepted;
-  }, [rows, selectedSet]);
+    });
+    return ids;
+  }, [rows, selectedIdSet]);
+  const displayRows = useMemo<ExportDisplayRow[]>(
+    () => visibleRows.map((row) => {
+      const presentation = getExportReadinessPresentation(row);
+      const acceptedReview = presentation.bucket === "needs_review" && acceptedReviewIds.has(row.productId);
 
-  const cards = useMemo(() => toBoardCards(filtered, acceptedReviewIds), [filtered, acceptedReviewIds]);
-
-  const grouped = useMemo(() => {
-    const result: Record<Bucket, BoardCard[]> = {
+      return {
+        row,
+        bucket: acceptedReview ? "ready" : presentation.bucket,
+        label: acceptedReview ? "Zaakceptowano review" : presentation.label,
+        description: acceptedReview
+          ? "Review zatwierdzone. Trafi do preflight z confirmNeedsReview."
+          : presentation.description,
+        acceptedReview,
+      };
+    }),
+    [visibleRows, acceptedReviewIds]
+  );
+  const rowsByBucket = useMemo(() => {
+    const grouped: Record<ExportColumnKey, ExportDisplayRow[]> = {
       ready: [],
       needs_review: [],
       blocked: [],
     };
-    for (const card of cards) {
-      result[card.bucket].push(card);
-    }
-    return result;
-  }, [cards]);
-
-  const totals = {
-    ready: grouped.ready.length,
-    needs_review: grouped.needs_review.length,
-    blocked: grouped.blocked.length,
-    total: cards.length,
+    displayRows.forEach((row) => {
+      grouped[row.bucket].push(row);
+    });
+    return grouped;
+  }, [displayRows]);
+  const readyBulkControl = getExportReadyBulkSelectionControl(visibleRows, selectedIds);
+  const blockedIds = rowsByBucket.blocked.map((entry) => entry.row.productId);
+  const aiBusy = aiBusyIds.length > 0;
+  const canGenerateAi = blockedIds.length > 0 && !aiBusy;
+  const summary = {
+    ready: rowsByBucket.ready.length,
+    needs_review: rowsByBucket.needs_review.length,
+    blocked: rowsByBucket.blocked.length,
+    total: displayRows.length,
   };
 
-  const blockedIds = grouped.blocked.map((card) => card.row.productId);
-  const someAiBusy = aiBusyIds.length > 0;
-  const canBulkAi = blockedIds.length > 0 && !someAiBusy;
+  useEffect(() => {
+    if (readyHeaderCheckboxRef.current) {
+      readyHeaderCheckboxRef.current.indeterminate = readyBulkControl.indeterminate;
+    }
+  }, [readyBulkControl.indeterminate]);
 
-  const toggleSelect = (productId: number, selectable: boolean) => {
+  const toggleProduct = (productId: number, selectable: boolean) => {
     if (!selectable) {
       onOpenProduct(productId);
       return;
     }
+
     if (selectedIds.includes(productId)) {
       onSelectedIdsChange(selectedIds.filter((id) => id !== productId));
       return;
     }
+
     onSelectedIdsChange([...selectedIds, productId]);
   };
 
@@ -184,10 +181,9 @@ export function ExportProductsBoard({
               Produkty do exportu {marketplaceLabel}
             </h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              {totals.total} produktow • {totals.ready} gotowe • {totals.needs_review} review • {totals.blocked} braki
+              {summary.total} produktow * {summary.ready} gotowe * {summary.needs_review} review * {summary.blocked} braki
             </p>
           </div>
-
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               type="search"
@@ -198,19 +194,18 @@ export function ExportProductsBoard({
             />
             <button
               type="button"
-              aria-disabled={!canBulkAi}
+              aria-disabled={!canGenerateAi}
               onClick={() => {
-                if (!canBulkAi) return;
-                void onGenerateAi(blockedIds);
+                if (canGenerateAi) onGenerateAi(blockedIds);
               }}
               className={`h-11 rounded-xl px-4 text-sm font-semibold transition ${
-                canBulkAi
+                canGenerateAi
                   ? "bg-violet-600 text-white hover:bg-violet-700"
                   : "cursor-not-allowed bg-violet-200 text-violet-500"
               }`}
               title={blockedIds.length > 0 ? `Generuj AI dla ${blockedIds.length} produktow z brakami` : "Brak produktow z brakami"}
             >
-              {someAiBusy ? "Generuje AI..." : `Generuj AI dla ${blockedIds.length} brakow`}
+              {aiBusy ? "Generuje AI..." : `Generuj AI dla ${blockedIds.length} brakow`}
             </button>
           </div>
         </div>
@@ -223,65 +218,77 @@ export function ExportProductsBoard({
 
         {filteredOutByCategoryCount > 0 && (
           <div className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-            Ukryto {filteredOutByCategoryCount} produktow, ktore nie maja kategorii dla {marketplaceLabel}.
-            Produkty bez kategorii nie da sie wyeksportowac do tego marketplace.
-            Otworz produkt i przypisz kategorie, aby pojawil sie tutaj.
+            Ukryto {filteredOutByCategoryCount} produktow, ktore nie maja kategorii dla {marketplaceLabel}. Produkty bez kategorii nie da sie wyeksportowac do tego marketplace. Otworz produkt i przypisz kategorie, aby pojawil sie tutaj.
           </div>
         )}
       </div>
 
-      {cards.length === 0 ? (
+      {displayRows.length === 0 ? (
         <div className="m-5 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-body)] p-4 text-sm text-[var(--text-secondary)]">
           Brak produktow dla tego marketplace lub filtra.
         </div>
       ) : (
         <div className="grid gap-4 p-5 lg:grid-cols-3">
-          {(["ready", "needs_review", "blocked"] as Bucket[]).map((bucket) => {
-            const bucketCards = grouped[bucket];
-            const tone = BUCKET_TONE[bucket];
+          {COLUMN_ORDER.map((bucket) => {
+            const columnRows = rowsByBucket[bucket];
+            const classes = COLUMN_CLASSES[bucket];
+            const isReadyColumn = bucket === "ready";
 
             return (
-              <div
-                key={bucket}
-                className={`flex flex-col rounded-2xl border ${tone.wrap}`}
-              >
+              <div key={bucket} className={`flex flex-col rounded-2xl border ${classes.wrap}`}>
                 <div className="flex items-center justify-between gap-2 border-b border-[var(--border-default)] px-4 py-3">
-                  <div>
-                    <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${tone.head}`}>
-                      {BUCKET_TITLES[bucket]}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      {isReadyColumn && (
+                        <input
+                          ref={readyHeaderCheckboxRef}
+                          type="checkbox"
+                          checked={readyBulkControl.allReadySelected}
+                          aria-checked={readyBulkControl.ariaChecked}
+                          aria-disabled={readyBulkControl.disabled}
+                          aria-label={readyBulkControl.checkboxLabel}
+                          onChange={() => {
+                            if (readyBulkControl.disabled) return;
+                            onSelectedIdsChange(readyBulkControl.selectedIds);
+                          }}
+                          className={`h-4 w-4 rounded border-[var(--border-default)] bg-[var(--bg-card)] text-emerald-500 ${
+                            readyBulkControl.disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                          }`}
+                        />
+                      )}
+                      <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${classes.head}`}>
+                        {COLUMN_TITLES[bucket]}
+                      </div>
                     </div>
                     <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                      {BUCKET_HINTS[bucket]}
+                      {COLUMN_DESCRIPTIONS[bucket]}
                     </div>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${tone.count}`}>
-                    {bucketCards.length}
+                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${classes.count}`}>
+                    {columnRows.length}
                   </span>
                 </div>
 
                 <div className="flex flex-col gap-2 p-3">
-                  {bucketCards.length === 0 ? (
+                  {columnRows.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--bg-body)] px-3 py-6 text-center text-xs text-[var(--text-tertiary)]">
                       Pusto
                     </div>
                   ) : (
-                    bucketCards.map((card) => {
-                      const presentation = getExportReadinessPresentation(card.row);
+                    columnRows.map((entry) => {
+                      const presentation = getExportReadinessPresentation(entry.row);
                       const selectable = presentation.selectable;
-                      const checked = selectedIds.includes(card.row.productId);
-                      const reasons = getCardReasons(card.row);
-                      const aiBusy = aiBusyIds.includes(card.row.productId);
-                      const displayName = getExportProductDisplayLabel(card.row);
-                      const identifierBadges = getExportProductIdentifierBadges(card.row);
-                      const isAcceptedReview = card.acceptedReview;
+                      const checked = selectedIds.includes(entry.row.productId);
+                      const issues = getVisibleIssueLabels(entry.row);
+                      const aiBusyForRow = aiBusyIds.includes(entry.row.productId);
+                      const label = getExportProductDisplayLabel(entry.row);
+                      const badges = getExportProductIdentifierBadges(entry.row);
 
                       return (
                         <article
-                          key={card.row.productId}
+                          key={entry.row.productId}
                           className={`rounded-xl border bg-[var(--bg-body)] px-3 py-3 transition ${
-                            checked
-                              ? "border-indigo-400/70 ring-1 ring-indigo-400/40"
-                              : "border-[var(--border-default)]"
+                            checked ? "border-indigo-400/70 ring-1 ring-indigo-400/40" : "border-[var(--border-default)]"
                           }`}
                         >
                           <div className="flex items-start gap-3">
@@ -289,23 +296,23 @@ export function ExportProductsBoard({
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={() => toggleSelect(card.row.productId, selectable)}
+                                onChange={() => toggleProduct(entry.row.productId, selectable)}
                                 className="mt-1 h-4 w-4 cursor-pointer rounded border-[var(--border-default)] bg-[var(--bg-card)] text-indigo-600"
-                                aria-label={`Zaznacz ${displayName}`}
+                                aria-label={`Zaznacz ${label}`}
                               />
                             )}
                             <div className="min-w-0 flex-1">
                               <button
                                 type="button"
-                                onClick={() => onOpenProduct(card.row.productId)}
+                                onClick={() => onOpenProduct(entry.row.productId)}
                                 className="block w-full truncate text-left text-sm font-semibold text-[var(--text-primary)] hover:text-indigo-300"
-                                title={displayName}
+                                title={label}
                               >
-                                {displayName}
+                                {label}
                               </button>
-                              {identifierBadges.length > 0 && (
+                              {badges.length > 0 && (
                                 <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-[var(--text-tertiary)]">
-                                  {identifierBadges.map((badge) => (
+                                  {badges.map((badge) => (
                                     <span
                                       key={badge}
                                       className="max-w-full truncate rounded-full border border-[var(--border-default)] bg-[var(--bg-card)] px-2 py-0.5 font-mono"
@@ -317,20 +324,18 @@ export function ExportProductsBoard({
                                 </div>
                               )}
                               <div className="mt-1 truncate text-xs text-[var(--text-tertiary)]">
-                                {card.row.classification || "bez klasyfikacji"}
+                                {entry.row.classification || "bez klasyfikacji"}
                               </div>
-
-                              {isAcceptedReview && (
+                              {entry.acceptedReview && (
                                 <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-200">
                                   Review zaakceptowane
                                 </div>
                               )}
-
-                              {reasons.length > 0 && (
+                              {issues.length > 0 && (
                                 <ul className="mt-2 space-y-1 text-xs text-[var(--text-secondary)]">
-                                  {reasons.map((reason) => (
-                                    <li key={reason} className="truncate">
-                                      • {reason}
+                                  {issues.map((issue) => (
+                                    <li key={issue} className="truncate">
+                                      - {issue}
                                     </li>
                                   ))}
                                 </ul>
@@ -339,52 +344,51 @@ export function ExportProductsBoard({
                           </div>
 
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {card.bucket === "blocked" && (
+                            {entry.bucket === "blocked" && (
                               <button
                                 type="button"
-                                aria-disabled={aiBusy}
+                                aria-disabled={aiBusyForRow}
                                 onClick={() => {
-                                  if (aiBusy) return;
-                                  void onGenerateAi([card.row.productId]);
+                                  if (!aiBusyForRow) onGenerateAi([entry.row.productId]);
                                 }}
                                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                                  aiBusy
+                                  aiBusyForRow
                                     ? "cursor-not-allowed bg-violet-200 text-violet-500"
                                     : "bg-violet-600 text-white hover:bg-violet-700"
                                 }`}
                               >
-                                {aiBusy ? "AI..." : "Generuj AI"}
+                                {aiBusyForRow ? "AI..." : "Generuj AI"}
                               </button>
                             )}
                             <button
                               type="button"
-                              onClick={() => onOpenProduct(card.row.productId)}
+                              onClick={() => onOpenProduct(entry.row.productId)}
                               className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
                             >
                               Otworz produkt
                             </button>
-                            {card.bucket === "ready" && !checked && selectable && (
+                            {entry.bucket === "ready" && !checked && selectable && (
                               <button
                                 type="button"
-                                onClick={() => toggleSelect(card.row.productId, true)}
+                                onClick={() => toggleProduct(entry.row.productId, true)}
                                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
                               >
                                 Dodaj do exportu
                               </button>
                             )}
-                            {isAcceptedReview && (
+                            {entry.acceptedReview && (
                               <button
                                 type="button"
-                                onClick={() => toggleSelect(card.row.productId, true)}
+                                onClick={() => toggleProduct(entry.row.productId, true)}
                                 className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
                               >
                                 Cofnij akceptacje
                               </button>
                             )}
-                            {card.bucket === "needs_review" && selectable && (
+                            {entry.bucket === "needs_review" && selectable && (
                               <button
                                 type="button"
-                                onClick={() => toggleSelect(card.row.productId, true)}
+                                onClick={() => toggleProduct(entry.row.productId, true)}
                                 className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
                               >
                                 Akceptuj review

@@ -919,7 +919,7 @@ export default function Landing() {
             Obsługiwane marketplace&apos;y
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3" data-animate data-animate-delay="1">
-            {["Media Expert", "Allegro", "Empik", "Decathlon", "X-Kom", "Amazon"].map((name) => (
+            {["Media Expert", "Allegro", "Empik"].map((name) => (
               <div
                 key={name}
                 className="px-6 py-3 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200 cursor-default"

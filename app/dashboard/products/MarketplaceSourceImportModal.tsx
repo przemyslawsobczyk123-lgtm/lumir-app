@@ -10,11 +10,13 @@ import {
   buildMarketplaceImportPayload,
   getImportItemKey,
   parseAllegroExternalLink,
+  parseIcecatEanList,
   toggleImportSelection,
   toggleVisibleImportSelection,
   type AllegroImportSourceKind,
   type AllegroImportItem,
   type AmazonImportItem,
+  type IcecatImportItem,
   type MarketplaceImportMode,
   type MarketplaceImportProvider,
 } from "./import-hub-helpers";
@@ -22,7 +24,9 @@ import {
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const ALLEGRO_PAGE_SIZE = 20;
 const AMAZON_UI_ENABLED = isAmazonUiEnabled();
-const MARKETPLACE_IMPORT_TABS: MarketplaceImportProvider[] = AMAZON_UI_ENABLED ? ["allegro", "amazon"] : ["allegro"];
+const MARKETPLACE_IMPORT_TABS: MarketplaceImportProvider[] = AMAZON_UI_ENABLED
+  ? ["allegro", "icecat", "amazon"]
+  : ["allegro", "icecat"];
 
 type QueuedMarketplaceImportJob = {
   id: string;
@@ -49,6 +53,10 @@ type AllegroOffer = {
   publication?: { status?: string | null } | null;
 };
 
+type IcecatPreviewItem = IcecatImportItem & {
+  source?: string | null;
+};
+
 type Copy = (typeof COPY)[keyof typeof COPY];
 
 type Props = {
@@ -65,9 +73,10 @@ type Props = {
 const COPY = {
   pl: {
     title: "Hub importu produktow",
-    subtitle: "Wybierz Allegro albo Amazon. Import leci w tle i moze od razu dokolejkowac AI.",
+    subtitle: "Wybierz Allegro, Icecat albo Amazon. Import leci w tle. Icecat sluzy tylko do pobierania produktow.",
     tabs: {
       allegro: "Allegro",
+      icecat: "Icecat",
       amazon: "Amazon",
     },
     modeLabel: "Tryb importu",
@@ -87,11 +96,13 @@ const COPY = {
       accountLabel: "Konto Allegro",
       noAccounts: "Brak aktywnego konta Allegro.",
       sourceSellerOffers: "Moje oferty",
-      sourceExternalLink: "Link Allegro + AI",
+      sourceExternalLink: "Link Allegro",
       linkLabel: "Link do produktu lub oferty Allegro",
       linkPlaceholder: "Wklej link Allegro z /produkt/... lub offerId",
-      linkHint: "AI przepisze opis i atrybuty od nowa. Import only jest zablokowany, zeby nie kopiowac oferty 1:1.",
-      linkMediaHint: "Zdjecia z linku sa traktowane jako material do analizy. Przed publikacja sprawdz prawa do mediow albo dodaj wlasne zdjecia.",
+      linkHint: "Import only pobierze tytul, opis, atrybuty i zdjecia. Import + AI dodatkowo przepisze tresc pod wybrany marketplace.",
+      linkMediaHint: "Zdjecia z linku zapisza sie w produkcie. Przed publikacja sprawdz prawa do mediow albo dodaj wlasne zdjecia.",
+      removeBackgroundLabel: "Usun tlo ze zdjec",
+      removeBackgroundHint: "Zapisze poprawione wersje na bialym tle i zachowa oryginaly w metadanych importu.",
       parsedOffer: "Oferta",
       parsedProduct: "Produkt katalogowy",
       invalidLink: "Wklej poprawny link Allegro, offerId albo ID produktu.",
@@ -120,12 +131,23 @@ const COPY = {
       useItem: "Dodaj do zaznaczenia",
       loadItemError: "Nie udalo sie pobrac pozycji Amazon",
     },
+    icecat: {
+      inputLabel: "EAN / GTIN",
+      inputPlaceholder: "Wklej EAN-y, po jednym wierszu albo po przecinku",
+      add: "Dodaj z Icecat",
+      adding: "Pobieram...",
+      invalid: "Wklej co najmniej jeden poprawny EAN.",
+      empty: "Brak pozycji. Dodaj EAN, aby pobrac produkt z Icecat.",
+      loadItemError: "Nie udalo sie pobrac pozycji Icecat",
+      importOnly: "Icecat jest zrodlem danych produktu. Nie jest kanalem eksportu.",
+    },
   },
   en: {
     title: "Product import hub",
-    subtitle: "Pick Allegro or Amazon. Import runs in background and can queue AI right away.",
+    subtitle: "Pick Allegro, Icecat, or Amazon. Import runs in background. Icecat is import-only.",
     tabs: {
       allegro: "Allegro",
+      icecat: "Icecat",
       amazon: "Amazon",
     },
     modeLabel: "Import mode",
@@ -145,11 +167,13 @@ const COPY = {
       accountLabel: "Allegro account",
       noAccounts: "No active Allegro account.",
       sourceSellerOffers: "My offers",
-      sourceExternalLink: "Allegro link + AI",
+      sourceExternalLink: "Allegro link",
       linkLabel: "Allegro product or offer link",
       linkPlaceholder: "Paste Allegro /produkt/... link or offerId",
-      linkHint: "AI rewrites description and attributes. Import only is blocked to avoid 1:1 copying.",
-      linkMediaHint: "Images from the link are analysis material. Verify media rights or add your own images before publishing.",
+      linkHint: "Import only downloads title, description, attributes and images. Import + AI also rewrites content for the selected marketplace.",
+      linkMediaHint: "Images from the link are saved on the product. Verify media rights or add your own images before publishing.",
+      removeBackgroundLabel: "Remove image backgrounds",
+      removeBackgroundHint: "Saves improved white-background versions and keeps originals in import metadata.",
       parsedOffer: "Offer",
       parsedProduct: "Catalog product",
       invalidLink: "Paste a valid Allegro link, offerId, or product ID.",
@@ -178,6 +202,16 @@ const COPY = {
       useItem: "Add to selection",
       loadItemError: "Failed to load Amazon item",
     },
+    icecat: {
+      inputLabel: "EAN / GTIN",
+      inputPlaceholder: "Paste EANs, one per line or comma-separated",
+      add: "Add from Icecat",
+      adding: "Loading...",
+      invalid: "Paste at least one valid EAN.",
+      empty: "No rows yet. Add an EAN to load a product from Icecat.",
+      loadItemError: "Failed to load Icecat item",
+      importOnly: "Icecat is a product data source. It is not an export channel.",
+    },
   },
 } as const;
 
@@ -205,8 +239,8 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
   const subtitle = AMAZON_UI_ENABLED
     ? copy.subtitle
     : copy.subtitle
-        .replace("Wybierz Allegro albo Amazon.", "Wybierz Allegro.")
-        .replace("Pick Allegro or Amazon.", "Pick Allegro.");
+        .replace("Wybierz Allegro, Icecat albo Amazon.", "Wybierz Allegro albo Icecat.")
+        .replace("Pick Allegro, Icecat, or Amazon.", "Pick Allegro or Icecat.");
 
   const [provider, setProvider] = useState<MarketplaceImportProvider>(
     !AMAZON_UI_ENABLED && initialProvider === "amazon" ? "allegro" : initialProvider
@@ -227,6 +261,7 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
   const [allegroLoading, setAllegroLoading] = useState(true);
   const [allegroError, setAllegroError] = useState("");
   const [allegroSelectedKeys, setAllegroSelectedKeys] = useState<Set<string>>(new Set());
+  const [removeBackground, setRemoveBackground] = useState(false);
 
   const [amazonStatus, setAmazonStatus] = useState<AmazonStatus | null>(null);
   const [amazonStatusLoading, setAmazonStatusLoading] = useState(true);
@@ -239,6 +274,13 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
   const [amazonLoadingDirect, setAmazonLoadingDirect] = useState<"asin" | "ean" | "">("");
   const [amazonError, setAmazonError] = useState("");
   const [amazonSelectedKeys, setAmazonSelectedKeys] = useState<Set<string>>(new Set());
+
+  const [icecatInput, setIcecatInput] = useState("");
+  const [icecatItems, setIcecatItems] = useState<IcecatPreviewItem[]>([]);
+  const [icecatItemCache, setIcecatItemCache] = useState<Record<string, IcecatPreviewItem>>({});
+  const [icecatSelectedKeys, setIcecatSelectedKeys] = useState<Set<string>>(new Set());
+  const [icecatLoading, setIcecatLoading] = useState(false);
+  const [icecatError, setIcecatError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -293,6 +335,16 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
       cancelled = true;
     };
   }, [copy.amazon.loadItemError, copy.queueError]);
+
+  useEffect(() => {
+    if (provider !== "allegro" || allegroSourceKind !== "seller_offer") {
+      setRemoveBackground(false);
+    }
+  }, [allegroSourceKind, provider]);
+
+  useEffect(() => {
+    if (provider === "icecat") setMode("import_only");
+  }, [provider]);
 
   useEffect(() => {
     let cancelled = false;
@@ -367,6 +419,10 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
     getImportItemKey("amazon", { asin: item.asin, ean: item.ean })
   );
 
+  const visibleIcecatSelectionKeys = icecatItems.map((item) =>
+    getImportItemKey("icecat", item)
+  );
+
   const selectedItems = useMemo(() => {
     if (provider === "allegro") {
       if (allegroSourceKind === "external_link") {
@@ -390,6 +446,21 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
         }));
     }
 
+    if (provider === "icecat") {
+      return [...icecatSelectedKeys]
+        .map((key) => icecatItemCache[key])
+        .filter((item): item is IcecatPreviewItem => Boolean(item))
+        .map<IcecatImportItem>((item) => ({
+          ean: item.ean,
+          title: item.title,
+          brand: item.brand,
+          description: item.description,
+          images: item.images,
+          categoryPath: item.categoryPath,
+          source: item.source,
+        }));
+    }
+
     return [...amazonSelectedKeys]
       .map((key) => amazonResultCache[key])
       .filter((item): item is AmazonCatalogItem => Boolean(item))
@@ -402,6 +473,8 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
     allegroOfferCache,
     allegroSelectedKeys,
     allegroSourceKind,
+    icecatItemCache,
+    icecatSelectedKeys,
     amazonResultCache,
     amazonSelectedKeys,
     parsedAllegroExternalLink,
@@ -419,6 +492,69 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
   const toggleAmazonItem = (item: AmazonCatalogItem) => {
     const itemKey = getImportItemKey("amazon", { asin: item.asin, ean: item.ean });
     setAmazonSelectedKeys((current) => toggleImportSelection(current, itemKey));
+  };
+
+  const toggleIcecatItem = (item: IcecatPreviewItem) => {
+    const itemKey = getImportItemKey("icecat", item);
+    setIcecatSelectedKeys((current) => toggleImportSelection(current, itemKey));
+  };
+
+  const addIcecatItems = async () => {
+    const eans = parseIcecatEanList(icecatInput);
+    if (!eans.length || icecatLoading) {
+      if (!eans.length) setIcecatError(copy.icecat.invalid);
+      return;
+    }
+
+    setIcecatLoading(true);
+    setIcecatError("");
+    const loadedItems: IcecatPreviewItem[] = [];
+    const failed: string[] = [];
+
+    for (const ean of eans) {
+      try {
+        const res = await fetch(`${API}/api/products/icecat/item?ean=${encodeURIComponent(ean)}`, {
+          headers: authHeaders(),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.data) throw new Error(json.error || copy.icecat.loadItemError);
+        const data = json.data as Partial<IcecatPreviewItem>;
+        loadedItems.push({
+          ean: String(data.ean || ean),
+          title: data.title || `Icecat ${ean}`,
+          brand: data.brand || null,
+          description: data.description || null,
+          images: Array.isArray(data.images) ? data.images : [],
+          categoryPath: data.categoryPath || null,
+          source: data.source || null,
+        });
+      } catch {
+        failed.push(ean);
+      }
+    }
+
+    if (loadedItems.length > 0) {
+      setIcecatItemCache((current) => ({
+        ...current,
+        ...Object.fromEntries(loadedItems.map((item) => [getImportItemKey("icecat", item), item])),
+      }));
+      setIcecatItems((current) => {
+        const next = current.filter((item) => !loadedItems.some((loaded) => loaded.ean === item.ean));
+        return [...loadedItems, ...next];
+      });
+      setIcecatSelectedKeys((current) => {
+        const next = new Set(current);
+        for (const item of loadedItems) next.add(getImportItemKey("icecat", item));
+        return next;
+      });
+      setIcecatInput("");
+    }
+
+    if (failed.length > 0) {
+      setIcecatError(`${copy.icecat.loadItemError}: ${failed.join(", ")}`);
+    }
+
+    setIcecatLoading(false);
   };
 
   const handleAmazonSearch = async () => {
@@ -494,14 +630,16 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
     setSubmitting(true);
     setSubmitError("");
     try {
-      const effectiveMode: MarketplaceImportMode =
-        provider === "allegro" && allegroSourceKind === "external_link" ? "import_and_ai" : mode;
+      const effectiveMode: MarketplaceImportMode = provider === "icecat" ? "import_only" : mode;
       const payload = buildMarketplaceImportPayload({
         provider,
         sourceKind: provider === "allegro" ? allegroSourceKind : undefined,
         mode: effectiveMode,
         accountId: provider === "allegro" ? selectedAllegroAccount?.id ?? null : undefined,
         selectedItems,
+        imageProcessing: removeBackground
+          ? { removeBackground: true, background: "white", preserveOriginal: true }
+          : undefined,
       });
 
       const res = await fetch(`${API}/api/products/source-imports`, {
@@ -526,10 +664,12 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
   };
 
   const submitLabel = submitting ? `${copy.submit}...` : copy.submit;
-  const selectedSet = provider === "allegro" ? allegroSelectedKeys : amazonSelectedKeys;
+  const selectedSet = provider === "allegro"
+    ? allegroSelectedKeys
+    : (provider === "icecat" ? icecatSelectedKeys : amazonSelectedKeys);
   const visibleSelectionKeys = provider === "allegro"
     ? (allegroSourceKind === "external_link" ? [] : visibleAllegroSelectionKeys)
-    : visibleAmazonSelectionKeys;
+    : (provider === "icecat" ? visibleIcecatSelectionKeys : visibleAmazonSelectionKeys);
   const everyVisibleSelected = visibleSelectionKeys.length > 0 && visibleSelectionKeys.every((item) => selectedSet.has(item));
 
   return (
@@ -581,26 +721,17 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
               <div className="flex flex-wrap gap-1">
                 {([
                   ["import_only", copy.modeImportOnly],
-                  ["import_and_ai", copy.modeImportAndAi],
+                  ...(provider === "icecat" ? [] : [["import_and_ai", copy.modeImportAndAi] as const]),
                 ] as Array<[MarketplaceImportMode, string]>).map(([value, label]) => {
-                  const lockedImportOnly = provider === "allegro" && allegroSourceKind === "external_link" && value === "import_only";
-                  const active = (provider === "allegro" && allegroSourceKind === "external_link")
-                    ? value === "import_and_ai"
-                    : mode === value;
+                  const active = mode === value;
                   return (
                     <button
                       key={value}
-                      onClick={() => {
-                        if (lockedImportOnly) return;
-                        setMode(value);
-                      }}
-                      aria-disabled={lockedImportOnly}
+                      onClick={() => setMode(value)}
                       className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                         active
                           ? "bg-indigo-500 text-white shadow-sm"
-                          : lockedImportOnly
-                            ? "cursor-not-allowed text-slate-500"
-                            : "text-slate-200 hover:bg-white/10"
+                          : "text-slate-200 hover:bg-white/10"
                       }`}
                     >
                       {label}
@@ -677,7 +808,6 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
                             onClick={() => {
                               setAllegroSourceKind(value);
                               if (value === "external_link") {
-                                setMode("import_and_ai");
                                 setAllegroSelectedKeys(new Set());
                               }
                             }}
@@ -693,6 +823,25 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
                       })}
                     </div>
                   </div>
+
+                  {(allegroSourceKind === "seller_offer" || allegroSourceKind === "external_link") && (
+                    <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-white/10 pt-4">
+                      <input
+                        type="checkbox"
+                        checked={removeBackground}
+                        onChange={(event) => setRemoveBackground(event.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950 accent-indigo-500"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-white">
+                          {copy.allegro.removeBackgroundLabel}
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-slate-400">
+                          {copy.allegro.removeBackgroundHint}
+                        </span>
+                      </span>
+                    </label>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -874,6 +1023,127 @@ export function MarketplaceSourceImportModal({ initialProvider = "allegro", onCl
                   )}
                     </>
                   )}
+                </div>
+              </div>
+            </div>
+          ) : provider === "icecat" ? (
+            <div className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                    {copy.icecat.importOnly}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                      {copy.icecat.inputLabel}
+                    </div>
+                    <textarea
+                      value={icecatInput}
+                      onChange={(event) => setIcecatInput(event.target.value)}
+                      placeholder={copy.icecat.inputPlaceholder}
+                      rows={8}
+                      className="mt-3 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition focus:border-sky-300"
+                    />
+                    <button
+                      onClick={() => { void addIcecatItems(); }}
+                      aria-disabled={icecatLoading}
+                      className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                        icecatLoading
+                          ? "cursor-not-allowed bg-sky-300/60 text-white/80"
+                          : "bg-sky-500 text-white hover:bg-sky-400"
+                      }`}
+                    >
+                      {icecatLoading ? copy.icecat.adding : copy.icecat.add}
+                    </button>
+                  </div>
+
+                  {icecatError && (
+                    <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-3 py-3 text-sm text-rose-100">
+                      {icecatError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div className="text-sm font-semibold text-white">
+                      {selectedCount} {copy.selected}
+                    </div>
+                    <button
+                      onClick={() =>
+                        setIcecatSelectedKeys((current) =>
+                          toggleVisibleImportSelection(current, visibleIcecatSelectionKeys)
+                        )
+                      }
+                      className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200 transition hover:text-white"
+                    >
+                      {everyVisibleSelected ? copy.clearPage : copy.selectPage}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 max-h-[500px] overflow-y-auto space-y-3">
+                    {icecatItems.length === 0 ? (
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-8 text-center text-sm text-slate-300">
+                        {copy.icecat.empty}
+                      </div>
+                    ) : (
+                      icecatItems.map((item) => {
+                        const itemKey = getImportItemKey("icecat", item);
+                        const selected = icecatSelectedKeys.has(itemKey);
+
+                        return (
+                          <label
+                            key={itemKey}
+                            className={`flex cursor-pointer gap-3 rounded-2xl border px-4 py-3 transition ${
+                              selected
+                                ? "border-sky-400/30 bg-sky-500/10"
+                                : "border-white/10 bg-slate-950/60 hover:bg-slate-900/70"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleIcecatItem(item)}
+                              className="mt-1 h-4 w-4 rounded accent-sky-500"
+                            />
+                            <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-white/10 bg-slate-900">
+                              {item.images?.[0] ? (
+                                <UnoptimizedRemoteImage
+                                  src={item.images[0]}
+                                  alt={item.title || "Icecat"}
+                                  sizes="64px"
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full items-center justify-center text-sky-300">I</div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-white">
+                                {item.title || `Icecat ${item.ean}`}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-300">
+                                {item.brand && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+                                    {item.brand}
+                                  </span>
+                                )}
+                                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 font-mono">
+                                  EAN {item.ean}
+                                </span>
+                                {item.categoryPath && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+                                    {item.categoryPath}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

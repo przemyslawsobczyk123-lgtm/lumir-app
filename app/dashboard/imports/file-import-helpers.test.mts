@@ -28,20 +28,22 @@ test("import destinations expose file marketplaces before remote marketplaces", 
     "empik",
     "custom",
     "allegro",
+    "icecat",
     "amazon",
   ]);
   assert.equal(getImportDestination("empik")?.kind, "file");
   assert.equal(getImportDestination("custom")?.label, "W\u0142asny plik");
+  assert.equal(getImportDestination("icecat")?.kind, "remote");
   assert.equal(getImportDestination("amazon")?.kind, "remote");
 });
 
 test("visible import destinations hide Amazon by default for MVP", () => {
   assert.deepEqual(
     getVisibleImportDestinations(false).map((item) => item.id),
-    ["mediaexpert", "empik", "custom", "allegro"]
+    ["mediaexpert", "empik", "custom", "allegro", "icecat"]
   );
   assert.deepEqual(
     getVisibleImportDestinations(true).map((item) => item.id),
-    ["mediaexpert", "empik", "custom", "allegro", "amazon"]
+    ["mediaexpert", "empik", "custom", "allegro", "icecat", "amazon"]
   );
 });

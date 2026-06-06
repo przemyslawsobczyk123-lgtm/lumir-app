@@ -5,6 +5,7 @@ import {
   canAutoAssignCategory,
   createProductExportBatchGroups,
   findProductExportCategoryGroup,
+  filterSupportedSalesChannels,
   filterProductsByListingFocus,
   getExportableProductIds,
   getProductExportBatchSummary,
@@ -18,6 +19,7 @@ import {
   getProductListingStats,
   getProductListingState,
   hasActiveProductFilters,
+  isSupportedSalesChannelSlug,
   parseProductIntegrations,
   updateProductExportBatchGroup,
 } from "./ui-helpers.ts";
@@ -28,6 +30,10 @@ test("hasActiveProductFilters returns true when search text exists", () => {
 
 test("hasActiveProductFilters returns true when marketplace filter exists", () => {
   assert.equal(hasActiveProductFilters("", "", "empik"), true);
+});
+
+test("hasActiveProductFilters returns true when source filter exists", () => {
+  assert.equal(hasActiveProductFilters("", "", "", "all", "", "icecat"), true);
 });
 
 test("hasActiveProductFilters returns false when all filters are empty", () => {
@@ -45,15 +51,20 @@ test("getActiveProductFilterSummary describes active filters for transparent too
         search: "lampa",
         statusFilter: "needs_review",
         marketplaceFilter: "mediaexpert",
+        marketplaceCategoryFilter: "RTV/Oswietlenie",
+        sourceFilter: "icecat",
         listingFocus: "blocked",
       },
       {
         search: "Szukasz",
         status: "Status",
         marketplace: "Kanal",
+        marketplaceCategory: "Kategoria",
+        source: "Zrodlo",
         focus: "Etap",
         statusLabels: { needs_review: "Do sprawdzenia" },
         marketplaceLabels: { mediaexpert: "Media Expert" },
+        sourceLabels: { icecat: "Icecat" },
         focusLabels: { blocked: "Zablokowane" },
       }
     ),
@@ -62,8 +73,15 @@ test("getActiveProductFilterSummary describes active filters for transparent too
       { key: "focus", label: "Etap", value: "Zablokowane" },
       { key: "status", label: "Status", value: "Do sprawdzenia" },
       { key: "marketplace", label: "Kanal", value: "Media Expert" },
+      { key: "marketplaceCategory", label: "Kategoria", value: "RTV/Oswietlenie" },
+      { key: "source", label: "Zrodlo", value: "Icecat" },
     ]
   );
+});
+
+test("marketplace category filter counts as active only with channel selected", () => {
+  assert.equal(hasActiveProductFilters("", "", "", "all", "RTV/Oswietlenie"), false);
+  assert.equal(hasActiveProductFilters("", "", "mediaexpert", "all", "RTV/Oswietlenie"), true);
 });
 
 test("getProductListingBadgeKind maps listing state to user-facing issue kind", () => {
@@ -106,6 +124,53 @@ test("parseProductIntegrations decodes compact integrations payload", () => {
     [
       { slug: "empik", name: "Empik", missing: 0, categoryPath: "Dom/Ksiazki" },
       { slug: "mediaexpert", name: "Media Expert", missing: 2, categoryPath: "Elektronika/Audio" },
+    ]
+  );
+});
+
+test("parseProductIntegrations hides unsupported legacy sales channels", () => {
+  assert.deepEqual(
+    parseProductIntegrations(
+      [
+        "decathlon\x01Decathlon\x010\x01Sport",
+        "rtveuroagd\x01RTV Euro AGD\x010\x01RTV",
+        "xkom\x01X-Kom\x011\x01Komputery",
+        "allegro\x01Allegro\x010\x01Dom",
+        "empik\x01Empik\x012\x01Ksiazki",
+        "mediaexpert\x01Media Expert\x010\x01AGD",
+      ].join("|||")
+    ),
+    [
+      { slug: "allegro", name: "Allegro", missing: 0, categoryPath: "Dom" },
+      { slug: "empik", name: "Empik", missing: 2, categoryPath: "Ksiazki" },
+      { slug: "mediaexpert", name: "Media Expert", missing: 0, categoryPath: "AGD" },
+    ]
+  );
+});
+
+test("sales channel filter allows only Allegro Empik and Media Expert", () => {
+  assert.equal(isSupportedSalesChannelSlug("allegro"), true);
+  assert.equal(isSupportedSalesChannelSlug("empik"), true);
+  assert.equal(isSupportedSalesChannelSlug("mediaexpert"), true);
+  assert.equal(isSupportedSalesChannelSlug("decathlon"), false);
+  assert.equal(isSupportedSalesChannelSlug("xkom"), false);
+  assert.equal(isSupportedSalesChannelSlug("rtveuroagd"), false);
+
+  assert.deepEqual(
+    filterSupportedSalesChannels(
+      [
+        { slug: "decathlon", name: "Decathlon" },
+        { slug: "allegro", name: "Allegro" },
+        { slug: "xkom", name: "X-Kom" },
+        { slug: "empik", name: "Empik" },
+        { slug: "mediaexpert", name: "Media Expert" },
+      ],
+      (item) => item.slug
+    ),
+    [
+      { slug: "allegro", name: "Allegro" },
+      { slug: "empik", name: "Empik" },
+      { slug: "mediaexpert", name: "Media Expert" },
     ]
   );
 });

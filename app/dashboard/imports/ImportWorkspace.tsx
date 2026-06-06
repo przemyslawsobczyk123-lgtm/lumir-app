@@ -218,7 +218,7 @@ function isImportJobType(job: JobSummary) {
 
 function normalizeImportProvider(value: unknown): ImportLaunchProvider | null {
   const provider = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (provider === "allegro" || provider === "amazon" || provider === "mediaexpert" || provider === "empik" || provider === "custom") {
+  if (provider === "allegro" || provider === "icecat" || provider === "amazon" || provider === "mediaexpert" || provider === "empik" || provider === "custom") {
     return provider;
   }
   return null;
@@ -718,7 +718,7 @@ export function ImportWorkspace() {
         />
       )}
 
-      {(importChoice === "allegro" || importChoice === "amazon") && (
+      {(importChoice === "allegro" || importChoice === "icecat" || importChoice === "amazon") && (
         <MarketplaceSourceImportModal
           initialProvider={importChoice}
           onClose={() => setImportChoice(null)}
