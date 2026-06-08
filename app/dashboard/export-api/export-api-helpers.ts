@@ -406,6 +406,8 @@ const DIAGNOSTIC_LABELS: Record<string, string> = {
   minimum_image_count: "Za malo zdjec",
   delivery_confirmed: "Dostawa wymaga potwierdzenia",
   margin_confirmed: "Marza wymaga potwierdzenia",
+  price_confirmed: "Potwierdz aktualna cene przed publikacja",
+  price_valid: "Cena produktu jest niepoprawna",
 };
 
 export function normalizeDiagnosticLabel(value: unknown) {

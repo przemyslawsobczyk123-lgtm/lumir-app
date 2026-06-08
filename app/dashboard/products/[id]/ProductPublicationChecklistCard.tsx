@@ -1,6 +1,9 @@
 "use client";
 
-import type { PublicationChecklist } from "./review-checklist-helpers";
+import {
+  getPublicationChecklistBlockerLabels,
+  type PublicationChecklist,
+} from "./review-checklist-helpers";
 
 const STATUS_STYLES: Record<string, string> = {
   pass: "border-emerald-300 bg-emerald-500/10 text-emerald-200",
@@ -29,6 +32,7 @@ export function ProductPublicationChecklistCard({
   const progressRatio = checklist.progress.total > 0
     ? Math.max(0, Math.min(100, (checklist.progress.completed / checklist.progress.total) * 100))
     : 0;
+  const blockerLabels = getPublicationChecklistBlockerLabels(checklist);
 
   return (
     <div className="rounded-2xl border p-5 space-y-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-default)" }}>
@@ -49,9 +53,9 @@ export function ProductPublicationChecklistCard({
         <div className="h-2 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-300" style={{ width: `${progressRatio}%` }} />
         </div>
-        {checklist.blockingItems.length > 0 ? (
+        {blockerLabels.length > 0 ? (
           <div className="text-xs text-rose-200">
-            Blokery: {checklist.blockingItems.join(", ")}
+            Blokery: {blockerLabels.join(", ")}
           </div>
         ) : (
           <div className="text-xs text-emerald-200">Brak aktywnych blockerów checklisty.</div>

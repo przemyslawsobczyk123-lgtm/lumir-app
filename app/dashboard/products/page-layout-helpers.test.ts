@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -29,4 +30,18 @@ test("product page size options stay bounded for large seller catalogs", () => {
   assert.equal(normalizeProductPageSize(250), 250);
   assert.equal(normalizeProductPageSize(999), 500);
   assert.equal(normalizeProductPageSize(0), 100);
+});
+
+test("product rows render one simple status and no duplicate status badges", () => {
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const statusMarkers = source.match(/data-product-state=/g) ?? [];
+
+  assert.equal(statusMarkers.length, 2);
+  assert.doesNotMatch(source, /importedBadgeMeta/);
+  assert.doesNotMatch(source, /aiBadgeMeta/);
+  assert.doesNotMatch(source, /listingIssue/);
+  assert.doesNotMatch(source, /badgeStatusPrefix/);
+  assert.doesNotMatch(source, /STATUS_FILTER/);
+  assert.doesNotMatch(source, /const \[statusFilter|setStatusFilter/);
+  assert.doesNotMatch(source, /\{ focus: "review" as const/);
 });

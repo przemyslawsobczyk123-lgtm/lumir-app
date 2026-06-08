@@ -4,6 +4,7 @@ const SUPPORTED_SALES_CHANNELS = new Set<string>(SUPPORTED_SALES_CHANNEL_SLUGS);
 const AUTO_ASSIGN_MARKETPLACES = new Set(["mediaexpert", "empik"]);
 
 export type ProductListingFocus = "all" | "ready" | "review" | "blocked";
+export type SimpleProductStatus = "new" | "pending" | "ready";
 export type ProductIntegration = { slug: string; name: string; missing: number; categoryPath: string };
 export type ProductExportPreflightRow = {
   id: number;
@@ -165,6 +166,22 @@ export function parseProductIntegrations(raw: string | null): ProductIntegration
       categoryPath: parts[3] ?? "",
     };
   }).filter((integration) => isSupportedSalesChannelSlug(integration.slug));
+}
+
+export function getVisibleProductIntegrations(raw: string | null) {
+  return parseProductIntegrations(raw).filter((integration) => integration.categoryPath.trim().length > 0);
+}
+
+export function getSimpleProductStatus(
+  input: ProductListingInput & { isImported: boolean }
+): SimpleProductStatus {
+  const integrations = getVisibleProductIntegrations(input.integrations);
+  if (!integrations.length) return input.isImported ? "pending" : "new";
+  if (input.status === "needs_review") return "pending";
+  if (integrations.some((integration) => integration.missing > 0)) {
+    return "pending";
+  }
+  return "ready";
 }
 
 export function getProductListingState(input: ProductListingInput) {

@@ -18,6 +18,8 @@ import {
   getProductListingBadgeKind,
   getProductListingStats,
   getProductListingState,
+  getSimpleProductStatus,
+  getVisibleProductIntegrations,
   hasActiveProductFilters,
   isSupportedSalesChannelSlug,
   parseProductIntegrations,
@@ -125,6 +127,52 @@ test("parseProductIntegrations decodes compact integrations payload", () => {
       { slug: "empik", name: "Empik", missing: 0, categoryPath: "Dom/Ksiazki" },
       { slug: "mediaexpert", name: "Media Expert", missing: 2, categoryPath: "Elektronika/Audio" },
     ]
+  );
+});
+
+test("getVisibleProductIntegrations hides marketplaces without selected category", () => {
+  assert.deepEqual(
+    getVisibleProductIntegrations(
+      "allegro\x01Allegro\x010\x01|||empik\x01Empik\x012\x01Ksiazki|||mediaexpert\x01Media Expert\x010\x01   "
+    ),
+    [
+      { slug: "empik", name: "Empik", missing: 2, categoryPath: "Ksiazki" },
+    ]
+  );
+});
+
+test("getSimpleProductStatus returns one simple state", () => {
+  assert.equal(
+    getSimpleProductStatus({ status: "pending", integrations: null, isImported: false }),
+    "new"
+  );
+  assert.equal(
+    getSimpleProductStatus({ status: "pending", integrations: null, isImported: true }),
+    "pending"
+  );
+  assert.equal(
+    getSimpleProductStatus({
+      status: "mapped",
+      integrations: "empik\x01Empik\x010\x01Ksiazki|||mediaexpert\x01Media Expert\x010\x01RTV",
+      isImported: true,
+    }),
+    "ready"
+  );
+  assert.equal(
+    getSimpleProductStatus({
+      status: "mapped",
+      integrations: "empik\x01Empik\x010\x01Ksiazki|||mediaexpert\x01Media Expert\x010\x01",
+      isImported: true,
+    }),
+    "ready"
+  );
+  assert.equal(
+    getSimpleProductStatus({
+      status: "needs_review",
+      integrations: "empik\x01Empik\x010\x01Ksiazki",
+      isImported: false,
+    }),
+    "pending"
   );
 });
 

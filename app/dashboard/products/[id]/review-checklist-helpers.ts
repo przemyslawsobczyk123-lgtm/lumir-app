@@ -39,6 +39,43 @@ export type PublicationChecklist = {
   items: PublicationChecklistItem[];
 };
 
+export function normalizeProductPriceInput(value: unknown) {
+  if (value == null || String(value).trim() === "") return null;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
+    return Math.abs(value - rounded) < 1e-9 ? rounded : null;
+  }
+
+  const raw = String(value).trim().replace(/\s*PLN$/i, "").trim();
+  let normalized = "";
+  if (/^\d{1,3}(?:[ .]\d{3})+,\d{1,2}$/.test(raw)) {
+    normalized = raw.replace(/[ .]/g, "").replace(",", ".");
+  } else if (/^\d+,\d{1,2}$/.test(raw)) {
+    normalized = raw.replace(",", ".");
+  } else if (/^\d+(?:\.\d{1,2})?$/.test(raw)) {
+    normalized = raw;
+  } else {
+    return null;
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  const rounded = Math.round((parsed + Number.EPSILON) * 100) / 100;
+  return rounded > 0 ? rounded : null;
+}
+
+export function hasProductPriceChanged(initialValue: unknown, currentValue: unknown) {
+  const initialPrice = normalizeProductPriceInput(initialValue);
+  const currentPrice = normalizeProductPriceInput(currentValue);
+  if (initialPrice == null || currentPrice == null) return initialPrice !== currentPrice;
+  return Math.round(initialPrice * 100) !== Math.round(currentPrice * 100);
+}
+
+export function getPublicationChecklistBlockerLabels(checklist: PublicationChecklist) {
+  const labels = new Map(checklist.items.map((item) => [item.key, item.label]));
+  return checklist.blockingItems.map((key) => labels.get(key) || key);
+}
+
 function toNumber(value: unknown, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {

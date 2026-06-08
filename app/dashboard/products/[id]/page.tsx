@@ -19,7 +19,9 @@ import { ProductAiReviewCard } from "./ProductAiReviewCard";
 import { ProductPublicationChecklistCard } from "./ProductPublicationChecklistCard";
 import { AmazonFoundationCard } from "./AmazonFoundationCard";
 import {
+  hasProductPriceChanged,
   normalizeProductAiReview,
+  normalizeProductPriceInput,
   normalizePublicationChecklist,
   type ProductAiReview,
   type PublicationChecklist,
@@ -361,6 +363,7 @@ export default function EditProductPage() {
   const [tags,  setTags]  = useState("");
 
   const [price, setPrice] = useState("");
+  const initialPriceRef = useRef("");
   const [stock, setStock] = useState("0");
 
   // Parametry techniczne
@@ -529,7 +532,9 @@ export default function EditProductPage() {
           setAsin(p.asin || "");
           setBrand(p.brand || "");
           setTags(p.tags || "");
-          setPrice(p.price != null ? String(p.price) : "");
+          const loadedPrice = p.price != null ? String(p.price) : "";
+          setPrice(loadedPrice);
+          initialPriceRef.current = loadedPrice;
           setStock(p.stock != null ? String(p.stock) : "0");
           setWeightKg(p.weight_kg != null ? String(p.weight_kg) : "");
           setHeightCm(p.height_cm != null ? String(p.height_cm) : "");
@@ -660,22 +665,38 @@ export default function EditProductPage() {
   }, []);
 
   const toggleChecklistItem = useCallback(async (itemKey: string, checked: boolean) => {
+    const expectedPrice = itemKey === "price_confirmed" && checked
+      ? normalizeProductPriceInput(price)
+      : null;
+    if (itemKey === "price_confirmed" && checked && expectedPrice == null) {
+      setError("Podaj poprawna dodatnia cene z maksymalnie dwoma miejscami po przecinku.");
+      return;
+    }
+
     setChecklistToggleBusyKey(itemKey);
     try {
       const res = await fetch(`${API}/api/seller/allegro/checklist/items/${itemKey}/toggle`, {
         method: "POST",
         headers: authHeaders(true),
-        body: JSON.stringify({ productId: Number(id), checked }),
+        body: JSON.stringify({
+          productId: Number(id),
+          checked,
+          ...(expectedPrice != null ? { expectedPrice } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Nie udało się zapisać checklisty");
       await loadAllegroChecklist();
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Nie udało się zapisać checklisty"));
+      if (itemKey === "price_confirmed") {
+        await loadProduct(true);
+        await loadAllegroChecklist();
+      }
     } finally {
       setChecklistToggleBusyKey(null);
     }
-  }, [id, loadAllegroChecklist]);
+  }, [id, loadAllegroChecklist, loadProduct, price]);
 
   const handleAmazonSuggest = useCallback(async () => {
     if (!AMAZON_UI_ENABLED) return;
@@ -1004,6 +1025,12 @@ export default function EditProductPage() {
 
   const handleSave = async () => {
     if (!title.trim()) { setError("Podaj nazwę produktu"); setTab("produkt"); return; }
+    const normalizedPrice = normalizeProductPriceInput(price);
+    if (normalizedPrice == null) {
+      setError("Podaj poprawną dodatnią cenę, np. 999,99");
+      setTab("produkt");
+      return;
+    }
     const eanAttributeError = getFirstInvalidMarketplaceEanAttribute({
       marketplaceSlug: attrMp,
       fields: attrFields,
@@ -1021,7 +1048,7 @@ export default function EditProductPage() {
         method: "PUT", headers: authHeaders(true),
         body: JSON.stringify({
           title, ean, sku, asin, brand, tags,
-          price: price ? parseFloat(price) : null,
+          price: normalizedPrice,
           stock: stock ? parseInt(stock) : 0,
           weight_kg: weightKg ? parseFloat(weightKg) : null,
           height_cm: heightCm ? parseFloat(heightCm) : null,
@@ -1035,12 +1062,14 @@ export default function EditProductPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Błąd zapisu");
+      initialPriceRef.current = normalizedPrice == null ? "" : String(normalizedPrice);
       setSaved(true);
       setTimeout(() => router.push("/dashboard/products"), 700);
     } catch (e: unknown) { setError(getErrorMessage(e, "Błąd zapisu")); }
     finally { setSaving(false); }
   };
 
+  const priceChanged = hasProductPriceChanged(initialPriceRef.current, price);
 
   return (
     <div className="max-w-[900px] mx-auto pb-24">
@@ -1144,11 +1173,16 @@ export default function EditProductPage() {
               <div>
                 <Label>Cena (PLN)</Label>
                 <div className="flex">
-                  <Inp type="number" step="0.01" min="0" value={price}
+                  <Inp type="text" inputMode="decimal" value={price}
                     onChange={e => setPrice(e.target.value)} placeholder="0.00"
                     className="!rounded-r-none !border-r-0" />
                   <span className="flex items-center px-3 bg-slate-100 border-2 border-slate-200 border-l-0 rounded-r-xl text-xs text-slate-500 font-medium">PLN</span>
                 </div>
+                {priceChanged ? (
+                  <p className="mt-2 text-xs text-amber-300">
+                    Cena została zmieniona. Po zapisie potwierdź ją ponownie w checkliście Allegro.
+                  </p>
+                ) : null}
               </div>
               <div>
                 <Label>Stan magazynowy</Label>

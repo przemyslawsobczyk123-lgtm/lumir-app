@@ -15,16 +15,16 @@ import {
   getProductExportCategoryGroups,
   getProductExportPreflight,
   getProductExportSummary,
-  getProductListingBadgeKind,
-  getProductListingState,
   getRetryableProductExportGroups,
+  getSimpleProductStatus,
+  getVisibleProductIntegrations,
   hasActiveProductFilters,
-  parseProductIntegrations,
   updateProductExportBatchGroup,
   type ProductExportBatchGroup,
   type ProductExportCategoryGroup,
   type ProductListingFocus,
   type ProductExportPreflightRow,
+  type SimpleProductStatus,
 } from "./ui-helpers";
 import { buildExportApiHref } from "../export-api/export-api-helpers";
 import {
@@ -36,7 +36,6 @@ import {
 } from "./page-layout-helpers";
 import {
   extractBulkReportItemState,
-  normalizeListAIDraftBadge,
   type AIDraftStatus,
   type BulkReportItemState,
 } from "./ai-draft-helpers";
@@ -189,21 +188,6 @@ const EMPTY_PRODUCT_LISTING_STATS: ProductListingStats = {
   unmapped: 0,
   attributesMissing: 0,
 };
-const STATUS_META_KEYS = {
-  pending: "statusPending",
-  mapped: "statusMapped",
-  needs_review: "statusNeedsReview",
-  exported: "statusExported",
-} as const;
-type ProductStatusTranslationKeys =
-  | (typeof STATUS_META_KEYS)[keyof typeof STATUS_META_KEYS]
-  | "statusUnknown";
-
-function getStatusLabel(t: Record<ProductStatusTranslationKeys, string>, status: string) {
-  const key = STATUS_META_KEYS[status as keyof typeof STATUS_META_KEYS];
-  return key ? t[key] : t.statusUnknown;
-}
-
 function normalizeProductListingStats(value: unknown): ProductListingStats {
   const input = typeof value === "object" && value !== null ? value as Partial<Record<keyof ProductListingStats, unknown>> : {};
   return {
@@ -219,10 +203,9 @@ function normalizeProductListingStats(value: unknown): ProductListingStats {
 const PRODUCTS_PAGE_COPY = {
   pl: {
     filterPanelTitle: "Filtry listy",
-    filterPanelHint: "Wybierz etap pracy, status i kanal. Aktywne filtry widac od razu nizej.",
+    filterPanelHint: "Wybierz etap pracy i kanal. Aktywne filtry widac od razu nizej.",
     filterSearchLabel: "Szukaj produktu",
     filterStageLabel: "Etap pracy",
-    filterStatusLabel: "Status produktu",
     filterMarketplaceLabel: "Kanal sprzedazy",
     filterMarketplaceAll: "Wszystkie kanaly",
     filterSourceLabel: "Zrodlo importu",
@@ -230,23 +213,19 @@ const PRODUCTS_PAGE_COPY = {
     filterSourceIcecat: "Icecat",
     filterMarketplaceCategoryLabel: "Kategoria",
     filterMarketplaceCategoryAll: "Wszystkie kategorie",
-    statusFilterAll: "Kazdy status",
-    statusFilterMapped: "Gotowe",
-    statusFilterPending: "Oczekuje na dane",
-    statusFilterReview: "Do sprawdzenia",
-    statusFilterExported: "Wyeksportowane",
     filterActiveSearch: "Szukasz",
     filterActiveFocus: "Etap",
-    filterActiveStatus: "Status",
     filterActiveMarketplace: "Kanal",
     filterActiveMarketplaceCategory: "Kategoria",
     filterActiveSource: "Zrodlo",
-    badgeStatusPrefix: "Status",
     badgeBrandPrefix: "Marka",
+    simpleStatusNew: "Nowy produkt",
+    simpleStatusPending: "Oczekuje",
+    simpleStatusReady: "Gotowe do eksportu",
     marketplaceReady: "gotowe",
-    marketplaceMissing: "brak {count}",
+    marketplacePending: "oczekuje",
     marketplaceReadyTitle: "Komplet wymaganych atrybutow w tym kanale.",
-    marketplaceMissingTitle: "Brakuje {count} atrybutow w tym kanale.",
+    marketplacePendingTitle: "Brakuje danych wymaganych do eksportu w tym kanale.",
     pageSizeLabel: "Na stronie",
     pageJumpLabel: "Idz do strony",
     pageJumpButton: "Idz",
@@ -254,19 +233,13 @@ const PRODUCTS_PAGE_COPY = {
     focusAll: "Wszystkie",
     focusReady: "Gotowe do eksportu",
     focusReview: "Do sprawdzenia",
-    focusBlocked: "Zablokowane",
+    focusBlocked: "Oczekuje",
     focusAllHint: "pelna lista po filtrach",
-    focusReadyHint: "maja min. 1 gotowy kanal",
+    focusReadyHint: "wszystkie przypisane kanaly sa kompletne",
     focusReviewHint: "czekaja na decyzje",
-    focusBlockedHint: "brakuje kanalu lub atrybutow",
-    blockedMixHint: "bez kanalu: {unmapped} / braki atrybutow: {attributes}",
+    focusBlockedHint: "brakuje kategorii, opisu, zdjecia lub atrybutow",
     focusEmpty: "Brak pozycji dla wybranego etapu.",
     focusReset: "Pokaz wszystko",
-    issueReady: "Gotowy do wysylki",
-    issuePartial: "Czesciowo gotowy",
-    issueReview: "Wymaga sprawdzenia",
-    issueUnmapped: "Nie przypisano kanalu",
-    issueMissingAttrs: "Uzupelnij atrybuty",
     exportPreflightTitle: "Preflight eksportu",
     exportPreflightDesc: "Przed eksportem sprawdzam, co jest gotowe dla wybranego marketplace.",
     exportPreflightReady: "Gotowe",
@@ -302,10 +275,9 @@ const PRODUCTS_PAGE_COPY = {
   },
   en: {
     filterPanelTitle: "List filters",
-    filterPanelHint: "Choose workflow stage, status, and channel. Active filters stay visible below.",
+    filterPanelHint: "Choose workflow stage and channel. Active filters stay visible below.",
     filterSearchLabel: "Search product",
     filterStageLabel: "Workflow stage",
-    filterStatusLabel: "Product status",
     filterMarketplaceLabel: "Sales channel",
     filterMarketplaceAll: "All channels",
     filterSourceLabel: "Import source",
@@ -313,23 +285,19 @@ const PRODUCTS_PAGE_COPY = {
     filterSourceIcecat: "Icecat",
     filterMarketplaceCategoryLabel: "Category",
     filterMarketplaceCategoryAll: "All categories",
-    statusFilterAll: "Any status",
-    statusFilterMapped: "Ready",
-    statusFilterPending: "Waiting for data",
-    statusFilterReview: "Needs check",
-    statusFilterExported: "Exported",
     filterActiveSearch: "Search",
     filterActiveFocus: "Stage",
-    filterActiveStatus: "Status",
     filterActiveMarketplace: "Channel",
     filterActiveMarketplaceCategory: "Category",
     filterActiveSource: "Source",
-    badgeStatusPrefix: "Status",
     badgeBrandPrefix: "Brand",
+    simpleStatusNew: "New product",
+    simpleStatusPending: "Waiting",
+    simpleStatusReady: "Ready to export",
     marketplaceReady: "ready",
-    marketplaceMissing: "missing {count}",
+    marketplacePending: "waiting",
     marketplaceReadyTitle: "All required attributes are filled for this channel.",
-    marketplaceMissingTitle: "Missing {count} attributes for this channel.",
+    marketplacePendingTitle: "Required export data is still missing for this channel.",
     pageSizeLabel: "Per page",
     pageJumpLabel: "Go to page",
     pageJumpButton: "Go",
@@ -337,19 +305,13 @@ const PRODUCTS_PAGE_COPY = {
     focusAll: "All",
     focusReady: "Ready to export",
     focusReview: "Needs check",
-    focusBlocked: "Blocked",
+    focusBlocked: "Waiting",
     focusAllHint: "full list after filters",
-    focusReadyHint: "have at least 1 ready channel",
+    focusReadyHint: "all assigned channels are complete",
     focusReviewHint: "need manual check",
-    focusBlockedHint: "missing channel or attributes",
-    blockedMixHint: "no channel: {unmapped} / attr gaps: {attributes}",
+    focusBlockedHint: "category, description, image, or attributes are missing",
     focusEmpty: "No rows for selected stage.",
     focusReset: "Show all",
-    issueReady: "Ready to send",
-    issuePartial: "Partially ready",
-    issueReview: "Needs check",
-    issueUnmapped: "No channel assigned",
-    issueMissingAttrs: "Fill attributes",
     exportPreflightTitle: "Export preflight",
     exportPreflightDesc: "Before export, check what is ready for the selected marketplace.",
     exportPreflightReady: "Ready",
@@ -416,32 +378,22 @@ const PRODUCTS_AI_COPY = {
   },
 } as const;
 
-function getListingIssueMeta(
+function getSimpleProductStatusMeta(
   lang: keyof typeof PRODUCTS_PAGE_COPY,
-  state: ReturnType<typeof getProductListingState>
+  status: SimpleProductStatus
 ) {
   const copy = PRODUCTS_PAGE_COPY[lang];
-  const kind = getProductListingBadgeKind(state);
-
-  if (kind === "review") {
-    return { label: copy.issueReview, className: "border-rose-200 bg-rose-50 text-rose-700" };
+  if (status === "ready") {
+    return { label: copy.simpleStatusReady, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
   }
-  if (kind === "unmapped") {
-    return { label: copy.issueUnmapped, className: "border-slate-200 bg-slate-100 text-slate-700" };
+  if (status === "new") {
+    return { label: copy.simpleStatusNew, className: "border-sky-200 bg-sky-50 text-sky-700" };
   }
-  if (kind === "attributes") {
-    return { label: copy.issueMissingAttrs, className: "border-amber-200 bg-amber-50 text-amber-700" };
-  }
-  if (kind === "partial") {
-    return { label: copy.issuePartial, className: "border-sky-200 bg-sky-50 text-sky-700" };
-  }
-  return { label: copy.issueReady, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  return { label: copy.simpleStatusPending, className: "border-amber-200 bg-amber-50 text-amber-700" };
 }
 
 function getMarketplaceIntegrationMeta(lang: keyof typeof PRODUCTS_PAGE_COPY, name: string, missing: number) {
   const copy = PRODUCTS_PAGE_COPY[lang];
-  const count = String(missing);
-
   if (missing === 0) {
     return {
       label: `${name}: ${copy.marketplaceReady}`,
@@ -450,69 +402,8 @@ function getMarketplaceIntegrationMeta(lang: keyof typeof PRODUCTS_PAGE_COPY, na
   }
 
   return {
-    label: `${name}: ${copy.marketplaceMissing.replace("{count}", count)}`,
-    title: copy.marketplaceMissingTitle.replace("{count}", count),
-  };
-}
-
-function getAIDraftBadgeMeta(
-  lang: keyof typeof PRODUCTS_AI_COPY,
-  status: AIDraftStatus | "queued" | "processing"
-) {
-  const copy = PRODUCTS_AI_COPY[lang];
-
-  if (status === "queued") {
-    return {
-      label: copy.queued,
-      className: "border-sky-200 bg-sky-50 text-sky-700",
-    };
-  }
-
-  if (status === "processing") {
-    return {
-      label: copy.processing,
-      className: "border-indigo-200 bg-indigo-50 text-indigo-700",
-    };
-  }
-
-  if (status === "ready") {
-    return {
-      label: copy.ready,
-      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    };
-  }
-
-  if (status === "review") {
-    return {
-      label: copy.review,
-      className: "border-amber-200 bg-amber-50 text-amber-700",
-    };
-  }
-
-  return {
-    label: copy.blocked,
-    className: "border-slate-200 bg-slate-100 text-slate-700",
-  };
-}
-
-function getImportedBadgeMeta(provider: string | null) {
-  if (provider === "amazon") {
-    return {
-      label: "Imported",
-      className: "border-orange-200 bg-orange-50 text-orange-700",
-    };
-  }
-
-  if (provider === "allegro") {
-    return {
-      label: "Imported",
-      className: "border-indigo-200 bg-indigo-50 text-indigo-700",
-    };
-  }
-
-  return {
-    label: "Imported",
-    className: "border-slate-200 bg-slate-100 text-slate-700",
+    label: `${name}: ${copy.marketplacePending}`,
+    title: copy.marketplacePendingTitle,
   };
 }
 
@@ -721,11 +612,6 @@ function formatDurationLabel(seconds: number | null | undefined) {
 const DEFAULT_PAGE_SIZE: ProductPageSize = 100;
 
 // Parsuj integracje z formatu "slug\x01name\x01missingCount|||..."
-type Integration = { slug: string; name: string; missing: number };
-function parseIntegrations(raw: string | null): Integration[] {
-  return parseProductIntegrations(raw);
-}
-
 // ── Confirm delete modal ──────────────────────────────────────────
 function ConfirmDeleteModal({ count, onConfirm, onCancel, loading }: {
   count: number; onConfirm: () => void; onCancel: () => void; loading: boolean;
@@ -1486,21 +1372,12 @@ export default function ProductsPage() {
   const t = translations[lang].products;
   const pageCopy = PRODUCTS_PAGE_COPY[lang];
 
-  const STATUS_FILTER = [
-    { value: "",             label: pageCopy.statusFilterAll      },
-    { value: "mapped",       label: pageCopy.statusFilterMapped   },
-    { value: "pending",      label: pageCopy.statusFilterPending  },
-    { value: "needs_review", label: pageCopy.statusFilterReview   },
-    { value: "exported",     label: pageCopy.statusFilterExported },
-  ];
-
   const [products, setProducts]           = useState<Product[]>([]);
   const [total, setTotal]                 = useState(0);
   const [listingStats, setListingStats]   = useState<ProductListingStats>(EMPTY_PRODUCT_LISTING_STATS);
   const [loading, setLoading]             = useState(true);
   const [listError, setListError]         = useState<string | null>(null);
   const [search, setSearch]               = useState("");
-  const [statusFilter, setStatusFilter]   = useState("");
   const [mpFilter, setMpFilter]           = useState("");
   const [mpCategoryFilter, setMpCategoryFilter] = useState("");
   const [sourceFilter, setSourceFilter]   = useState("");
@@ -1530,7 +1407,6 @@ export default function ProductsPage() {
   const loadProducts = useCallback(async (
     s: string,
     p: number,
-    st: string,
     mp: string,
     category: string,
     source: string,
@@ -1544,7 +1420,6 @@ export default function ProductsPage() {
         search: s,
         page: String(p),
         limit: String(limit),
-        status: st,
         marketplace: mp,
         source,
         listingFocus: focus,
@@ -1649,10 +1524,10 @@ export default function ProductsPage() {
       const report = buildCompletedBulkReport(job, items);
       setCompletedBulkReport(report);
       setShowBulkAI(false);
-      await loadProducts(search, page, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
+      await loadProducts(search, page, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
       setSelected(new Set(report.failedProductIds));
     })();
-  }, [listingFocus, loadJobItems, loadProducts, mpCategoryFilter, mpFilter, page, pageSize, search, sourceFilter, statusFilter]);
+  }, [listingFocus, loadJobItems, loadProducts, mpCategoryFilter, mpFilter, page, pageSize, search, sourceFilter]);
 
   useEffect(() => {
     fetch(`${API}/api/templates/marketplaces`, { headers: authHeaders() })
@@ -1682,10 +1557,10 @@ export default function ProductsPage() {
       setPageJump("");
       setSelected(new Set());
       setSplitSelectionGroups([]);
-      loadProducts(search, 1, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
+      loadProducts(search, 1, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
     }, 300);
     return () => clearTimeout(timeout);
-  }, [listingFocus, loadProducts, search, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, pageSize]);
+  }, [listingFocus, loadProducts, search, mpFilter, mpCategoryFilter, sourceFilter, pageSize]);
 
   useEffect(() => {
     const handler = () => setOpenMenu(null);
@@ -1827,7 +1702,7 @@ export default function ProductsPage() {
       }
       setShowExportPreflight(false);
       await Promise.all([
-        loadProducts(search, page, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize),
+        loadProducts(search, page, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize),
       ]);
       return { ok: true };
     } catch (err: unknown) {
@@ -1861,7 +1736,7 @@ export default function ProductsPage() {
       setExportBatchGroups([]);
       setShowDeleteConfirm(false);
       await Promise.all([
-        loadProducts(search, page, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize),
+        loadProducts(search, page, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize),
         loadActiveBackgroundJobs(),
       ]);
     } finally {
@@ -1972,7 +1847,6 @@ export default function ProductsPage() {
   const clearFilters = useCallback(() => {
     if (batchExporting) return;
     setSearch("");
-    setStatusFilter("");
     setMpFilter("");
     setMpCategoryFilter("");
     setSourceFilter("");
@@ -2029,18 +1903,14 @@ export default function ProductsPage() {
   const totalPages  = Math.max(1, Math.ceil(total / pageSize));
   const allChecked  = visibleProducts.length > 0 && visibleProducts.every((product) => selected.has(product.id));
   const someChecked = visibleProducts.some((product) => selected.has(product.id)) && !allChecked;
-  const hasFilters = hasActiveProductFilters(search, statusFilter, mpFilter, listingFocus, mpCategoryFilter, sourceFilter);
-  const hasBaseFilters = hasActiveProductFilters(search, statusFilter, mpFilter, "all", mpCategoryFilter, sourceFilter);
+  const hasFilters = hasActiveProductFilters(search, "", mpFilter, listingFocus, mpCategoryFilter, sourceFilter);
+  const hasBaseFilters = hasActiveProductFilters(search, "", mpFilter, "all", mpCategoryFilter, sourceFilter);
   const focusLabels: Record<ProductListingFocus, string> = {
     all: pageCopy.focusAll,
     ready: pageCopy.focusReady,
     review: pageCopy.focusReview,
     blocked: pageCopy.focusBlocked,
   };
-  const statusFilterLabels = STATUS_FILTER.reduce<Record<string, string>>((acc, item) => {
-    if (item.value) acc[item.value] = item.label;
-    return acc;
-  }, {});
   const marketplaceFilterLabels = marketplaces.reduce<Record<string, string>>((acc, marketplace) => {
     acc[marketplace.slug] = marketplace.name;
     return acc;
@@ -2049,15 +1919,15 @@ export default function ProductsPage() {
     icecat: pageCopy.filterSourceIcecat,
   };
   const activeFilterSummary = getActiveProductFilterSummary(
-    { search, statusFilter, marketplaceFilter: mpFilter, marketplaceCategoryFilter: mpCategoryFilter, sourceFilter, listingFocus },
+    { search, statusFilter: "", marketplaceFilter: mpFilter, marketplaceCategoryFilter: mpCategoryFilter, sourceFilter, listingFocus },
     {
       search: pageCopy.filterActiveSearch,
       focus: pageCopy.filterActiveFocus,
-      status: pageCopy.filterActiveStatus,
+      status: "",
       marketplace: pageCopy.filterActiveMarketplace,
       marketplaceCategory: pageCopy.filterActiveMarketplaceCategory,
       source: pageCopy.filterActiveSource,
-      statusLabels: statusFilterLabels,
+      statusLabels: {},
       marketplaceLabels: marketplaceFilterLabels,
       sourceLabels: sourceFilterLabels,
       focusLabels,
@@ -2088,8 +1958,8 @@ export default function ProductsPage() {
     setPageJump("");
     setSelected(new Set());
     setSplitSelectionGroups([]);
-    loadProducts(search, nextPage, statusFilter, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
-  }, [listingFocus, loadProducts, mpCategoryFilter, mpFilter, pageSize, search, sourceFilter, statusFilter, totalPages]);
+    loadProducts(search, nextPage, mpFilter, mpCategoryFilter, sourceFilter, listingFocus, pageSize);
+  }, [listingFocus, loadProducts, mpCategoryFilter, mpFilter, pageSize, search, sourceFilter, totalPages]);
 
   return (
     <div>
@@ -2208,19 +2078,11 @@ export default function ProductsPage() {
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
                   {pageCopy.filterStageLabel}
                 </span>
-                {listingFocus === "blocked" && listingStats.blocked > 0 && (
-                  <span className="text-[10px] font-semibold text-[var(--text-tertiary)]">
-                    {pageCopy.blockedMixHint
-                      .replace("{unmapped}", String(listingStats.unmapped))
-                      .replace("{attributes}", String(listingStats.attributesMissing))}
-                  </span>
-                )}
               </div>
-              <div className="grid grid-cols-2 gap-1.5 md:grid-cols-4">
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
                 {[
                   { focus: "all" as const, label: pageCopy.focusAll, value: listingStats.all, hint: pageCopy.focusAllHint },
                   { focus: "ready" as const, label: pageCopy.focusReady, value: listingStats.ready, hint: pageCopy.focusReadyHint },
-                  { focus: "review" as const, label: pageCopy.focusReview, value: listingStats.review, hint: pageCopy.focusReviewHint },
                   { focus: "blocked" as const, label: pageCopy.focusBlocked, value: listingStats.blocked, hint: pageCopy.focusBlockedHint },
                 ].map((item) => (
                   <button
@@ -2242,22 +2104,7 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            <div className={`grid gap-3 sm:grid-cols-2 ${mpFilter ? "lg:max-w-6xl lg:grid-cols-[minmax(160px,210px)_minmax(190px,260px)_minmax(170px,230px)_minmax(230px,1fr)]" : "lg:max-w-5xl lg:grid-cols-[minmax(160px,220px)_minmax(200px,280px)_minmax(170px,240px)]"}`}>
-              <label className="flex min-w-0 flex-col gap-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
-                  {pageCopy.filterStatusLabel}
-                </span>
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                  className="h-10 rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
-                >
-                  {STATUS_FILTER.map(f => (
-                    <option key={f.value} value={f.value}>{f.label}</option>
-                  ))}
-                </select>
-              </label>
-
+            <div className={`grid gap-3 sm:grid-cols-2 ${mpFilter ? "lg:max-w-5xl lg:grid-cols-[minmax(190px,260px)_minmax(170px,230px)_minmax(230px,1fr)]" : "lg:max-w-3xl lg:grid-cols-[minmax(200px,280px)_minmax(170px,240px)]"}`}>
               <label className="flex min-w-0 flex-col gap-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">
                   {pageCopy.filterMarketplaceLabel}
@@ -2651,19 +2498,19 @@ export default function ProductsPage() {
           <>
             <div className="divide-y divide-[var(--border-light)] md:hidden">
               {visibleProducts.map(p => {
-                const integList = parseIntegrations(p.integrations);
+                const integList = getVisibleProductIntegrations(p.integrations);
                 const isSelected = selected.has(p.id);
-                const statusLabel = getStatusLabel(t, p.status);
-                const listingState = getProductListingState(p);
-                const listingIssue = getListingIssueMeta(lang, listingState);
                 const importState = getProductImportBadgeState({
                   id: p.id,
                   rawData: p.rawData ?? p.raw_data ?? null,
                   importMeta: p.importMeta ?? null,
                 }, productJobEntries);
-                const aiBadge = normalizeListAIDraftBadge(p.aiDraftsCompact, mpFilter || undefined);
-                const aiBadgeMeta = getAIDraftBadgeMeta(lang, importState.aiStatus ?? aiBadge?.status ?? "blocked");
-                const importedBadgeMeta = importState.isImported ? getImportedBadgeMeta(importState.provider) : null;
+                const simpleStatus = getSimpleProductStatus({
+                  status: p.status,
+                  integrations: p.integrations,
+                  isImported: importState.isImported,
+                });
+                const simpleStatusMeta = getSimpleProductStatusMeta(lang, simpleStatus);
 
                 return (
                   <div
@@ -2707,44 +2554,21 @@ export default function ProductsPage() {
                           {p.sku && <span>SKU {p.sku}</span>}
                           {p.ean && <span>EAN {p.ean}</span>}
                           {p.asin && <span>ASIN {p.asin}</span>}
+                          {p.brand && <span>{pageCopy.badgeBrandPrefix}: {p.brand}</span>}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
-                            p.status === "mapped"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : p.status === "pending"
-                                ? "border-amber-200 bg-amber-50 text-amber-700"
-                                : p.status === "needs_review"
-                                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                                  : p.status === "exported"
-                                    ? "border-slate-200 bg-slate-100 text-slate-700"
-                                    : "border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-secondary)]"
-                          }`}>
-                            {pageCopy.badgeStatusPrefix}: {statusLabel}
-                          </span>
-                          {p.brand && (
-                            <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
-                              {pageCopy.badgeBrandPrefix}: {p.brand}
-                            </span>
-                          )}
-                          {importedBadgeMeta && (
-                            <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${importedBadgeMeta.className}`}>
-                              {importedBadgeMeta.label}
-                            </span>
-                          )}
-                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${aiBadgeMeta.className}`}>
-                            {aiBadgeMeta.label}
-                          </span>
-                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${listingIssue.className}`}>
-                            {listingIssue.label}
+                          <span
+                            data-product-state={simpleStatus}
+                            className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${simpleStatusMeta.className}`}
+                          >
+                            {simpleStatusMeta.label}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {integList.length > 0
-                        ? integList.map(integ => {
+                      {integList.map(integ => {
                             const ready = integ.missing === 0;
                             const isFiltered = mpFilter === integ.slug;
                             const integrationMeta = getMarketplaceIntegrationMeta(lang, integ.name, integ.missing);
@@ -2766,9 +2590,7 @@ export default function ProductsPage() {
                                 {integrationMeta.label}
                               </span>
                             );
-                          })
-                        : <span className="text-[10px] text-slate-300">&mdash;</span>
-                      }
+                          })}
                     </div>
 
                     <div className="mt-3 flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
@@ -2792,19 +2614,19 @@ export default function ProductsPage() {
 
             <div className="hidden divide-y divide-[var(--border-light)] md:block">
               {visibleProducts.map(p => {
-                const integList  = parseIntegrations(p.integrations);
+                const integList = getVisibleProductIntegrations(p.integrations);
                 const isSelected = selected.has(p.id);
-                const statusLabel = getStatusLabel(t, p.status);
-                const listingState = getProductListingState(p);
-                const listingIssue = getListingIssueMeta(lang, listingState);
                 const importState = getProductImportBadgeState({
                   id: p.id,
                   rawData: p.rawData ?? p.raw_data ?? null,
                   importMeta: p.importMeta ?? null,
                 }, productJobEntries);
-                const aiBadge = normalizeListAIDraftBadge(p.aiDraftsCompact, mpFilter || undefined);
-                const aiBadgeMeta = getAIDraftBadgeMeta(lang, importState.aiStatus ?? aiBadge?.status ?? "blocked");
-                const importedBadgeMeta = importState.isImported ? getImportedBadgeMeta(importState.provider) : null;
+                const simpleStatus = getSimpleProductStatus({
+                  status: p.status,
+                  integrations: p.integrations,
+                  isImported: importState.isImported,
+                });
+                const simpleStatusMeta = getSimpleProductStatusMeta(lang, simpleStatus);
 
                 return (
                   <div key={p.id}
@@ -2849,45 +2671,21 @@ export default function ProductsPage() {
                         {p.sku  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">SKU {p.sku}</span>}
                         {p.ean  && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">EAN {p.ean}</span>}
                         {p.asin && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">ASIN {p.asin}</span>}
+                        {p.brand && <span className="text-[10px] text-[var(--text-tertiary)]">{pageCopy.badgeBrandPrefix}: {p.brand}</span>}
                       </div>
                       <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
-                          p.status === "mapped"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : p.status === "pending"
-                              ? "bg-amber-50 text-amber-700 border-amber-200"
-                              : p.status === "needs_review"
-                                ? "bg-rose-50 text-rose-700 border-rose-200"
-                                : p.status === "exported"
-                                  ? "bg-slate-100 text-slate-700 border-slate-200"
-                                  : "bg-[var(--bg-input)] text-[var(--text-secondary)] border-[var(--border-default)]"
-                        }`}>
-                          {pageCopy.badgeStatusPrefix}: {statusLabel}
-                        </span>
-                        {p.brand && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0
-                            text-indigo-600 bg-indigo-50">
-                            {pageCopy.badgeBrandPrefix}: {p.brand}
-                          </span>
-                        )}
-                        {importedBadgeMeta && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${importedBadgeMeta.className}`}>
-                            {importedBadgeMeta.label}
-                          </span>
-                        )}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${aiBadgeMeta.className}`}>
-                          {aiBadgeMeta.label}
-                        </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${listingIssue.className}`}>
-                          {listingIssue.label}
+                        <span
+                          data-product-state={simpleStatus}
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border flex-shrink-0 ${simpleStatusMeta.className}`}
+                        >
+                          {simpleStatusMeta.label}
                         </span>
                       </div>
                     </div>
 
                     {/* Integrations */}
                     <div className="pl-2 flex items-center gap-1 flex-wrap">
-                      {integList.length > 0
-                        ? integList.map(integ => {
+                      {integList.map(integ => {
                             const ready = integ.missing === 0;
                             const isFiltered = mpFilter === integ.slug;
                             const integrationMeta = getMarketplaceIntegrationMeta(lang, integ.name, integ.missing);
@@ -2907,9 +2705,7 @@ export default function ProductsPage() {
                                 {integrationMeta.label}
                               </span>
                             );
-                          })
-                        : <span className="text-[10px] text-slate-300">&mdash;</span>
-                      }
+                          })}
                     </div>
 
                     {/* Dots menu */}

@@ -177,6 +177,18 @@ test("normalizeExportPreflightResult renders object blockers from backend", () =
   assert.equal(result?.blockedItems[0]?.blockers[0], "Potwierdz review");
 });
 
+test("normalizeExportReadinessRows renders price confirmation blocker in Polish", () => {
+  const rows = normalizeExportReadinessRows([
+    {
+      productId: 10649,
+      status: "blocked",
+      blockers: ["price_confirmed"],
+    },
+  ]);
+
+  assert.equal(rows[0]?.blockers[0], "Potwierdz aktualna cene przed publikacja");
+});
+
 test("getCompactExportIssues shows first three readiness issues and hidden count", () => {
   const [row] = normalizeExportReadinessRows([
     {
